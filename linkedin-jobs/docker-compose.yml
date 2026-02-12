@@ -1,0 +1,14 @@
+services:
+  gotenberg:
+    image: gotenberg/gotenberg:8
+    container_name: gotenberg-jobs
+    restart: unless-stopped
+    ports:
+      - "3001:3000"
+    networks:
+      - supabase_network
+
+networks:
+  supabase_network:
+    external: true
+    name: supabase_default

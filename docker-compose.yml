@@ -1,0 +1,31 @@
+services:
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: n8n-docker
+    restart: always
+    ports:
+      - "5678:5678"
+    environment:
+      - DB_TYPE=postgresdb
+      - DB_POSTGRESDB_HOST=supabase-db
+      - DB_POSTGRESDB_PORT=5432
+      - DB_POSTGRESDB_DATABASE=postgres
+      - DB_POSTGRESDB_USER=postgres
+      - DB_POSTGRESDB_PASSWORD=n8n_supabase_pass
+      - DB_POSTGRESDB_SCHEMA=n8n
+      - N8N_ENCRYPTION_KEY=gt1VzS/nxkGl1jVSk/faHoCa1fy/1ORS
+      - N8N_HOST=localhost
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      - NODE_ENV=production
+      - WEBHOOK_URL=http://localhost:5678/
+    volumes:
+      - C:/Users/paulojr/.n8n:/home/node/.n8n
+      - C:/Users/paulojr/.n8n-files:/home/node/.n8n-files
+    networks:
+      - supabase_network
+
+networks:
+  supabase_network:
+    external: true
+    name: supabase_default
