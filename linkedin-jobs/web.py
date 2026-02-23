@@ -136,7 +136,7 @@ HTML_TEMPLATE = """
         .header-left {
             display: flex;
             align-items: center;
-            gap: 14px;
+            gap: 16px;
         }
 
         .logo {
@@ -147,16 +147,17 @@ HTML_TEMPLATE = """
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 20px;
+            font-size: 18px;
             font-weight: 700;
         }
 
         .header h1 {
-            font-size: 20px;
+            font-size: 16px;
             font-weight: 600;
             background: linear-gradient(135deg, var(--text-primary), var(--accent));
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
+            white-space: nowrap;
         }
 
         .header-status {
@@ -188,141 +189,101 @@ HTML_TEMPLATE = """
             padding: 24px 32px;
         }
 
-        /* --- Stats cards --- */
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-            gap: 16px;
-            margin-bottom: 28px;
-        }
-
-        .stat-card {
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: var(--radius);
-            padding: 20px;
-            position: relative;
-            overflow: hidden;
-            transition: all 0.3s ease;
-        }
-
-        .stat-card:hover {
-            border-color: var(--accent);
-            transform: translateY(-2px);
-            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
-        }
-
-        .stat-card::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            height: 3px;
-        }
-
-        .stat-card.new::before { background: var(--info); }
-        .stat-card.scraped::before { background: var(--warning); }
-        .stat-card.done::before { background: var(--success); }
-        .stat-card.error::before { background: var(--error); }
-        .stat-card.total::before { background: linear-gradient(90deg, var(--accent), var(--accent-secondary)); }
-
-        .stat-label {
-            font-size: 12px;
-            font-weight: 500;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            color: var(--text-secondary);
-            margin-bottom: 8px;
-        }
-
-        .stat-value {
-            font-size: 32px;
-            font-weight: 700;
-        }
-
-        .stat-card.new .stat-value { color: var(--info); }
-        .stat-card.scraped .stat-value { color: var(--warning); }
-        .stat-card.done .stat-value { color: var(--success); }
-        .stat-card.error .stat-value { color: var(--error); }
-        .stat-card.total .stat-value {
-            background: linear-gradient(135deg, var(--accent), var(--accent-secondary));
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-        }
-
-        /* --- Action buttons --- */
-        .actions-row {
+        /* --- Stats in Header --- */
+        .header-stats {
             display: flex;
-            gap: 12px;
-            margin-bottom: 28px;
-            flex-wrap: wrap;
+            gap: 24px;
+            align-items: center;
+            margin-left: 40px;
+            padding-left: 40px;
+            border-left: 1px solid rgba(255,255,255,0.1);
+        }
+        .h-stat { display: flex; flex-direction: column; }
+        .h-label { font-size: 10px; text-transform: uppercase; color: var(--text-secondary); font-weight: 600; letter-spacing: 0.5px; }
+        .h-val { font-size: 20px; font-weight: 700; color: var(--text-primary); margin-top: 2px; }
+        .h-val.info { color: var(--info); }
+        .h-val.warning { color: var(--warning); }
+        .h-val.success { color: var(--success); }
+        .h-val.error { color: var(--error); }
+
+        /* --- Action buttons in Header --- */
+        .actions-col {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            margin: 0 20px;
+        }
+
+        .action-group {
+            display: flex;
+            gap: 4px;
+            align-items: center;
+        }
+
+        .action-divider {
+            width: 1px;
+            height: 20px;
+            background: rgba(255,255,255,0.1);
+            margin: 0 8px;
         }
 
         .btn {
             display: inline-flex;
             align-items: center;
-            gap: 8px;
-            padding: 12px 24px;
-            border: 1px solid var(--border);
-            border-radius: var(--radius);
-            background: var(--bg-card);
-            color: var(--text-primary);
+            justify-content: center;
+            gap: 6px;
+            padding: 8px 14px;
+            border: 1px solid transparent;
+            border-radius: 8px;
+            background: rgba(255,255,255,0.03);
+            color: var(--text-secondary);
             font-family: inherit;
-            font-size: 14px;
+            font-size: 12px;
             font-weight: 500;
             cursor: pointer;
             transition: all 0.2s ease;
-            letter-spacing: 0.3px;
+            white-space: nowrap;
         }
 
         .btn:hover {
-            border-color: var(--accent);
-            background: var(--bg-card-hover);
-            transform: translateY(-1px);
-            box-shadow: 0 4px 12px var(--accent-glow);
+            color: var(--text-primary);
+            background: rgba(255,255,255,0.1);
         }
 
-        .btn:active { transform: translateY(0); }
+        .btn:active { transform: scale(0.97); }
 
         .btn:disabled {
-            opacity: 0.5;
+            opacity: 0.4;
             cursor: not-allowed;
-            transform: none !important;
+            pointer-events: none;
         }
 
         .btn.primary {
-            background: linear-gradient(135deg, var(--accent), #7c74ff);
-            border-color: var(--accent);
+            background: var(--accent);
             color: white;
+            box-shadow: 0 2px 8px var(--accent-glow);
         }
 
         .btn.primary:hover {
-            box-shadow: 0 6px 20px var(--accent-glow);
+            background: #7c74ff;
+            box-shadow: 0 4px 12px var(--accent-glow);
         }
 
-        .btn.success {
-            border-color: var(--success);
-            color: var(--success);
-        }
+        .btn.success { color: var(--success); background: rgba(0, 212, 170, 0.05); }
+        .btn.success:hover { background: rgba(0, 212, 170, 0.15); }
 
-        .btn.warning {
-            border-color: var(--warning);
-            color: var(--warning);
-        }
+        .btn.warning { color: var(--warning); }
+        
+        .btn.danger { color: var(--error); }
+        .btn.danger:hover { background: rgba(255, 107, 107, 0.1); }
 
-        .btn.danger {
-            border-color: var(--error);
-            color: var(--error);
-        }
-
-        .btn .icon { font-size: 16px; }
+        .btn .icon { font-size: 14px; }
 
         /* --- Sections (two-column) --- */
         .main-grid {
             display: grid;
-            grid-template-columns: 1fr 380px;
-            gap: 24px;
+            grid-template-columns: 1fr 280px;
+            gap: 20px;
         }
 
         @media (max-width: 1024px) {
@@ -581,11 +542,11 @@ HTML_TEMPLATE = """
 
         /* --- Log panel --- */
         .log-panel .panel-body {
-            padding: 12px 16px;
+            padding: 8px 12px;
             font-family: 'JetBrains Mono', 'Fira Code', monospace;
-            font-size: 12px;
-            line-height: 1.6;
-            max-height: 500px;
+            font-size: 11px;
+            line-height: 1.5;
+            max-height: 400px;
         }
 
         .log-entry {
@@ -650,17 +611,17 @@ HTML_TEMPLATE = """
         /* --- Config section --- */
         .config-grid {
             display: grid;
-            gap: 10px;
-            padding: 16px;
+            gap: 6px;
+            padding: 12px;
         }
 
         .config-item {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 8px 0;
+            padding: 6px 0;
             border-bottom: 1px solid rgba(255,255,255,0.04);
-            font-size: 13px;
+            font-size: 12px;
         }
 
         .config-label { color: var(--text-secondary); }
@@ -700,14 +661,14 @@ HTML_TEMPLATE = """
         .dropdown { position: relative; display: inline-block; }
         .dropdown-content {
             display: none; position: absolute; background-color: var(--bg-card);
-            min-width: 180px; box-shadow: 0 8px 16px rgba(0,0,0,0.4); z-index: 1000;
-            border: 1px solid var(--border); border-radius: var(--radius); padding: 8px 0;
+            min-width: 140px; box-shadow: 0 8px 16px rgba(0,0,0,0.6); z-index: 1000;
+            border: 1px solid var(--border); border-radius: 8px; padding: 4px 0;
             top: 100%; left: 0; margin-top: 5px;
         }
         .dropdown-content button {
-            color: var(--text-primary); padding: 10px 16px; text-decoration: none;
+            color: var(--text-primary); padding: 8px 14px; text-decoration: none;
             display: block; width: 100%; text-align: left; background: none; border: none;
-            font-size: 13px; cursor: pointer; font-family: inherit; font-weight: 500;
+            font-size: 11px; cursor: pointer; font-family: inherit; font-weight: 500;
         }
         .dropdown-content button:hover { background-color: var(--bg-card-hover); color: var(--accent); }
         .dropdown.show .dropdown-content { display: block; }
@@ -728,12 +689,64 @@ HTML_TEMPLATE = """
     </style>
 </head>
 <body>
-    <div class="header">
+    <div class="header" style="padding: 12px 24px;">
         <div class="header-left">
             <div class="logo">🎯</div>
-            <h1>LinkedIn Job Scraper</h1>
+            <h1>LinkedIn</h1>
+            
+            <div class="actions-col">
+                <div class="action-group">
+                    <button class="btn primary" onclick="runTask('pipeline')" id="btn-pipeline" title="Run full automated pipeline">
+                        <span class="icon">🚀</span> Pipeline
+                    </button>
+                    <button class="btn" onclick="runTask('scrape')" id="btn-scrape" title="Scrape jobs">
+                        <span class="icon">🔍</span> Scrape
+                    </button>
+                    <button class="btn" onclick="runTask('process')" id="btn-process" title="Process descriptions">
+                        <span class="icon">⚙️</span> Process
+                    </button>
+                </div>
+                
+                <div class="action-divider"></div>
+                
+                <div class="action-group">
+                    <select id="model-select" class="btn" style="padding: 7px 10px; max-width: 120px; outline: none;">
+                        <option value="gemini-3-flash-preview">Loading...</option>
+                    </select>
+                    <div class="dropdown" id="generate-dropdown">
+                        <button class="btn success" onclick="document.getElementById('generate-dropdown').classList.toggle('show')">
+                            <span class="icon">📝</span> Generate <span style="font-size:8px; margin-left:2px; opacity:0.6">▼</span>
+                        </button>
+                        <div class="dropdown-content">
+                            <button onclick="runGenerateTask(false)">All (Scraped)</button>
+                            <button onclick="runGenerateTask(true)">Selected Only</button>
+                        </div>
+                    </div>
+                    <button class="btn" onclick="runTask('retry')" id="btn-retry" title="Retry generation errors">
+                        <span class="icon">🔄</span> Retry
+                    </button>
+                </div>
+
+                <div class="action-divider"></div>
+
+                <div class="action-group">
+                    <button class="btn" onclick="runTask('login')" id="btn-login" style="color:#0077b5;">
+                        <span class="icon">🔐</span> Login
+                    </button>
+                    <button class="btn danger" onclick="clearAllJobs()" id="btn-clear" title="Clear all scraped jobs">
+                        <span class="icon">🧹</span> Clear
+                    </button>
+                </div>
+            </div>
         </div>
+        
         <div class="header-status">
+            <div class="header-stats" id="header-stats" style="margin-left:auto; padding-left:0; border-left:none;">
+                <div class="h-stat"><span class="h-label">Total</span><span class="h-val" id="stat-total">-</span></div>
+                <div class="h-stat"><span class="h-label">Done</span><span class="h-val success" id="stat-done">-</span></div>
+                <div class="h-stat"><span class="h-label">Err</span><span class="h-val error" id="stat-error">-</span></div>
+            </div>
+            <div style="width:1px; height:20px; background:rgba(255,255,255,0.1); margin:0 12px;"></div>
             <span id="header-status-text" style="font-size:13px;color:var(--text-secondary)">Ready</span>
             <div class="status-dot" id="status-dot"></div>
         </div>
@@ -749,64 +762,6 @@ HTML_TEMPLATE = """
             </div>
             <button class="btn success" id="btn-finish-login" style="padding:6px 16px;font-size:12px;display:none" onclick="finishLogin()">✅ Finish Login</button>
             <button class="btn danger" style="padding:6px 16px;font-size:12px" onclick="cancelTask()">✖ Cancel</button>
-        </div>
-
-        <!-- Stats -->
-        <div class="stats-grid" id="stats-grid">
-            <div class="stat-card total">
-                <div class="stat-label">Total</div>
-                <div class="stat-value" id="stat-total">-</div>
-            </div>
-            <div class="stat-card new">
-                <div class="stat-label">New</div>
-                <div class="stat-value" id="stat-new">-</div>
-            </div>
-            <div class="stat-card scraped">
-                <div class="stat-label">Scraped</div>
-                <div class="stat-value" id="stat-scraped">-</div>
-            </div>
-            <div class="stat-card done">
-                <div class="stat-label">Done</div>
-                <div class="stat-value" id="stat-done">-</div>
-            </div>
-            <div class="stat-card error">
-                <div class="stat-label">Error</div>
-                <div class="stat-value" id="stat-error">-</div>
-            </div>
-        </div>
-
-        <!-- Action Buttons -->
-        <div class="actions-row">
-            <button class="btn primary" onclick="runTask('pipeline')" id="btn-pipeline">
-                <span class="icon">🚀</span> Run Pipeline
-            </button>
-            <button class="btn" onclick="runTask('scrape')" id="btn-scrape">
-                <span class="icon">🔍</span> Scrape Jobs
-            </button>
-            <button class="btn" onclick="runTask('process')" id="btn-process">
-                <span class="icon">⚙️</span> Process
-            </button>
-            <select id="model-select" class="btn" style="padding: 10px; border-color: var(--accent); max-width: 200px; cursor: pointer; background: var(--bg-card); color: var(--text-primary);">
-                <option value="gemini-2.0-flash">Carregando modelos...</option>
-            </select>
-            <div class="dropdown" id="generate-dropdown">
-                <button class="btn success" onclick="document.getElementById('generate-dropdown').classList.toggle('show')">
-                    <span class="icon">📝</span> Generate Resumes <span style="font-size:10px; margin-left:4px">▼</span>
-                </button>
-                <div class="dropdown-content">
-                    <button onclick="runGenerateTask(false)">Generate for All (Scraped)</button>
-                    <button onclick="runGenerateTask(true)">Generate for Selected</button>
-                </div>
-            </div>
-            <button class="btn warning" onclick="runTask('retry')" id="btn-retry">
-                <span class="icon">🔄</span> Retry Errors
-            </button>
-            <button class="btn" onclick="runTask('login')" id="btn-login" style="border-color:#0077b5;color:#0077b5;margin-left:auto">
-                <span class="icon">🔐</span> LinkedIn Login
-            </button>
-            <button class="btn danger" onclick="clearAllJobs()" id="btn-clear" style="margin-left:10px">
-                <span class="icon">🧹</span> Clear All
-            </button>
         </div>
 
         <!-- Main content -->
@@ -1177,10 +1132,10 @@ HTML_TEMPLATE = """
                 const selectElement = document.getElementById('model-select');
                 if (data.models && data.models.length > 0) {
                     selectElement.innerHTML = data.models.map(m => `
-                        <option value="${esc(m)}" ${m === 'gemini-2.0-flash' ? 'selected' : ''}>${esc(m)}</option>
+                        <option value="${esc(m)}" ${m === 'gemini-3-flash-preview' ? 'selected' : ''}>${esc(m)}</option>
                     `).join('');
                 } else {
-                    selectElement.innerHTML = '<option value="gemini-2.0-flash">gemini-2.0-flash</option>';
+                    selectElement.innerHTML = '<option value="gemini-3-flash-preview">gemini-3-flash-preview</option>';
                 }
             } catch (e) {
                 console.error("Failed to load models list");
@@ -1334,7 +1289,7 @@ def api_run():
             return jsonify({"ok": False, "error": "A task is already running."})
 
     if task == "pipeline":
-        m_name = data.get("model_name", "gemini-2.0-flash")
+        m_name = data.get("model_name", "gemini-3-flash-preview")
         def full_pipeline(m_name=m_name):
             from scraper import scrape_saved_jobs
             from processor import process_new_jobs
@@ -1352,10 +1307,10 @@ def api_run():
     elif task == "generate":
         from resume_generator import generate_resumes
         job_ids = data.get("job_ids")
-        m_name = data.get("model_name", "gemini-2.0-flash")
+        m_name = data.get("model_name", "gemini-3-flash-preview")
         started = _run_task("Generate Resumes", generate_resumes, job_ids, m_name)
     elif task == "retry":
-        m_name = data.get("model_name", "gemini-2.0-flash")
+        m_name = data.get("model_name", "gemini-3-flash-preview")
         def retry_errors(m_name=m_name):
             from resume_generator import generate_resumes
             conn = db.get_connection()

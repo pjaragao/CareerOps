@@ -39,7 +39,7 @@ def _build_prompt(job: dict) -> str:
     )
 
 
-def _call_gemini(prompt: str, model_name: str = "gemini-2.0-flash") -> str:
+def _call_gemini(prompt: str, model_name: str = "gemini-3-flash-preview") -> str:
     """
     Call Gemini API and return the resume markdown.
     """
@@ -118,10 +118,10 @@ def get_gemini_models() -> list[str]:
         return models
     except Exception as e:
         print(f"Error fetching models: {e}")
-        return ["gemini-2.0-flash"]  # fallback
+        return ["gemini-3-flash-preview"]  # fallback
 
 
-def generate_resumes(job_ids: list[int] = None, model_name: str = "gemini-2.0-flash"):
+def generate_resumes(job_ids: list[int] = None, model_name: str = "gemini-3-flash-preview"):
     """
     Generate customized resumes for jobs.
     Pipeline: Gemini AI → HTML → Gotenberg PDF → save file.
