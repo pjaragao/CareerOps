@@ -26,14 +26,23 @@ def process_new_jobs(delay: int | None = None):
         print(f"\n   [{i}/{len(jobs)}] {job['job_title'] or job['url']}")
 
         try:
-            description, language = scraper.scrape_job_description(job["url"])
+            job_data = scraper.scrape_job_description(job["url"])
+            description = job_data["description"]
+            language = job_data["language"]
 
             if not description or len(description) < 50:
                 print(f"   ⚠️  Description too short ({len(description)} chars). Marking as error.")
                 db.update_job_status(job["id"], "error")
                 continue
 
-            db.update_job_description(job["id"], description, language)
+            db.update_job_description(
+                job_id=job["id"],
+                description=description,
+                language=language,
+                company_description=job_data.get("company_description"),
+                company_profile_url=job_data.get("company_profile_url"),
+                hiring_team_json=job_data.get("hiring_team")
+            )
             print(f"   ✅ Scraped ({language}) — {len(description)} chars")
 
         except Exception as e:

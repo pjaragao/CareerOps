@@ -77,6 +77,22 @@ def get_jobs_by_status(status: str) -> list[dict]:
         conn.close()
 
 
+def get_jobs_by_ids(job_ids: list[int]) -> list[dict]:
+    """Fetch specific jobs by ID."""
+    if not job_ids:
+        return []
+    conn = get_connection()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                "SELECT * FROM public.job_listings WHERE id = ANY(%s) ORDER BY created_at",
+                (job_ids,)
+            )
+            return [dict(row) for row in cur.fetchall()]
+    finally:
+        conn.close()
+
+
 def get_all_active_job_ids() -> set[str]:
     """Get all linkedin_job_ids that are NOT 'removed'."""
     conn = get_connection()
@@ -110,7 +126,10 @@ def mark_removed(linkedin_job_ids: list[str]):
         conn.close()
 
 
-def update_job_description(job_id: int, description: str, language: str):
+def update_job_description(job_id: int, description: str, language: str, 
+                           company_description: str = None, 
+                           company_profile_url: str = None, 
+                           hiring_team_json: str = None):
     """Save scraped description and update status to 'scraped'."""
     conn = get_connection()
     try:
@@ -118,9 +137,12 @@ def update_job_description(job_id: int, description: str, language: str):
             cur.execute("""
                 UPDATE public.job_listings
                 SET description = %s, language = %s, status = 'scraped',
+                    company_description = %s, company_profile_url = %s,
+                    hiring_team_json = %s,
                     scraped_at = %s, updated_at = %s
                 WHERE id = %s
-            """, (description, language,
+            """, (description, language, company_description, 
+                  company_profile_url, hiring_team_json,
                   datetime.now(timezone.utc), datetime.now(timezone.utc), job_id))
         conn.commit()
     finally:

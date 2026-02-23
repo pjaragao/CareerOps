@@ -30,14 +30,18 @@ ENV/
 .env
 
 # Project Specific
+auth/
 session.json
 output/
 downloads/
 *.log
 
 # Temp/Debug files
-debug_scrape.py
-debug_output.txt
+debug_*
+test_*
+check_*
+reset_*
+*.tmp
 
 # IDEs
 .vscode/

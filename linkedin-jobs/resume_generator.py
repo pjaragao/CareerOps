@@ -33,6 +33,7 @@ def _build_prompt(job: dict) -> str:
         job_title=job.get("job_title", "Job Opportunity"),
         company=job.get("company", "Direct Hiring"),
         language=job.get("language", "en"),
+        company_description=job.get("company_description", "Not available."),
         description=job.get("description", "")[:15000],
         resume_base=resume_base,
     )
@@ -105,12 +106,16 @@ def _safe_filename(text: str, max_len: int = 30) -> str:
     return clean[:max_len]
 
 
-def generate_resumes():
+def generate_resumes(job_ids: list[int] = None):
     """
-    Generate customized resumes for all jobs with status 'scraped'.
+    Generate customized resumes for jobs.
     Pipeline: Gemini AI → HTML → Gotenberg PDF → save file.
     """
-    jobs = db.get_jobs_by_status("scraped")
+    if job_ids:
+        jobs = db.get_jobs_by_ids(job_ids)
+    else:
+        jobs = db.get_jobs_by_status("scraped")
+        
     if not jobs:
         print("\n✅ No scraped jobs to generate resumes for.")
         return
@@ -163,6 +168,8 @@ def generate_resumes():
             print(f"   ✅ Saved: {pdf_path}")
 
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             print(f"   ❌ Error: {e}")
             db.update_job_status(job["id"], "error")
 

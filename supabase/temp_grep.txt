@@ -1,0 +1,118 @@
+﻿
+> docker-compose.yml:12:  studio:
+  docker-compose.yml:13:    container_name: supabase-studio
+> docker-compose.yml:14:    image: supabase/studio:2026.01.27-sha-6aa59ff
+  docker-compose.yml:15:    restart: unless-stopped
+  docker-compose.yml:16:    healthcheck:
+  docker-compose.yml:17:      test:
+  docker-compose.yml:18:        [
+  docker-compose.yml:19:          "CMD",
+  docker-compose.yml:20:          "node",
+  docker-compose.yml:21:          "-e",
+> docker-compose.yml:22:          "fetch('http://studio:3000/api/platform/profile').then((r) => {if 
+(r.status !== 200) throw new Error(r.status)})"
+  docker-compose.yml:23:        ]
+  docker-compose.yml:24:      timeout: 10s
+  docker-compose.yml:25:      interval: 5s
+  docker-compose.yml:26:      retries: 3
+  docker-compose.yml:27:    depends_on:
+  docker-compose.yml:28:      analytics:
+  docker-compose.yml:29:        condition: service_healthy
+  docker-compose.yml:30:    environment:
+  docker-compose.yml:31:      # Binds nestjs listener to both IPv4 and IPv6 network interfaces
+  docker-compose.yml:32:      HOSTNAME: "::"
+  docker-compose.yml:33:
+  docker-compose.yml:34:      STUDIO_PG_META_URL: http://meta:8080
+  docker-compose.yml:35:      POSTGRES_PORT: ${POSTGRES_PORT}
+  docker-compose.yml:36:      POSTGRES_HOST: ${POSTGRES_HOST}
+  docker-compose.yml:37:      POSTGRES_DB: ${POSTGRES_DB}
+  docker-compose.yml:38:      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+  docker-compose.yml:39:      PG_META_CRYPTO_KEY: ${PG_META_CRYPTO_KEY}
+  docker-compose.yml:40:
+  docker-compose.yml:41:      DEFAULT_ORGANIZATION_NAME: ${STUDIO_DEFAULT_ORGANIZATION}
+  docker-compose.yml:42:      DEFAULT_PROJECT_NAME: ${STUDIO_DEFAULT_PROJECT}
+  docker-compose.yml:43:      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+  docker-compose.yml:44:
+  docker-compose.yml:45:      SUPABASE_URL: http://kong:8000
+  docker-compose.yml:46:      SUPABASE_PUBLIC_URL: ${SUPABASE_PUBLIC_URL}
+  docker-compose.yml:47:      SUPABASE_ANON_KEY: ${ANON_KEY}
+  docker-compose.yml:48:      SUPABASE_SERVICE_KEY: ${SERVICE_ROLE_KEY}
+  docker-compose.yml:49:      AUTH_JWT_SECRET: ${JWT_SECRET}
+  docker-compose.yml:50:
+  docker-compose.yml:51:      # LOGFLARE_API_KEY is deprecated
+  docker-compose.yml:52:      LOGFLARE_API_KEY: ${LOGFLARE_PUBLIC_ACCESS_TOKEN}
+  docker-compose.yml:53:      LOGFLARE_PUBLIC_ACCESS_TOKEN: ${LOGFLARE_PUBLIC_ACCESS_TOKEN}
+  docker-compose.yml:54:      LOGFLARE_PRIVATE_ACCESS_TOKEN: ${LOGFLARE_PRIVATE_ACCESS_TOKEN}
+  docker-compose.yml:55:
+  docker-compose.yml:56:      LOGFLARE_URL: http://analytics:4000
+  docker-compose.yml:57:      NEXT_PUBLIC_ENABLE_LOGS: true
+  docker-compose.yml:58:      # Comment to use Big Query backend for analytics
+  docker-compose.yml:59:      NEXT_ANALYTICS_BACKEND_PROVIDER: postgres
+  docker-compose.yml:60:      # Uncomment to use Big Query backend for analytics
+  docker-compose.yml:61:      # NEXT_ANALYTICS_BACKEND_PROVIDER: bigquery
+  docker-compose.yml:62:      SNIPPETS_MANAGEMENT_FOLDER: /app/snippets
+  docker-compose.yml:63:      EDGE_FUNCTIONS_MANAGEMENT_FOLDER: /app/edge-functions
+  docker-compose.yml:64:    volumes:
+  docker-compose.yml:65:      - ./volumes/snippets:/app/snippets:Z
+  docker-compose.yml:66:      - ./volumes/functions:/app/edge-functions:Z
+  docker-compose.yml:67:
+  docker-compose.yml:68:  kong:
+  docker-compose.yml:69:    container_name: supabase-kong
+  docker-compose.yml:70:    image: kong:2.8.1
+  docker-compose.yml:71:    restart: unless-stopped
+  docker-compose.yml:72:    ports:
+  docker-compose.yml:73:      - ${KONG_HTTP_PORT}:8000/tcp
+  docker-compose.yml:74:      - ${KONG_HTTPS_PORT}:8443/tcp
+  docker-compose.yml:75:    volumes:
+  docker-compose.yml:76:      # https://github.com/supabase/supabase/issues/12661
+  docker-compose.yml:77:      - ./volumes/api/kong.yml:/home/kong/temp.yml:ro,z
+  docker-compose.yml:78:    depends_on:
+  docker-compose.yml:79:      analytics:
+  docker-compose.yml:80:        condition: service_healthy
+  docker-compose.yml:81:    environment:
+  docker-compose.yml:82:      KONG_DATABASE: "off"
+  docker-compose.yml:83:      KONG_DECLARATIVE_CONFIG: /home/kong/kong.yml
+  docker-compose.yml:84:      # https://github.com/supabase/cli/issues/14
+  docker-compose.yml:85:      KONG_DNS_ORDER: LAST,A,CNAME
+  docker-compose.yml:86:      KONG_PLUGINS: 
+request-transformer,cors,key-auth,acl,basic-auth,request-termination,ip-restriction
+  docker-compose.yml:87:      KONG_NGINX_PROXY_PROXY_BUFFER_SIZE: 160k
+  docker-compose.yml:88:      KONG_NGINX_PROXY_PROXY_BUFFERS: 64 160k
+  docker-compose.yml:89:      SUPABASE_ANON_KEY: ${ANON_KEY}
+  docker-compose.yml:90:      SUPABASE_SERVICE_KEY: ${SERVICE_ROLE_KEY}
+  docker-compose.yml:91:      DASHBOARD_USERNAME: ${DASHBOARD_USERNAME}
+  docker-compose.yml:92:      DASHBOARD_PASSWORD: ${DASHBOARD_PASSWORD}
+  docker-compose.yml:93:    # https://unix.stackexchange.com/a/294837
+  docker-compose.yml:94:    entrypoint: bash -c 'eval "echo \"$$(cat ~/temp.yml)\"" > ~/kong.yml && 
+/docker-entrypoint.sh kong docker-start'
+  docker-compose.yml:95:
+  docker-compose.yml:96:  auth:
+  docker-compose.yml:97:    container_name: supabase-auth
+  docker-compose.yml:98:    image: supabase/gotrue:v2.185.0
+  docker-compose.yml:99:    restart: unless-stopped
+  docker-compose.yml:100:    healthcheck:
+  docker-compose.yml:101:      test:
+  docker-compose.yml:102:        [
+  docker-compose.yml:103:          "CMD",
+  docker-compose.yml:104:          "wget",
+  docker-compose.yml:105:          "--no-verbose",
+  docker-compose.yml:106:          "--tries=1",
+  docker-compose.yml:107:          "--spider",
+  docker-compose.yml:108:          "http://localhost:9999/health"
+  docker-compose.yml:109:        ]
+  docker-compose.yml:110:      timeout: 5s
+  docker-compose.yml:111:      interval: 5s
+  docker-compose.yml:112:      retries: 3
+  docker-compose.yml:113:    depends_on:
+  docker-compose.yml:114:      db:
+  docker-compose.yml:115:        # Disable this if you are using an external Postgres database
+  docker-compose.yml:116:        condition: service_healthy
+  docker-compose.yml:117:      analytics:
+  docker-compose.yml:118:        condition: service_healthy
+  docker-compose.yml:119:    environment:
+  docker-compose.yml:120:      GOTRUE_API_HOST: 0.0.0.0
+  docker-compose.yml:121:      GOTRUE_API_PORT: 9999
+  docker-compose.yml:122:      API_EXTERNAL_URL: ${API_EXTERNAL_URL}
+
+
+

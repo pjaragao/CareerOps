@@ -445,23 +445,102 @@ HTML_TEMPLATE = """
 
         .job-download:hover { transform: scale(1.2); }
 
-        .job-details {
-            display: none;
-            padding: 15px;
-            background: rgba(0,0,0,0.2);
-            border-top: 1px solid rgba(255,255,255,0.05);
-            font-size: 13px;
-            line-height: 1.6;
-            color: var(--text-secondary);
-            border-radius: 0 0 8px 8px;
-            white-space: pre-wrap;
-            margin-top: -5px;
-            margin-bottom: 15px;
+        .job-container.expanded .job-row {
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            background: var(--bg-card);
+            border-bottom: 1px solid rgba(108,99,255,0.2);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
         }
 
-        .job-details.active {
-            display: block;
+        .job-details {
+            display: none;
+            background: rgba(0,0,0,0.25);
+            border-top: 1px solid rgba(255,255,255,0.05);
+            font-size: 13px;
+            color: var(--text-secondary);
+            border-radius: 0 0 12px 12px;
+            margin-bottom: 20px;
+            animation: fadeIn 0.2s ease;
         }
+
+        .job-details.active { display: block; }
+
+        /* Detail tabs */
+        .detail-tabs {
+            display: flex;
+            gap: 0;
+            background: rgba(0,0,0,0.3);
+            border-bottom: 1px solid rgba(255,255,255,0.06);
+            padding: 0 16px;
+        }
+        .detail-tab {
+            padding: 10px 20px;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            color: var(--text-muted);
+            background: none;
+            border: none;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .detail-tab:hover { color: var(--text-secondary); background: rgba(255,255,255,0.03); }
+        .detail-tab.active {
+            color: var(--accent);
+            border-bottom-color: var(--accent);
+            background: rgba(108,99,255,0.05);
+        }
+        .detail-tab .tab-count {
+            font-size: 10px;
+            background: rgba(108,99,255,0.2);
+            color: var(--accent);
+            padding: 1px 6px;
+            border-radius: 10px;
+        }
+
+        .tab-panel {
+            display: none;
+            padding: 20px;
+            max-height: 60vh;
+            overflow-y: auto;
+        }
+        .tab-panel.active { display: block; }
+
+        .details-content { 
+            font-size: 13px; color: var(--text-secondary); 
+            line-height: 1.6; white-space: pre-wrap;
+        }
+        .company-url { 
+            color: var(--accent-secondary); 
+            text-decoration: none; 
+            font-size: 13px; 
+            font-weight: 500;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            margin-bottom: 12px;
+        }
+        .company-url:hover { text-decoration: underline; color: var(--accent); }
+        .hiring-team-list { display: flex; flex-wrap: wrap; gap: 12px; }
+        .hiring-person a { 
+            display: flex; flex-direction: column; align-items: flex-start;
+            padding: 12px 16px; background: rgba(255,255,255,0.03);
+            border-radius: 10px; font-size: 13px; color: var(--text-primary);
+            text-decoration: none; border: 1px solid rgba(255,255,255,0.1);
+            transition: all 0.2s; min-width: 180px;
+        }
+        .hiring-person a:hover { background: rgba(108,99,255,0.1); border-color: var(--accent); transform: translateY(-2px); }
+        .hiring-person .person-name { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+        .hiring-person .person-title { font-size: 11px; color: var(--text-muted); margin-top: 4px; padding-left: 24px; }
+
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
 
         .btn-icon {
             background: none;
@@ -616,6 +695,36 @@ HTML_TEMPLATE = """
             background: var(--accent);
             color: white;
         }
+
+        /* --- Dropdown --- */
+        .dropdown { position: relative; display: inline-block; }
+        .dropdown-content {
+            display: none; position: absolute; background-color: var(--bg-card);
+            min-width: 180px; box-shadow: 0 8px 16px rgba(0,0,0,0.4); z-index: 1000;
+            border: 1px solid var(--border); border-radius: var(--radius); padding: 8px 0;
+            top: 100%; left: 0; margin-top: 5px;
+        }
+        .dropdown-content button {
+            color: var(--text-primary); padding: 10px 16px; text-decoration: none;
+            display: block; width: 100%; text-align: left; background: none; border: none;
+            font-size: 13px; cursor: pointer; font-family: inherit; font-weight: 500;
+        }
+        .dropdown-content button:hover { background-color: var(--bg-card-hover); color: var(--accent); }
+        .dropdown.show .dropdown-content { display: block; }
+
+        /* --- Job Checkbox --- */
+        .job-checkbox {
+            appearance: none; background-color: rgba(255,255,255,0.05); margin: 0;
+            color: currentColor; width: 18px; height: 18px; border: 1px solid var(--text-muted);
+            border-radius: 4px; display: grid; place-content: center; cursor: pointer;
+        }
+        .job-checkbox::before {
+            content: ""; width: 10px; height: 10px; transform: scale(0);
+            transition: 120ms transform ease-in-out; background-color: var(--accent);
+            transform-origin: center; clip-path: polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0%, 43% 62%);
+        }
+        .job-checkbox:checked::before { transform: scale(1); }
+        .job-checkbox:checked { border-color: var(--accent); background-color: rgba(108,99,255,0.1); }
     </style>
 </head>
 <body>
@@ -677,9 +786,15 @@ HTML_TEMPLATE = """
             <button class="btn" onclick="runTask('process')" id="btn-process">
                 <span class="icon">⚙️</span> Process
             </button>
-            <button class="btn success" onclick="runTask('generate')" id="btn-generate">
-                <span class="icon">📝</span> Generate Resumes
-            </button>
+            <div class="dropdown" id="generate-dropdown">
+                <button class="btn success" onclick="document.getElementById('generate-dropdown').classList.toggle('show')">
+                    <span class="icon">📝</span> Generate Resumes <span style="font-size:10px; margin-left:4px">▼</span>
+                </button>
+                <div class="dropdown-content">
+                    <button onclick="runGenerateTask(false)">Generate for All (Scraped)</button>
+                    <button onclick="runGenerateTask(true)">Generate for Selected</button>
+                </div>
+            </div>
             <button class="btn warning" onclick="runTask('retry')" id="btn-retry">
                 <span class="icon">🔄</span> Retry Errors
             </button>
@@ -796,7 +911,8 @@ HTML_TEMPLATE = """
                 return `
                 <div class="job-container" id="job-container-${j.id}">
                     <div class="job-row">
-                        <div style="display:flex; align-items:center; margin-right: 10px;">
+                        <div style="display:flex; align-items:center; margin-right: 10px; gap: 8px;">
+                            <input type="checkbox" class="job-checkbox" data-id="${j.id}">
                             <button class="btn-icon btn-expand" onclick="toggleDetails(${j.id})" title="View Description">
                                 ${j.description ? '▼' : '·'}
                             </button>
@@ -814,7 +930,48 @@ HTML_TEMPLATE = """
                             <button class="btn-icon danger" onclick="removeJob(${j.id})" title="Remove Job">🗑️</button>
                         </div>
                     </div>
-                    ${j.description ? `<div class="job-details" id="details-${j.id}">${esc(j.description)}</div>` : ''}
+                    <div class="job-details" id="details-${j.id}">
+                        ${(() => {
+                            const hasCompany = j.company_description || j.company_profile_url;
+                            let team = [];
+                            try { team = j.hiring_team_json ? JSON.parse(j.hiring_team_json) : []; } catch(e) {}
+                            const hasTeam = team.length > 0;
+                            return `
+                            <div class="detail-tabs">
+                                <button class="detail-tab active" onclick="switchTab(${j.id}, 'desc', this)">📄 Descrição</button>
+                                ${hasCompany ? `<button class="detail-tab" onclick="switchTab(${j.id}, 'company', this)">🏢 Empresa</button>` : ''}
+                                ${hasTeam ? `<button class="detail-tab" onclick="switchTab(${j.id}, 'team', this)">👥 Equipe <span class="tab-count">${team.length}</span></button>` : ''}
+                            </div>
+                            <div class="tab-panel active" id="tab-desc-${j.id}">
+                                <div class="details-content">${esc(j.description)}</div>
+                            </div>
+                            ${hasCompany ? `
+                            <div class="tab-panel" id="tab-company-${j.id}">
+                                ${j.company_profile_url ? `
+                                    <a href="${esc(j.company_profile_url)}" target="_blank" class="company-url">
+                                        Ver Perfil no LinkedIn ↗
+                                    </a>
+                                ` : ''}
+                                <div class="details-content">${esc(j.company_description)}</div>
+                            </div>
+                            ` : ''}
+                            ${hasTeam ? `
+                            <div class="tab-panel" id="tab-team-${j.id}">
+                                <div class="hiring-team-list">
+                                    ${team.map(p => `
+                                        <div class="hiring-person">
+                                            <a href="${esc(p.url)}" target="_blank">
+                                                <span class="person-name">👤 ${esc(p.name)}</span>
+                                                ${p.title ? `<span class="person-title">${esc(p.title)}</span>` : ''}
+                                            </a>
+                                        </div>
+                                    `).join('')}
+                                </div>
+                            </div>
+                            ` : ''}
+                            `;
+                        })()}
+                    </div>
                 </div>
             `}).join('');
         }
@@ -903,9 +1060,26 @@ HTML_TEMPLATE = """
 
         function toggleDetails(id) {
             const el = document.getElementById('details-' + id);
+            const container = document.getElementById('job-container-' + id);
             if (el) {
-                el.classList.toggle('active');
+                const isActive = el.classList.toggle('active');
+                if (container) container.classList.toggle('expanded', isActive);
+                // Scroll job row into view when expanding
+                if (isActive && container) {
+                    setTimeout(() => container.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
+                }
             }
+        }
+
+        function switchTab(jobId, tab, btn) {
+            // Hide all tab panels for this job
+            const details = document.getElementById('details-' + jobId);
+            details.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+            details.querySelectorAll('.detail-tab').forEach(t => t.classList.remove('active'));
+            // Show selected
+            const panel = document.getElementById('tab-' + tab + '-' + jobId);
+            if (panel) panel.classList.add('active');
+            btn.classList.add('active');
         }
 
         async function removeJob(id) {
@@ -947,6 +1121,46 @@ HTML_TEMPLATE = """
             const d = document.createElement('div');
             d.textContent = str;
             return d.innerHTML;
+        }
+
+        // Close dropdown if clicked outside
+        window.onclick = function(event) {
+            if (!event.target.closest('.dropdown')) {
+                const dropdowns = document.getElementsByClassName("dropdown");
+                for (let i = 0; i < dropdowns.length; i++) {
+                    const openDropdown = dropdowns[i];
+                    if (openDropdown.classList.contains('show')) openDropdown.classList.remove('show');
+                }
+            }
+        }
+
+        async function runGenerateTask(onlySelected) {
+            let jobIds = null;
+            if (onlySelected) {
+                const checkboxes = document.querySelectorAll('.job-checkbox:checked');
+                if (checkboxes.length === 0) {
+                    alert('Nenhuma vaga selecionada.');
+                    return;
+                }
+                jobIds = Array.from(checkboxes).map(cb => parseInt(cb.dataset.id));
+            }
+            document.getElementById('generate-dropdown').classList.remove('show');
+            
+            const res = await fetchJSON('/api/run', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({task: 'generate', job_ids: jobIds})
+            });
+
+            if (res.ok) {
+                refreshTaskStatus();
+                pollInterval = setInterval(() => {
+                    refreshTaskStatus();
+                    refreshStats();
+                }, 2000);
+            } else {
+                alert(res.error || 'Failed to start task');
+            }
         }
 
         // --- Init ---
@@ -1003,7 +1217,7 @@ def api_jobs():
                     SELECT id, linkedin_job_id, url, status, job_title, company,
                            location, language, file_name, easy_apply, created_at, updated_at,
                            (description IS NOT NULL AND length(description) > 50) as has_details,
-                           description
+                           description, company_description, company_profile_url, hiring_team_json
                     FROM public.job_listings
                     ORDER BY created_at DESC
                     LIMIT 200
@@ -1013,7 +1227,7 @@ def api_jobs():
                     SELECT id, linkedin_job_id, url, status, job_title, company,
                            location, language, file_name, easy_apply, created_at, updated_at,
                            (description IS NOT NULL AND length(description) > 50) as has_details,
-                           description
+                           description, company_description, company_profile_url, hiring_team_json
                     FROM public.job_listings
                     WHERE status = %s
                     ORDER BY created_at DESC
@@ -1107,7 +1321,8 @@ def api_run():
         started = _run_task("Process Jobs", process_new_jobs)
     elif task == "generate":
         from resume_generator import generate_resumes
-        started = _run_task("Generate Resumes", generate_resumes)
+        job_ids = data.get("job_ids")
+        started = _run_task("Generate Resumes", generate_resumes, job_ids)
     elif task == "retry":
         def retry_errors():
             from resume_generator import generate_resumes

@@ -4,7 +4,11 @@ You are an expert ATS-optimized resume writer specializing in making candidates 
 - **Job Title**: {job_title}
 - **Company**: {company}
 - **Language**: {language}
-- **Full Job Description**:
+
+### About the Company
+{company_description}
+
+### Full Job Description
 {description}
 
 ## CANDIDATE'S BASE RESUME (source of truth — adapt to the job above)
@@ -27,6 +31,6 @@ You are an expert ATS-optimized resume writer specializing in making candidates 
 13. SCHEMA: Return a JSON object with a single key "resume_markdown" containing the full customized resume in markdown format.
 
 Example:
-{
+{{
   "resume_markdown": "# NAME\n\n## PROFESSIONAL SUMMARY\n..."
-}
+}}

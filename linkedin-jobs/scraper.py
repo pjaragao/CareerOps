@@ -201,14 +201,17 @@ def scrape_saved_jobs(max_jobs: int = 100) -> list[dict]:
                         #   LINE[2]: Location (e.g. "Brazil (Remote)")
                         #   LINE[3+]: noise ("Be an early applicant", "Posted Xd ago", "Easy Apply")
                         card_text = (card.inner_text() or "").strip()
-                        lines = [l.strip() for l in card_text.split("\n") if l.strip()]
+                        raw_lines = [l.strip() for l in card_text.split("\n") if l.strip()]
+                        
+                        # Remove verification badges that might appear as their own line
+                        lines = [l for l in raw_lines if l.lower() not in ("verified", "verificado")]
 
                         title = lines[0] if len(lines) > 0 else ""
                         title = " ".join(title.split())  # normalize whitespace
 
                         company = lines[1] if len(lines) > 1 else ""
                         # Clean up ", Verified" suffix
-                        company = company.replace(", Verified", "").strip()
+                        company = company.replace(", Verified", "").replace(", Verificado", "").strip()
                         if company.startswith(","):
                             company = company[1:].strip()
 
@@ -303,64 +306,181 @@ def scrape_saved_jobs(max_jobs: int = 100) -> list[dict]:
 # Scrape individual job description
 # ---------------------------------------------------------------------------
 
-def scrape_job_description(url: str) -> tuple[str, str]:
+def scrape_job_description(url: str) -> dict:
     """
-    Navigate to a job page and extract the full description.
-    Returns (description_text, language).
+    Navigate to a job page and extract:
+    - full description
+    - language
+    - company description
+    - company profile url
+    - hiring team (json list of objects)
     """
+    import json
     with sync_playwright() as p:
+        # For debugging, we can use headless=False if the environment allows
+        # but for production/agent use headless=True
         browser, context = _create_context(p, headless=True)
         page = context.new_page()
 
         try:
-            page.goto(url, wait_until="domcontentloaded", timeout=30000)
-            time.sleep(3)
+            # Set a larger viewport to see more content
+            page.set_viewport_size({"width": 1280, "height": 1024})
+            
+            page.goto(url, wait_until="domcontentloaded", timeout=60000)
+            # Give it plenty of time for background loads
+            time.sleep(10)
 
-            # Try multiple selectors for job description
+            # --- Scroll Down to Load Lazy Sections ---
+            # Use a more reliable scroll
+            for i in range(5):
+                page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                time.sleep(2)
+
+            # --- 1. Job Description ---
             description = ""
-            selectors = [
-                'div.jobs-description__content',
-                'div.jobs-box__html-content',
-                'div[class*="description"]',
-                'section[class*="description"]',
-                'article',
-            ]
-
-            for sel in selectors:
-                el = page.query_selector(sel)
-                if el:
-                    description = (el.inner_text() or "").strip()
-                    if len(description) > 100:
-                        break
-
-            if not description:
-                # Fallback: get all text from the main content
+            # Try to get the specific description container first
+            desc_el = (page.query_selector('div.jobs-description__content') or 
+                       page.query_selector('div.jobs-box__html-content') or
+                       page.query_selector('section.jobs-description'))
+            
+            if desc_el:
+                description = (desc_el.inner_text() or "").strip()
+            
+            if not description or len(description) < 100:
+                # Fallback: find any section that looks like a description
                 main = page.query_selector('main') or page.query_selector('body')
                 if main:
                     description = (main.inner_text() or "").strip()
 
-            # Also try to get job title and company if not already known
-            title = ""
-            title_el = page.query_selector(
-                'h1.jobs-unified-top-card__job-title, '
-                'h1[class*="job-title"], '
-                'h1'
-            )
-            if title_el:
-                title = (title_el.inner_text() or "").strip()
+            # Clean up unrelated text at the end (e.g. "... more\nSet alert for similar jobs")
+            cutoffs = [
+                r"… more\s+Set alert for similar jobs",
+                r"… ver mais\s+Criar alerta para vagas semelhantes",
+                r"… show more\s+Set alert for similar jobs"
+            ]
+            for pattern in cutoffs:
+                match = re.search(pattern, description)
+                if match:
+                    description = description[:match.start()].strip()
+                    break
 
-            company = ""
-            company_el = page.query_selector(
-                'a.jobs-unified-top-card__company-name, '
-                'span[class*="company-name"]'
-            )
-            if company_el:
-                company = (company_el.inner_text() or "").strip()
+            # --- 2. Company Profile Link ---
+            company_url = ""
+            comp_link_el = page.query_selector('a.jobs-unified-top-card__company-name, .jobs-details-top-card__company-url, a[href*="/company/"]')
+            if comp_link_el:
+                company_url = comp_link_el.get_attribute("href") or ""
+                if company_url.startswith("/"):
+                    company_url = "https://www.linkedin.com" + company_url
+                company_url = company_url.split("?")[0]
+
+            # --- 3. Company Description ---
+            company_description = ""
+            try:
+                # Use TreeWalker to find the exact text node, then grab parent container
+                company_description = page.evaluate("""() => {
+                    const keywords = ['About the company', 'Sobre a empresa'];
+                    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+                    while (walker.nextNode()) {
+                        const txt = walker.currentNode.textContent.trim();
+                        if (keywords.includes(txt)) {
+                            // Found the header; walk up to find the container div
+                            let el = walker.currentNode.parentElement;
+                            // Go up max 3 levels to find a container that has the description
+                            for (let i = 0; i < 3; i++) {
+                                if (el.parentElement) el = el.parentElement;
+                            }
+                            // Get the full text, remove the header itself
+                            let fullText = el.innerText || '';
+                            fullText = fullText.replace(txt, '').trim();
+                            return fullText;
+                        }
+                    }
+                    return '';
+                }""") or ""
+            except Exception as e:
+                print(f"   Warning: Error finding company description: {e}")
+
+            # --- 4. Hiring Team ---
+            hiring_team = []
+            seen_profiles = set()
+            try:
+                # Use TreeWalker to find "Meet the hiring team" / "Conheça a equipe de contratação"
+                # then extract profile links from that section
+                hiring_elements = page.evaluate(r"""() => {
+                    const keywords = ['Meet the hiring team', 'Conheça a equipe de contratação'];
+                    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+                    while (walker.nextNode()) {
+                        const txt = walker.currentNode.textContent.trim();
+                        if (keywords.includes(txt)) {
+                            let el = walker.currentNode.parentElement;
+                            for (let i = 0; i < 3; i++) {
+                                if (el.parentElement) el = el.parentElement;
+                            }
+                            const links = Array.from(el.querySelectorAll('a[href*="/in/"]'));
+                            const results = [];
+                            const noise = ['View profile', 'Ver perfil', 'Message', 'Mensagem',
+                                           'People you can reach out to', 'Fale com',
+                                           'Meet the hiring team', 'Conheça a equipe'];
+                            
+                            for (const a of links) {
+                                const url = a.href.split('?')[0];
+                                if (!url.includes('/in/')) continue;
+                                
+                                let name = a.innerText.trim().split('\n')[0].trim();
+                                noise.forEach(n => { name = name.replace(n, ''); });
+                                name = name.trim();
+                                if (!name || name.length < 2) continue;
+                                if (noise.some(n => name.toLowerCase().includes(n.toLowerCase()))) continue;
+                                
+                                let title = '';
+                                let card = a.closest('div[class]');
+                                if (card && card.parentElement && card.parentElement !== el) {
+                                    card = card.parentElement;
+                                }
+                                if (card) {
+                                    const cardLines = card.innerText.split('\n')
+                                        .map(l => l.trim()).filter(l => l.length > 0);
+                                    const nameIdx = cardLines.findIndex(l => l.includes(name));
+                                    if (nameIdx >= 0) {
+                                        for (let i = nameIdx + 1; i < cardLines.length; i++) {
+                                            const line = cardLines[i];
+                                            if (noise.some(n => line.includes(n))) continue;
+                                            if (line === name) continue;
+                                            // Skip connection degree indicators
+                                            if (/^\u2022\s*\d+(st|nd|rd|th)/i.test(line)) continue;
+                                            if (/^\d+(st|nd|rd|th)$/i.test(line)) continue;
+                                            // If line starts with bullet, strip it for the title
+                                            if (/^\u2022\s/.test(line)) { title = line.replace(/^\u2022\s*/, ''); break; }
+                                            title = line;
+                                            break;
+                                        }
+                                    }
+                                }
+                                results.push({ name, title, url });
+                            }
+                            return results;
+                        }
+                    }
+                    return [];
+                }""") or []
+                
+                for person in hiring_elements:
+                    if person['url'] not in seen_profiles:
+                        hiring_team.append(person)
+                        seen_profiles.add(person['url'])
+            except Exception as e:
+                print(f"   Warning: Error finding hiring team: {e}")
 
             # Detect language
             language = _detect_language(description)
 
-            return description[:20000], language
+            return {
+                "description": description[:30000],
+                "language": language,
+                "company_description": company_description[:5000],
+                "company_profile_url": company_url,
+                "hiring_team": json.dumps(hiring_team, ensure_ascii=False)
+            }
 
         finally:
             browser.close()
