@@ -39,12 +39,12 @@ def _build_prompt(job: dict) -> str:
     )
 
 
-def _call_gemini(prompt: str) -> str:
+def _call_gemini(prompt: str, model_name: str = "gemini-2.0-flash") -> str:
     """
     Call Gemini API and return the resume markdown.
     """
     genai.configure(api_key=GEMINI_API_KEY)
-    model = genai.GenerativeModel("gemini-2.0-flash")
+    model = genai.GenerativeModel(model_name)
 
     response = model.generate_content(
         prompt,
@@ -106,7 +106,22 @@ def _safe_filename(text: str, max_len: int = 30) -> str:
     return clean[:max_len]
 
 
-def generate_resumes(job_ids: list[int] = None):
+def get_gemini_models() -> list[str]:
+    """Fetch available models from Gemini API that support text generation."""
+    try:
+        genai.configure(api_key=GEMINI_API_KEY)
+        models = []
+        for m in genai.list_models():
+            if "generateContent" in m.supported_generation_methods:
+                name = m.name.replace("models/", "")
+                models.append(name)
+        return models
+    except Exception as e:
+        print(f"Error fetching models: {e}")
+        return ["gemini-2.0-flash"]  # fallback
+
+
+def generate_resumes(job_ids: list[int] = None, model_name: str = "gemini-2.0-flash"):
     """
     Generate customized resumes for jobs.
     Pipeline: Gemini AI → HTML → Gotenberg PDF → save file.
@@ -132,9 +147,9 @@ def generate_resumes(job_ids: list[int] = None):
 
         try:
             # Step 1: Build prompt and call Gemini
-            print("   🤖 Calling Gemini AI...")
+            print(f"   🤖 Calling Gemini AI ({model_name})...")
             prompt = _build_prompt(job)
-            resume_md = _call_gemini(prompt)
+            resume_md = _call_gemini(prompt, model_name)
 
             if not resume_md or len(resume_md) < 100:
                 print(f"   ⚠️  Gemini response too short ({len(resume_md)} chars)")

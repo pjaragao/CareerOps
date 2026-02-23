@@ -786,6 +786,9 @@ HTML_TEMPLATE = """
             <button class="btn" onclick="runTask('process')" id="btn-process">
                 <span class="icon">⚙️</span> Process
             </button>
+            <select id="model-select" class="btn" style="padding: 10px; border-color: var(--accent); max-width: 200px; cursor: pointer; background: var(--bg-card); color: var(--text-primary);">
+                <option value="gemini-2.0-flash">Carregando modelos...</option>
+            </select>
             <div class="dropdown" id="generate-dropdown">
                 <button class="btn success" onclick="document.getElementById('generate-dropdown').classList.toggle('show')">
                     <span class="icon">📝</span> Generate Resumes <span style="font-size:10px; margin-left:4px">▼</span>
@@ -1000,6 +1003,8 @@ HTML_TEMPLATE = """
                 dot.className = 'status-dot warning';
                 headerText.textContent = 'Running: ' + data.task;
                 setButtons(true);
+                // Disable model-select while running
+                document.getElementById('model-select').disabled = true;
                 // Show "Finish Login" button only during login tasks
                 const finishBtn = document.getElementById('btn-finish-login');
                 finishBtn.style.display = data.task.toLowerCase().includes('login') ? 'inline-flex' : 'none';
@@ -1008,6 +1013,7 @@ HTML_TEMPLATE = """
                 dot.className = 'status-dot';
                 headerText.textContent = 'Ready';
                 setButtons(false);
+                document.getElementById('model-select').disabled = false;
 
                 if (pollInterval) {
                     clearInterval(pollInterval);
@@ -1028,10 +1034,11 @@ HTML_TEMPLATE = """
         }
 
         async function runTask(task) {
+            const modelName = document.getElementById('model-select').value;
             const res = await fetchJSON('/api/run', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({task})
+                body: JSON.stringify({task, model_name: modelName})
             });
 
             if (res.ok) {
@@ -1146,10 +1153,11 @@ HTML_TEMPLATE = """
             }
             document.getElementById('generate-dropdown').classList.remove('show');
             
+            const modelName = document.getElementById('model-select').value;
             const res = await fetchJSON('/api/run', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({task: 'generate', job_ids: jobIds})
+                body: JSON.stringify({task: 'generate', job_ids: jobIds, model_name: modelName})
             });
 
             if (res.ok) {
@@ -1163,7 +1171,24 @@ HTML_TEMPLATE = """
             }
         }
 
+        async function refreshModels() {
+            try {
+                const data = await fetchJSON('/api/models');
+                const selectElement = document.getElementById('model-select');
+                if (data.models && data.models.length > 0) {
+                    selectElement.innerHTML = data.models.map(m => `
+                        <option value="${esc(m)}" ${m === 'gemini-2.0-flash' ? 'selected' : ''}>${esc(m)}</option>
+                    `).join('');
+                } else {
+                    selectElement.innerHTML = '<option value="gemini-2.0-flash">gemini-2.0-flash</option>';
+                }
+            } catch (e) {
+                console.error("Failed to load models list");
+            }
+        }
+
         // --- Init ---
+        refreshModels();
         refreshStats();
         refreshJobs();
         refreshConfig();
@@ -1183,6 +1208,10 @@ HTML_TEMPLATE = """
 def index():
     return render_template_string(HTML_TEMPLATE)
 
+@app.route("/api/models")
+def api_models():
+    from resume_generator import get_gemini_models
+    return jsonify({"models": get_gemini_models()})
 
 @app.route("/api/stats")
 def api_stats():
@@ -1305,13 +1334,14 @@ def api_run():
             return jsonify({"ok": False, "error": "A task is already running."})
 
     if task == "pipeline":
-        def full_pipeline():
+        m_name = data.get("model_name", "gemini-2.0-flash")
+        def full_pipeline(m_name=m_name):
             from scraper import scrape_saved_jobs
             from processor import process_new_jobs
             from resume_generator import generate_resumes
             scrape_saved_jobs(max_jobs=100)
             process_new_jobs()
-            generate_resumes()
+            generate_resumes(model_name=m_name)
         started = _run_task("Full Pipeline", full_pipeline)
     elif task == "scrape":
         from scraper import scrape_saved_jobs
@@ -1322,9 +1352,11 @@ def api_run():
     elif task == "generate":
         from resume_generator import generate_resumes
         job_ids = data.get("job_ids")
-        started = _run_task("Generate Resumes", generate_resumes, job_ids)
+        m_name = data.get("model_name", "gemini-2.0-flash")
+        started = _run_task("Generate Resumes", generate_resumes, job_ids, m_name)
     elif task == "retry":
-        def retry_errors():
+        m_name = data.get("model_name", "gemini-2.0-flash")
+        def retry_errors(m_name=m_name):
             from resume_generator import generate_resumes
             conn = db.get_connection()
             try:
@@ -1339,7 +1371,7 @@ def api_run():
                 print(f"🔄 Reset {count} error jobs to 'scraped'.")
             finally:
                 conn.close()
-            generate_resumes()
+            generate_resumes(model_name=m_name)
         started = _run_task("Retry Errors", retry_errors)
     elif task == "login":
         from scraper import login as linkedin_login
