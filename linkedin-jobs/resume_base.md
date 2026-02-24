@@ -15,22 +15,22 @@ Versatile engineer with 14+ years of experience bridging engineering, data analy
 ## CORE COMPETENCIES
 
 ### Technology & AI
-- **AI & LLM Integration**: Prompt engineering, AI-powered workflow automation (n8n), Claude, ChatGPT, Gemini integration
+- **AI & LLM Integration**: Prompt engineering, AI-powered workflow automation (n8n), Claude, ChatGPT, Gemini, Antigravity, Roocode
 - **Vibe Coding**: Rapid full-stack web application development using AI-assisted coding workflows
-- **Full-Stack Development**: React, Next.js, TypeScript, Node.js, HTML/CSS, REST APIs. Using AI-assisted coding workflows
-- **Database & Backend**: PostgreSQL, Supabase (Auth, Edge Functions, Realtime, RLS), Docker, Git
-- **API Integration**: Government APIs, third-party services, webhook-driven architectures, OAuth flows
+- **Full-Stack Development**: React, Next.js, TypeScript, Node.js, HTML/CSS, REST APIs, python. Using AI-assisted coding workflows
+- **Database & Backend**: SQL, SQLite, PostgreSQL, Supabase (Auth, Edge Functions, Realtime, RLS), Docker
+- **API Integration**: Government APIs, third-party services, webhook-driven architectures
 - **Data Analysis & Visualization**: Python, SQL, Power BI, Tableau, advanced Excel modeling
-- **Automation & Low-Code**: n8n, PowerApps, Power Automate, SharePoint integrations
+- **AI-powered Automation & Low-Code**: n8n, PowerApps, Power Automate, SharePoint integrations
 - **DevOps & Infrastructure**: Docker, Git/GitHub, CI/CD (GitHub Actions), Vercel deployment
 
 ### Engineering & Management
 - **Project Management**: Full lifecycle delivery ($5M–$50M scope), budget control, risk management
 - **Process Optimization**: Lean methodologies, pricing automation, proposal efficiency improvements
 - **Technical Leadership**: Cross-functional team coordination, stakeholder management, client negotiation
-- **Regulatory Compliance**: Environmental regulations, ISO 9001, BIM standards (BEP creation)
-- **Financial Analysis**: Feasibility studies (DCF), cost estimating, CAPEX/OPEX analysis, tariff modeling
-- **Digital Transformation**: ERP implementation, SharePoint migration, BIM methodology adoption
+- **Regulatory Compliance**: Environmental regulations, ISO 9001, ISO 14001, BIM standards (BEP creation)
+- **Financial Analysis**: in utilities projects: Feasibility studies (DCF), cost estimating, CAPEX/OPEX analysis, tariff modeling
+- **Digital Transformation**: ERP implementation, SharePoint migration, BIM methodology adoption, AI-powered automation, AI-driven process optimization, AI-driven full-stack web application development
 
 ---
 
@@ -42,17 +42,17 @@ Versatile engineer with 14+ years of experience bridging engineering, data analy
 **As Data & Technology Leader:**
 - Built full-stack web applications (React/Next.js + Supabase/PostgreSQL) using vibe coding methodology, delivering production apps with authentication, real-time data sync, and government API integrations
 - Designed and deployed AI-automated workflows using n8n and LLM APIs (Gemini, Claude, ChatGPT) for document generation, data extraction, and business process automation
-- Developed custom dashboards and reporting tools using Python, SQL, and Power BI, increasing operational visibility by 40%
+- Developed custom dashboards and reporting tools using Python, SQL, and Power BI, increasing operational visibility
 - Created PowerApps/Power Automate solutions integrated with SharePoint Online and ERP systems, eliminating manual data entry processes
 
 **As Project Manager & Engineering Leader:**
-- Managed 15+ concurrent engineering projects ($2M–$50M scope) with 95% on-time delivery and zero budget overruns
+- Managed 15+ concurrent engineering projects ($2M–$50M scope) with 85% on-time delivery and zero budget overruns. Developing KPIs and dashboards to monitor project progress and performance
 - Led company-wide digital transformation: ERP implementation (including database migration and cost apportionment methodology), SharePoint 2010 → Online migration with cross-departmental improvements
 - Coordinated BIM methodology adoption: hired consultants, managed software training, created company BEP standards, built family libraries, and modernized hardware/software infrastructure
-- Developed innovative proposal pricing methodology based on objective metrics (project type, dimension, risk factors), reducing bid preparation time by 60%
+- Developed innovative proposal pricing methodology based on objective metrics (project type, dimension, risk factors), reducing bid preparation time
 
 **As Commercial & Financial Analyst:**
-- Prepared 90+ financial proposals annually integrating historical project data, labor allocation models, risk analysis, and competitive pricing strategies (QCBS and LCS selection processes)
+- Analised and/or prepared 90+ financial proposals annually integrating historical project data, labor allocation models, risk analysis, and competitive pricing strategies (QCBS and LCS selection processes)
 - Conducted feasibility studies with discounted cash flow analysis for municipal water and wastewater concessions, defining tariff structures considering demand projections, regulatory compliance, and efficiency benchmarks
 
 **As Sanitary & Environmental Engineer:**
