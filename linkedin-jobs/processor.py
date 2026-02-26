@@ -31,8 +31,7 @@ def process_new_jobs(delay: int | None = None):
             language = job_data["language"]
 
             if not description or len(description) < 50:
-                print(f"   ⚠️  Description too short ({len(description)} chars). Marking as error.")
-                db.update_job_status(job["id"], "error")
+                print(f"   ⚠️  Description too short ({len(description)} chars). Leaving as 'new' for retry.")
                 continue
 
             db.update_job_description(
@@ -47,7 +46,7 @@ def process_new_jobs(delay: int | None = None):
 
         except Exception as e:
             print(f"   ❌ Error: {e}")
-            db.update_job_status(job["id"], "error")
+            # Do NOT update status here so it stays 'new' and can be retried on next scrape pass
 
         # Delay between requests to avoid LinkedIn blocking
         if i < len(jobs):

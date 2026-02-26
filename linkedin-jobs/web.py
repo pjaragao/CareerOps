@@ -136,6 +136,7 @@ def api_jobs():
                            (description IS NOT NULL AND length(description) > 50) as has_details,
                            description, cover_letter, company_description, company_profile_url, hiring_team_json
                     FROM public.job_listings
+                    WHERE status != 'removed'
                     ORDER BY created_at DESC
                     LIMIT 200
                 """)
@@ -471,10 +472,31 @@ def api_delete_application(app_id):
     success = db.delete_application(app_id)
     return jsonify({"ok": success})
 
+def auto_recover_hung_jobs():
+    """Reset jobs that were left in broken states due to previous interruptions or failed scrapes."""
+    try:
+        conn = db.get_connection()
+        with conn.cursor() as cur:
+            # 1. Reset jobs that were stuck while building PDF back to 'scraped' so they can be generated again
+            cur.execute("UPDATE public.job_listings SET status = 'scraped' WHERE status IN ('generating', 'processing')")
+            rowcount1 = cur.rowcount
+            
+            # 2. Reset jobs that were marked 'scraped' or 'error' but actually lack a real description back to 'new'
+            cur.execute("UPDATE public.job_listings SET status = 'new' WHERE status IN ('scraped', 'error') AND (description IS NULL OR LENGTH(description) < 50)")
+            rowcount2 = cur.rowcount
+            
+            if rowcount1 > 0 or rowcount2 > 0:
+                print(f"   ♻️  Auto-recovered {rowcount1} stalled generations and {rowcount2} failed scrapes.")
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"   ⚠️ Could not run auto-recovery: {e}")
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
     print("\n🌐 Starting LinkedIn Job Scraper Web UI...")
+    auto_recover_hung_jobs()
     print("   → http://localhost:5050\n")
     app.run(host="0.0.0.0", port=5050, debug=False)

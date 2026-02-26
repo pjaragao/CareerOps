@@ -142,8 +142,7 @@ def generate_resumes(job_ids: list[int] = None, model_name: str = "gemini-3-flas
         company = job.get("company", "Unknown")
         print(f"\n   [{i}/{len(jobs)}] {title} @ {company}")
 
-        # Mark as generating
-        db.update_job_status(job["id"], "generating")
+        # Do not mark as generating prematurely. Keep as 'scraped' until 100% finished.
 
         try:
             # Step 1: Build prompt and call Gemini
