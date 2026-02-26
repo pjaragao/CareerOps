@@ -227,3 +227,101 @@ def clear_all_jobs():
         conn.commit()
     finally:
         conn.close()
+
+# ---------------------------------------------------------------------------
+# Applications Module
+# ---------------------------------------------------------------------------
+
+def get_applications() -> list[dict]:
+    """Fetch all tracked job applications."""
+    conn = get_connection()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("""
+                SELECT a.*, j.location, j.url 
+                FROM public.applications a
+                LEFT JOIN public.job_listings j ON a.job_id = j.id
+                ORDER BY a.updated_at DESC
+            """)
+            return [dict(row) for row in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def insert_application(job_id: int, company_name: str, job_title: str, apply_method: str, status: str = 'Applied', notes: str = '') -> bool:
+    """Insert a new job application."""
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO public.applications
+                    (job_id, company_name, job_title, apply_method, status, notes)
+                VALUES (%s, %s, %s, %s, %s, %s)
+            """, (job_id, company_name, job_title, apply_method, status, notes))
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"Error inserting application: {e}")
+        return False
+    finally:
+        conn.close()
+
+
+def update_application(app_id: int, status: str = None, apply_method: str = None, notes: str = None, company_name: str = None, job_title: str = None) -> bool:
+    """Update an application's details."""
+    conn = get_connection()
+    
+    sets = ["updated_at = %s"]
+    vals = [datetime.now(timezone.utc)]
+    
+    if status is not None:
+        sets.append("status = %s")
+        vals.append(status)
+    
+    if apply_method is not None:
+        sets.append("apply_method = %s")
+        vals.append(apply_method)
+    
+    if notes is not None:
+        sets.append("notes = %s")
+        vals.append(notes)
+        
+    if company_name is not None:
+        sets.append("company_name = %s")
+        vals.append(company_name)
+
+    if job_title is not None:
+        sets.append("job_title = %s")
+        vals.append(job_title)
+        
+    vals.append(app_id)
+    
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                f"UPDATE public.applications SET {', '.join(sets)} WHERE id = %s",
+                vals
+            )
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"Error updating application: {e}")
+        return False
+    finally:
+        conn.close()
+
+
+def delete_application(app_id: int) -> bool:
+    """Delete an application."""
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM public.applications WHERE id = %s", (app_id,))
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"Error deleting application: {e}")
+        return False
+    finally:
+        conn.close()
+

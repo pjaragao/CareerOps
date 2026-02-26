@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat with Job</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #0f0f1a;
+            --bg-card: #16213e;
+            --accent: #6c63ff;
+            --text-primary: #e8e8f0;
+            --text-secondary: #8888a8;
+            --border: rgba(108, 99, 255, 0.15);
+            --radius: 12px;
+        }
+        body { font-family: 'Inter', sans-serif; background: var(--bg-primary); color: var(--text-primary); margin: 0; padding: 20px; }
+        .container { max-width: 800px; margin: 0 auto; background: var(--bg-card); padding: 20px; border-radius: var(--radius); border: 1px solid var(--border); }
+        h2 { margin-top: 0; font-size: 18px; color: var(--accent); }
+        .form-group { margin-bottom: 20px; }
+        label { display: block; font-size: 13px; color: var(--text-secondary); margin-bottom: 8px; }
+        textarea { width: 100%; height: 100px; padding: 12px; border-radius: 8px; border: 1px solid var(--border); background: rgba(0,0,0,0.2); color: var(--text-primary); font-family: inherit; font-size: 14px; box-sizing: border-box; }
+        textarea:focus { outline: none; border-color: var(--accent); }
+        button { background: var(--accent); color: white; border: none; padding: 12px 20px; border-radius: 8px; font-weight: 600; cursor: pointer; transition: 0.2s; }
+        button:hover { background: #7c74ff; }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+        .answer-box { margin-top: 20px; padding: 15px; background: rgba(0,0,0,0.3); border-left: 4px solid var(--accent); border-radius: 4px; white-space: pre-wrap; display: none; }
+        .loading { display: none; color: var(--accent); font-size: 14px; margin-top: 10px; }
+        .controls { display: flex; gap: 15px; margin-bottom: 20px; }
+        .control-group { flex: 1; }
+        select { width: 100%; padding: 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-primary); color: var(--text-primary); }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>💬 Assistente de Entrevista</h2>
+        <div style="font-size: 13px; color: var(--text-secondary); margin-bottom: 20px;">
+            Vaga: {{ job_title }} @ {{ company }}
+        </div>
+        
+        <div class="controls">
+            <div class="control-group">
+                <label>Tom da Resposta:</label>
+                <select id="tone">
+                    <option value="formal">Muito Formal</option>
+                    <option value="semi-formal" selected>Semi-Formal (Equilibrado)</option>
+                    <option value="informal">Informal, Direto e Amigável</option>
+                </select>
+            </div>
+            <div class="control-group">
+                <label>Modelo IA:</label>
+                <select id="model-select">
+                    <option value="gemini-3-flash-preview">gemini-3-flash-preview</option>
+                </select>
+            </div>
+        </div>
+        
+        <div class="form-group">
+            <label>Pergunta do Formulário / Empregador:</label>
+            <textarea id="question" placeholder="Ex: Qual sua pretensão salarial? ou Why do you want to work here?"></textarea>
+        </div>
+
+        <div class="form-group">
+            <label>Sua Orientação / Resposta curta (Opcional):</label>
+            <textarea id="orientation" placeholder="Ex: Diga que é negociável, em torno de 5k. Mantenha profissional." style="height: 60px;"></textarea>
+        </div>
+
+        <button id="submitBtn" onclick="generateAnswer()">Gerar Resposta</button>
+        <div id="loading" class="loading">⏳ Gerando resposta...</div>
+
+        <div id="answerBox" class="answer-box">
+            <label style="color:var(--accent)">Resposta:</label>
+            <div id="answerText"></div>
+            <button onclick="copyAnswer()" style="margin-top: 10px; padding: 6px 12px; font-size: 12px; background: rgba(255,255,255,0.1);">Copiar</button>
+        </div>
+    </div>
+
+    <script>
+        async function generateAnswer() {
+            const question = document.getElementById('question').value.trim();
+            const orientation = document.getElementById('orientation').value.trim();
+            const tone = document.getElementById('tone').value;
+            const modelName = document.getElementById('model-select').value;
+            
+            if (!question) { alert('Digite a pergunta.'); return; }
+
+            const btn = document.getElementById('submitBtn');
+            const loading = document.getElementById('loading');
+            const answerBox = document.getElementById('answerBox');
+            
+            btn.disabled = true;
+            loading.style.display = 'block';
+            answerBox.style.display = 'none';
+
+            try {
+                const res = await fetch('/api/chat/{{ job_id }}', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ question, orientation, tone, model_name: modelName })
+                });
+                const data = await res.json();
+                
+                if (data.ok) {
+                    document.getElementById('answerText').textContent = data.answer;
+                    answerBox.style.display = 'block';
+                } else {
+                    alert('Erro: ' + data.error);
+                }
+            } catch (e) {
+                alert('Erro de conexão.');
+            } finally {
+                btn.disabled = false;
+                loading.style.display = 'none';
+            }
+        }
+
+        function copyAnswer() {
+            const text = document.getElementById('answerText').textContent;
+            navigator.clipboard.writeText(text).then(() => {
+                alert('Copiado!');
+            });
+        }
+
+        async function refreshModels() {
+            try {
+                const res = await fetch('/api/models');
+                const data = await res.json();
+                const selectElement = document.getElementById('model-select');
+                if (data.models && data.models.length > 0) {
+                    selectElement.innerHTML = data.models.map(m => `
+                        <option value="${m}" ${m === 'gemini-3-flash-preview' ? 'selected' : ''}>${m}</option>
+                    `).join('');
+                }
+            } catch (e) {
+                console.error("Failed to load models list");
+            }
+        }
+        
+        refreshModels();
+    </script>
+</body>
+</html>

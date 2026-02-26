@@ -23,8 +23,21 @@ CREATE TABLE IF NOT EXISTS public.job_listings (
     updated_at      TIMESTAMPTZ DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS public.applications (
+    id SERIAL PRIMARY KEY,
+    job_id INTEGER REFERENCES public.job_listings(id) ON DELETE SET NULL,
+    company_name TEXT NOT NULL,
+    job_title TEXT NOT NULL,
+    apply_method VARCHAR(50), 
+    status VARCHAR(50) DEFAULT 'Applied', 
+    notes TEXT,
+    applied_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- Status flow: new → scraped → generating → done → error
 -- 'removed' status for jobs unsaved from LinkedIn
 
 CREATE INDEX IF NOT EXISTS idx_job_listings_status ON public.job_listings(status);
 CREATE INDEX IF NOT EXISTS idx_job_listings_linkedin_job_id ON public.job_listings(linkedin_job_id);
+CREATE INDEX IF NOT EXISTS idx_applications_job_id ON public.applications(job_id);
