@@ -189,3 +189,107 @@ def generate_resumes(job_ids: list[int] = None, model_name: str = "gemini-3-flas
             db.update_job_status(job["id"], "error")
 
     print("\n✅ Resume generation complete.")
+
+def generate_cover_letters(job_ids: list[int] = None, model_name: str = "gemini-3-flash-preview"):
+    """
+    Generate customized cover letters for jobs and save to DB.
+    """
+    if job_ids:
+        jobs = db.get_jobs_by_ids(job_ids)
+    else:
+        jobs = db.get_jobs_by_status("scraped")
+        
+    if not jobs:
+        print("\n✅ No jobs to generate cover letters for.")
+        return
+
+    print(f"\n📝 Generating cover letters for {len(jobs)} jobs...")
+    
+    genai.configure(api_key=GEMINI_API_KEY)
+    model = genai.GenerativeModel(model_name)
+    resume_base = _load_file(RESUME_BASE_FILE)
+    
+    for i, job in enumerate(jobs, 1):
+        title = job.get("job_title", "Unknown")
+        company = job.get("company", "Unknown")
+        print(f"\n   [{i}/{len(jobs)}] {title} @ {company}")
+
+        try:
+            print(f"   🤖 Calling Gemini AI ({model_name}) for Cover Letter...")
+            
+            prompt = f"""
+Baseado no currículo fornecido abaixo, escreva uma carta de apresentação (Cover Letter) profissional em {job.get('language', 'en')} para a vaga intitulada '{title}' na empresa '{company}'.
+A carta deve ser persuasiva, destacar as qualificações mais relevantes do currículo para a vaga baseando-se na descrição da vaga abaixo, e ser formatada de maneira limpa.
+NÃO use formatação markdown como asteriscos ou blocos de código. Apenas texto limpo, pronto para copiar.
+
+DESCRIÇÃO DA VAGA:
+{job.get('description', '')[:5000]}
+
+MEU CURRÍCULO BASE:
+{resume_base}
+"""
+            response = model.generate_content(prompt, generation_config=genai.types.GenerationConfig(temperature=0.7))
+            
+            cover_letter_text = response.text.strip()
+            
+            if not cover_letter_text:
+                print(f"   ⚠️  Gemini response empty")
+                continue
+
+            db.update_job_status(
+                job["id"], job["status"],  # Keep current status
+                cover_letter=cover_letter_text
+            )
+
+            print(f"   ✅ Cover Letter saved to DB.")
+
+        except Exception as e:
+            print(f"   ❌ Error generating cover letter: {e}")
+
+    print("\n✅ Cover Letter generation complete.")
+
+def chat_with_job(job: dict, question: str, orientation: str, tone: str = "semi-formal", model_name: str = "gemini-3-flash-preview") -> str:
+    """
+    Generate an answer to an employer's question using the job context and candidate's resume/cover letter.
+    """
+    genai.configure(api_key=GEMINI_API_KEY)
+    model = genai.GenerativeModel(model_name)
+    resume_base = _load_file(RESUME_BASE_FILE)
+    
+    if tone == "informal":
+        tone_instruction = "Tom: Informal, leve, direto, amigável (um pouco menos formal)."
+    elif tone == "formal":
+        tone_instruction = "Tom: Muito formal, estritamente profissional e polido."
+    else:
+        tone_instruction = "Tom: Semi-formal, equilibrado, profissional mas acessível."
+        
+    prompt = f"""Você é um assistente especialista em ajudar o candidato a responder perguntas de formulários de emprego.
+Por favor, responda a pergunta do empregador abaixo com base no currículo, na carta de apresentação e nas orientações do candidato.
+Siga rigidamente as instruções de Tom abaixo ao construir sua resposta.
+{tone_instruction}
+Idioma obrigatório: {job.get('language', 'en')}.
+Apenas forneça a resposta final, sem introduções adicionais.
+
+VAGA: {job.get('job_title')} na empresa {job.get('company')}
+
+DESCRIÇÃO DA VAGA:
+{job.get('description', '')[:3000]}
+
+CURRÍCULO BASE DO CANDIDATO:
+{resume_base[:3000]}
+
+CARTA DE APRESENTAÇÃO DO CANDIDATO:
+{job.get('cover_letter', 'Nenhuma carta de apresentação fornecida.')}
+
+ORIENTAÇÃO DO CANDIDATO:
+{orientation}
+
+PERGUNTA DO EMPREGADOR:
+{question}
+"""
+    try:
+        response = model.generate_content(prompt, generation_config=genai.types.GenerationConfig(temperature=0.7))
+        return response.text.strip()
+    except Exception as e:
+        return f"Error connecting to Gemini: {str(e)}"
+

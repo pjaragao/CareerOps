@@ -63,6 +63,38 @@ def upsert_job(url: str, linkedin_job_id: str, job_title: str = "",
         conn.close()
 
 
+def insert_manual_job(job_title: str, company: str, location: str, url: str, description: str) -> bool:
+    """
+    Insert a manually added job directly in 'scraped' status so it's ready for AI generation.
+    Returns True if successful.
+    """
+    conn = get_connection()
+    # Generate a unique synthetic linkedin_job_id for manual jobs
+    import uuid
+    synthetic_id = f"manual_{uuid.uuid4().hex[:8]}"
+    
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO public.job_listings
+                    (url, linkedin_job_id, job_title, company, location, description, status)
+                VALUES (%s, %s, %s, %s, %s, %s, 'scraped')
+                ON CONFLICT (url) DO UPDATE SET
+                    description = EXCLUDED.description,
+                    job_title = EXCLUDED.job_title,
+                    company = EXCLUDED.company,
+                    location = EXCLUDED.location,
+                    status = 'scraped'
+            """, (url, synthetic_id, job_title, company, location, description))
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"Error inserting manual job: {e}")
+        return False
+    finally:
+        conn.close()
+
+
 def get_jobs_by_status(status: str) -> list[dict]:
     """Fetch all jobs with the given status."""
     conn = get_connection()

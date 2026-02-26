@@ -82,6 +82,153 @@ def _run_task(task_name: str, func, *args):
 # ---------------------------------------------------------------------------
 # HTML Template
 # ---------------------------------------------------------------------------
+
+CHAT_TEMPLATE = """
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat with Job</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #0f0f1a;
+            --bg-card: #16213e;
+            --accent: #6c63ff;
+            --text-primary: #e8e8f0;
+            --text-secondary: #8888a8;
+            --border: rgba(108, 99, 255, 0.15);
+            --radius: 12px;
+        }
+        body { font-family: 'Inter', sans-serif; background: var(--bg-primary); color: var(--text-primary); margin: 0; padding: 20px; }
+        .container { max-width: 800px; margin: 0 auto; background: var(--bg-card); padding: 20px; border-radius: var(--radius); border: 1px solid var(--border); }
+        h2 { margin-top: 0; font-size: 18px; color: var(--accent); }
+        .form-group { margin-bottom: 20px; }
+        label { display: block; font-size: 13px; color: var(--text-secondary); margin-bottom: 8px; }
+        textarea { width: 100%; height: 100px; padding: 12px; border-radius: 8px; border: 1px solid var(--border); background: rgba(0,0,0,0.2); color: var(--text-primary); font-family: inherit; font-size: 14px; box-sizing: border-box; }
+        textarea:focus { outline: none; border-color: var(--accent); }
+        button { background: var(--accent); color: white; border: none; padding: 12px 20px; border-radius: 8px; font-weight: 600; cursor: pointer; transition: 0.2s; }
+        button:hover { background: #7c74ff; }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+        .answer-box { margin-top: 20px; padding: 15px; background: rgba(0,0,0,0.3); border-left: 4px solid var(--accent); border-radius: 4px; white-space: pre-wrap; display: none; }
+        .loading { display: none; color: var(--accent); font-size: 14px; margin-top: 10px; }
+        .controls { display: flex; gap: 15px; margin-bottom: 20px; }
+        .control-group { flex: 1; }
+        select { width: 100%; padding: 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-primary); color: var(--text-primary); }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>💬 Assistente de Entrevista</h2>
+        <div style="font-size: 13px; color: var(--text-secondary); margin-bottom: 20px;">
+            Vaga: {{ job_title }} @ {{ company }}
+        </div>
+        
+        <div class="controls">
+            <div class="control-group">
+                <label>Tom da Resposta:</label>
+                <select id="tone">
+                    <option value="formal">Muito Formal</option>
+                    <option value="semi-formal" selected>Semi-Formal (Equilibrado)</option>
+                    <option value="informal">Informal, Direto e Amigável</option>
+                </select>
+            </div>
+            <div class="control-group">
+                <label>Modelo IA:</label>
+                <select id="model-select">
+                    <option value="gemini-3-flash-preview">gemini-3-flash-preview</option>
+                </select>
+            </div>
+        </div>
+        
+        <div class="form-group">
+            <label>Pergunta do Formulário / Empregador:</label>
+            <textarea id="question" placeholder="Ex: Qual sua pretensão salarial? ou Why do you want to work here?"></textarea>
+        </div>
+
+        <div class="form-group">
+            <label>Sua Orientação / Resposta curta (Opcional):</label>
+            <textarea id="orientation" placeholder="Ex: Diga que é negociável, em torno de 5k. Mantenha profissional." style="height: 60px;"></textarea>
+        </div>
+
+        <button id="submitBtn" onclick="generateAnswer()">Gerar Resposta</button>
+        <div id="loading" class="loading">⏳ Gerando resposta...</div>
+
+        <div id="answerBox" class="answer-box">
+            <label style="color:var(--accent)">Resposta:</label>
+            <div id="answerText"></div>
+            <button onclick="copyAnswer()" style="margin-top: 10px; padding: 6px 12px; font-size: 12px; background: rgba(255,255,255,0.1);">Copiar</button>
+        </div>
+    </div>
+
+    <script>
+        async function generateAnswer() {
+            const question = document.getElementById('question').value.trim();
+            const orientation = document.getElementById('orientation').value.trim();
+            const tone = document.getElementById('tone').value;
+            const modelName = document.getElementById('model-select').value;
+            
+            if (!question) { alert('Digite a pergunta.'); return; }
+
+            const btn = document.getElementById('submitBtn');
+            const loading = document.getElementById('loading');
+            const answerBox = document.getElementById('answerBox');
+            
+            btn.disabled = true;
+            loading.style.display = 'block';
+            answerBox.style.display = 'none';
+
+            try {
+                const res = await fetch('/api/chat/{{ job_id }}', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ question, orientation, tone, model_name: modelName })
+                });
+                const data = await res.json();
+                
+                if (data.ok) {
+                    document.getElementById('answerText').textContent = data.answer;
+                    answerBox.style.display = 'block';
+                } else {
+                    alert('Erro: ' + data.error);
+                }
+            } catch (e) {
+                alert('Erro de conexão.');
+            } finally {
+                btn.disabled = false;
+                loading.style.display = 'none';
+            }
+        }
+
+        function copyAnswer() {
+            const text = document.getElementById('answerText').textContent;
+            navigator.clipboard.writeText(text).then(() => {
+                alert('Copiado!');
+            });
+        }
+
+        async function refreshModels() {
+            try {
+                const res = await fetch('/api/models');
+                const data = await res.json();
+                const selectElement = document.getElementById('model-select');
+                if (data.models && data.models.length > 0) {
+                    selectElement.innerHTML = data.models.map(m => `
+                        <option value="${m}" ${m === 'gemini-3-flash-preview' ? 'selected' : ''}>${m}</option>
+                    `).join('');
+                }
+            } catch (e) {
+                console.error("Failed to load models list");
+            }
+        }
+        
+        refreshModels();
+    </script>
+</body>
+</html>
+"""
+
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="pt-BR">
@@ -686,6 +833,28 @@ HTML_TEMPLATE = """
         }
         .job-checkbox:checked::before { transform: scale(1); }
         .job-checkbox:checked { border-color: var(--accent); background-color: rgba(108,99,255,0.1); }
+        
+        /* --- Modal --- */
+        .modal {
+            display: none; position: fixed; z-index: 2000; left: 0; top: 0;
+            width: 100%; height: 100%; overflow: auto; background-color: rgba(0,0,0,0.6);
+        }
+        .modal-content {
+            background-color: var(--bg-card); margin: 5% auto; padding: 20px;
+            border: 1px solid var(--border); width: 80%; max-width: 600px; border-radius: 12px;
+        }
+        .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        .modal-header h2 { margin: 0; font-size: 18px; color: var(--text-primary); }
+        .close { color: var(--text-secondary); font-size: 24px; font-weight: bold; cursor: pointer; }
+        .close:hover { color: var(--text-primary); }
+        .form-group { margin-bottom: 15px; }
+        .form-group label { display: block; margin-bottom: 5px; font-size: 12px; color: var(--text-secondary); }
+        .form-group input, .form-group textarea {
+            width: 100%; padding: 8px; border-radius: 6px; border: 1px solid var(--border);
+            background: rgba(0,0,0,0.2); color: var(--text-primary); font-family: inherit; font-size: 13px;
+            box-sizing: border-box;
+        }
+        .form-group textarea { height: 120px; resize: vertical; }
     </style>
 </head>
 <body>
@@ -696,7 +865,10 @@ HTML_TEMPLATE = """
             
             <div class="actions-col">
                 <div class="action-group">
-                    <button class="btn primary" onclick="runTask('pipeline')" id="btn-pipeline" title="Run full automated pipeline">
+                    <button class="btn primary" onclick="openAddJobModal()" title="Add a job manually">
+                        <span class="icon">➕</span> Add Job
+                    </button>
+                    <button class="btn secondary" onclick="runTask('pipeline')" id="btn-pipeline" title="Run full automated pipeline">
                         <span class="icon">🚀</span> Pipeline
                     </button>
                     <button class="btn" onclick="runTask('scrape')" id="btn-scrape" title="Scrape jobs">
@@ -718,8 +890,10 @@ HTML_TEMPLATE = """
                             <span class="icon">📝</span> Generate <span style="font-size:8px; margin-left:2px; opacity:0.6">▼</span>
                         </button>
                         <div class="dropdown-content">
-                            <button onclick="runGenerateTask(false)">All (Scraped)</button>
-                            <button onclick="runGenerateTask(true)">Selected Only</button>
+                            <button onclick="runGenerateTask('generate', false)">Resume (Scraped)</button>
+                            <button onclick="runGenerateTask('generate', true)">Resume (Selected)</button>
+                            <button onclick="runGenerateTask('generate_cover_letter', false)">Cover Letter (Scraped)</button>
+                            <button onclick="runGenerateTask('generate_cover_letter', true)">Cover Letter (Selected)</button>
                         </div>
                     </div>
                     <button class="btn" onclick="runTask('retry')" id="btn-retry" title="Retry generation errors">
@@ -749,6 +923,40 @@ HTML_TEMPLATE = """
             <div style="width:1px; height:20px; background:rgba(255,255,255,0.1); margin:0 12px;"></div>
             <span id="header-status-text" style="font-size:13px;color:var(--text-secondary)">Ready</span>
             <div class="status-dot" id="status-dot"></div>
+        </div>
+    </div>
+
+    <!-- Add Job Modal -->
+    <div id="addJobModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>➕ Add Job Manually</h2>
+                <span class="close" onclick="closeAddJobModal()">&times;</span>
+            </div>
+            <div class="form-group">
+                <label>Job Title *</label>
+                <input type="text" id="manual-job-title" placeholder="Software Engineer">
+            </div>
+            <div class="form-group">
+                <label>Company *</label>
+                <input type="text" id="manual-company" placeholder="Acme Corp">
+            </div>
+            <div class="form-group">
+                <label>Location</label>
+                <input type="text" id="manual-location" placeholder="Remote, Brazil">
+            </div>
+            <div class="form-group">
+                <label>Job Post URL</label>
+                <input type="text" id="manual-url" placeholder="https://...">
+            </div>
+            <div class="form-group">
+                <label>Job Description *</label>
+                <textarea id="manual-description" placeholder="Paste the full job description here..."></textarea>
+            </div>
+            <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:20px;">
+                <button class="btn" onclick="closeAddJobModal()">Cancel</button>
+                <button class="btn success" onclick="submitManualJob()">Save Job</button>
+            </div>
         </div>
     </div>
 
@@ -883,7 +1091,9 @@ HTML_TEMPLATE = """
                             ${isRemote ? '<span class="badge remote">🌐 REMOTE</span>' : ''}
                             <span class="badge ${j.status}">${statusLabel}</span>
                             ${j.easy_apply ? '<span class="badge easy-apply">⚡ EASY APPLY</span>' : ''}
+                            ${j.cover_letter ? `<button class="btn success" style="padding:4px 8px;font-size:10px" onclick="copyCL(${j.id})">CL Copy</button><a href="/download/cl/${j.id}" class="job-download" title="Download CL PDF" style="font-size: 16px; text-decoration: none;">⬇</a>` : ''}
                             ${j.file_name ? '<a href="/download/' + encodeURIComponent(j.file_name) + '" class="job-download" title="Download PDF">⬇</a>' : ''}
+                            <a href="/chat/${j.id}" target="_blank" class="btn-icon" title="Chat Assistente" style="color:var(--accent)">💬</a>
                             <a href="${esc(j.url)}" target="_blank" class="btn-icon" title="Open on LinkedIn">🔗</a>
                             <button class="btn-icon danger" onclick="removeJob(${j.id})" title="Remove Job">🗑️</button>
                         </div>
@@ -899,6 +1109,7 @@ HTML_TEMPLATE = """
                                 <button class="detail-tab active" onclick="switchTab(${j.id}, 'desc', this)">📄 Descrição</button>
                                 ${hasCompany ? `<button class="detail-tab" onclick="switchTab(${j.id}, 'company', this)">🏢 Empresa</button>` : ''}
                                 ${hasTeam ? `<button class="detail-tab" onclick="switchTab(${j.id}, 'team', this)">👥 Equipe <span class="tab-count">${team.length}</span></button>` : ''}
+                                ${j.cover_letter ? `<button class="detail-tab" onclick="switchTab(${j.id}, 'cl', this)">📄 Cover Letter</button>` : ''}
                             </div>
                             <div class="tab-panel active" id="tab-desc-${j.id}">
                                 <div class="details-content">${esc(j.description)}</div>
@@ -925,6 +1136,11 @@ HTML_TEMPLATE = """
                                         </div>
                                     `).join('')}
                                 </div>
+                            </div>
+                            ` : ''}
+                            ${j.cover_letter ? `
+                            <div class="tab-panel" id="tab-cl-${j.id}">
+                                <div class="details-content" id="cl-content-${j.id}">${esc(j.cover_letter)}</div>
                             </div>
                             ` : ''}
                             `;
@@ -1044,6 +1260,16 @@ HTML_TEMPLATE = """
             btn.classList.add('active');
         }
 
+        function copyCL(jobId) {
+            const clElem = document.getElementById('cl-content-' + jobId);
+            if (!clElem) return;
+            navigator.clipboard.writeText(clElem.textContent).then(() => {
+                alert("Cover Letter copiada para a área de transferência!");
+            }).catch(err => {
+                console.error("Erro ao copiar cover letter: ", err);
+            });
+        }
+
         async function removeJob(id) {
             if (!confirm('Remove this job?')) return;
             const res = await fetchJSON('/api/jobs/delete/' + id, { method: 'POST' });
@@ -1096,7 +1322,7 @@ HTML_TEMPLATE = """
             }
         }
 
-        async function runGenerateTask(onlySelected) {
+        async function runGenerateTask(taskType, onlySelected) {
             let jobIds = null;
             if (onlySelected) {
                 const checkboxes = document.querySelectorAll('.job-checkbox:checked');
@@ -1112,7 +1338,7 @@ HTML_TEMPLATE = """
             const res = await fetchJSON('/api/run', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({task: 'generate', job_ids: jobIds, model_name: modelName})
+                body: JSON.stringify({task: taskType, job_ids: jobIds, model_name: modelName})
             });
 
             if (res.ok) {
@@ -1140,6 +1366,54 @@ HTML_TEMPLATE = """
             } catch (e) {
                 console.error("Failed to load models list");
             }
+        }
+
+        async function submitManualJob() {
+            const btn = document.querySelector('#addJobModal .btn.success');
+            const data = {
+                title: document.getElementById('manual-job-title').value.trim(),
+                company: document.getElementById('manual-company').value.trim(),
+                location: document.getElementById('manual-location').value.trim(),
+                url: document.getElementById('manual-url').value.trim(),
+                description: document.getElementById('manual-description').value.trim(),
+            };
+            if (!data.title || !data.company || !data.description) {
+                alert("Please fill in Title, Company, and Description.");
+                return;
+            }
+            btn.disabled = true;
+            btn.textContent = "Saving...";
+            try {
+                const res = await fetchJSON('/api/jobs/manual', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(data)
+                });
+                if (res.ok) {
+                    closeAddJobModal();
+                    // Clear fields
+                    document.getElementById('manual-job-title').value = '';
+                    document.getElementById('manual-company').value = '';
+                    document.getElementById('manual-location').value = '';
+                    document.getElementById('manual-url').value = '';
+                    document.getElementById('manual-description').value = '';
+                    refreshJobs();
+                } else {
+                    alert('Error adding job: ' + res.error);
+                }
+            } catch (e) {
+                alert('Connection error');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = "Save Job";
+            }
+        }
+        
+        function openAddJobModal() {
+            document.getElementById('addJobModal').style.display = 'block';
+        }
+        function closeAddJobModal() {
+            document.getElementById('addJobModal').style.display = 'none';
         }
 
         // --- Init ---
@@ -1201,7 +1475,7 @@ def api_jobs():
                     SELECT id, linkedin_job_id, url, status, job_title, company,
                            location, language, file_name, easy_apply, created_at, updated_at,
                            (description IS NOT NULL AND length(description) > 50) as has_details,
-                           description, company_description, company_profile_url, hiring_team_json
+                           description, cover_letter, company_description, company_profile_url, hiring_team_json
                     FROM public.job_listings
                     ORDER BY created_at DESC
                     LIMIT 200
@@ -1211,7 +1485,7 @@ def api_jobs():
                     SELECT id, linkedin_job_id, url, status, job_title, company,
                            location, language, file_name, easy_apply, created_at, updated_at,
                            (description IS NOT NULL AND length(description) > 50) as has_details,
-                           description, company_description, company_profile_url, hiring_team_json
+                           description, cover_letter, company_description, company_profile_url, hiring_team_json
                     FROM public.job_listings
                     WHERE status = %s
                     ORDER BY created_at DESC
@@ -1309,6 +1583,11 @@ def api_run():
         job_ids = data.get("job_ids")
         m_name = data.get("model_name", "gemini-3-flash-preview")
         started = _run_task("Generate Resumes", generate_resumes, job_ids, m_name)
+    elif task == "generate_cover_letter":
+        from resume_generator import generate_cover_letters
+        job_ids = data.get("job_ids")
+        m_name = data.get("model_name", "gemini-3-flash-preview")
+        started = _run_task("Generate Cover Letters", generate_cover_letters, job_ids, m_name)
     elif task == "retry":
         m_name = data.get("model_name", "gemini-3-flash-preview")
         def retry_errors(m_name=m_name):
@@ -1377,6 +1656,100 @@ def api_clear_jobs():
 def download_file(filename):
     return send_from_directory(str(OUTPUT_DIR), filename, as_attachment=True)
 
+
+@app.route("/download/cl/<int:job_id>")
+def download_cl(job_id):
+    import io
+    from flask import send_file
+    from resume_generator import _convert_to_pdf, _safe_filename
+    
+    jobs = db.get_jobs_by_ids([job_id])
+    if not jobs or not jobs[0].get("cover_letter"):
+        return "Cover letter not found", 404
+        
+    job = jobs[0]
+    title = job.get("job_title", "Unknown")
+    company = job.get("company", "Unknown")
+    
+    html = f"""
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <style>
+            body {{ font-family: Arial, sans-serif; line-height: 1.6; margin: 40px; white-space: pre-wrap; }}
+        </style>
+    </head>
+    <body>{job.get("cover_letter")}</body>
+    </html>
+    """
+    
+    try:
+        pdf_bytes = _convert_to_pdf(html)
+        date_str = datetime.now().strftime("%Y%m%d")
+        file_name = f"CL_{_safe_filename(company)}_{_safe_filename(title)}_{date_str}.pdf"
+        
+        return send_file(
+            io.BytesIO(pdf_bytes),
+            as_attachment=True,
+            download_name=file_name,
+            mimetype='application/pdf'
+        )
+    except Exception as e:
+        return f"Error generating PDF: {str(e)}", 500
+
+
+@app.route("/chat/<int:job_id>")
+def chat_page(job_id):
+    jobs = db.get_jobs_by_ids([job_id])
+    if not jobs:
+        return "Job not found", 404
+    job = jobs[0]
+    
+    html = CHAT_TEMPLATE.replace("{{ job_id }}", str(job["id"]))
+    html = html.replace("{{ job_title }}", job.get("job_title", "Unknown"))
+    html = html.replace("{{ company }}", job.get("company", "Unknown"))
+    return render_template_string(html)
+
+@app.route("/api/chat/<int:job_id>", methods=["POST"])
+def api_chat(job_id):
+    data = request.get_json()
+    if not data or not data.get("question"):
+        return jsonify({"ok": False, "error": "Question is required."})
+        
+    jobs = db.get_jobs_by_ids([job_id])
+    if not jobs:
+        return jsonify({"ok": False, "error": "Job not found."})
+        
+    job = jobs[0]
+    question = data["question"]
+    orientation = data.get("orientation", "")
+    tone = data.get("tone", "semi-formal")
+    model_name = data.get("model_name", "gemini-3-flash-preview")
+    
+    from resume_generator import chat_with_job
+    answer = chat_with_job(job, question, orientation, tone=tone, model_name=model_name)
+    
+    return jsonify({"ok": True, "answer": answer})
+
+@app.route("/api/jobs/manual", methods=["POST"])
+def api_add_manual_job():
+    data = request.get_json()
+    title = data.get("title", "").strip()
+    company = data.get("company", "").strip()
+    location = data.get("location", "").strip()
+    url = data.get("url", "").strip()
+    description = data.get("description", "").strip()
+    
+    if not title or not company or not description:
+        return jsonify({"ok": False, "error": "Title, Company, and Description are required."})
+        
+    success = db.insert_manual_job(title, company, location, url, description)
+    if success:
+        _log(f"➕ Manual job added: {title} @ {company}")
+        return jsonify({"ok": True})
+    else:
+        return jsonify({"ok": False, "error": "Database error while adding job."})
 
 # ---------------------------------------------------------------------------
 # Main

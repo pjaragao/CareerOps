@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS public.job_listings (
     company         TEXT,
     location        TEXT,
     description     TEXT,
+    cover_letter    TEXT,
     language        VARCHAR(5),
     file_name       TEXT,
     easy_apply      BOOLEAN DEFAULT FALSE,
