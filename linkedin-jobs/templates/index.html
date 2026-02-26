@@ -65,17 +65,6 @@
                         <span class="icon">🔄</span> Retry
                     </button>
                 </div>
-
-                <div class="action-divider"></div>
-
-                <div class="action-group">
-                    <button class="btn" onclick="runTask('login')" id="btn-login" style="color:#0077b5;">
-                        <span class="icon">🔐</span> Login
-                    </button>
-                    <button class="btn danger" onclick="clearAllJobs()" id="btn-clear" title="Clear all scraped jobs">
-                        <span class="icon">🧹</span> Clear
-                    </button>
-                </div>
             </div>
         </div>
 
@@ -87,9 +76,6 @@
                 <div class="h-stat"><span class="h-label">Err</span><span class="h-val error" id="stat-error">-</span>
                 </div>
             </div>
-            <div style="width:1px; height:20px; background:rgba(255,255,255,0.1); margin:0 12px;"></div>
-            <span id="header-status-text" style="font-size:13px;color:var(--text-secondary)">Ready</span>
-            <div class="status-dot" id="status-dot"></div>
         </div>
     </div>
 
@@ -236,8 +222,23 @@
 
                 <!-- Config Panel -->
                 <div class="panel">
-                    <div class="panel-header">
+                    <div class="panel-header" style="justify-content: space-between;">
                         <div class="panel-title"><span>⚙️</span> Configuration</div>
+                        <div style="display:flex; align-items:center; gap:10px;">
+                            <span id="header-status-text"
+                                style="font-size:12px;color:var(--text-secondary)">Ready</span>
+                            <div class="status-dot" id="status-dot"></div>
+                        </div>
+                    </div>
+                    <div class="panel-body"
+                        style="padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.05); display: flex; gap: 8px; justify-content: space-between;">
+                        <button class="btn" onclick="runTask('login')" id="btn-login" style="color:#0077b5; flex: 1;">
+                            <span class="icon">🔐</span> Login
+                        </button>
+                        <button class="btn danger" onclick="clearAllJobs()" id="btn-clear"
+                            title="Clear all scraped jobs" style="flex: 1;">
+                            <span class="icon">🧹</span> Clear
+                        </button>
                     </div>
                     <div class="config-grid" id="config-grid"></div>
                 </div>

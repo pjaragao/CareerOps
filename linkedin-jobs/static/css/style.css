@@ -212,6 +212,23 @@ body {
     pointer-events: none;
 }
 
+select.btn {
+    appearance: none;
+    background-color: var(--bg-card);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+}
+
+select.btn:hover {
+    background-color: var(--bg-card-hover);
+}
+
+select.btn option {
+    background-color: var(--bg-card);
+    color: var(--text-primary);
+    padding: 8px;
+}
+
 .btn.primary {
     background: var(--accent);
     color: white;
