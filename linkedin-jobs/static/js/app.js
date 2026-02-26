@@ -70,7 +70,10 @@ async function refreshJobs() {
                             
                             <a href="/chat/${j.id}" target="_blank" class="btn-icon" title="Chat Assistente" style="color:var(--accent)">💬</a>
                             <a href="${esc(j.url)}" target="_blank" class="btn-icon" title="Abrir no LinkedIn">🔗</a>
-                            <button class="btn-icon" onclick="openAppModalForJob(${j.id}, '${esc(j.company).replace(/'/g, "\\'")}', '${esc(j.job_title).replace(/'/g, "\\'")}')" title="Track Application" style="color:#4caf50;">📥</button>
+                            ${j.has_application
+                ? `<button class="btn-icon" onclick="openAppModalForJob(${j.id}, '${esc(j.company).replace(/'/g, "\\'")}', '${esc(j.job_title).replace(/'/g, "\\'")}')" title="Application Tracked" style="color:var(--text-muted); background:rgba(255,255,255,0.05);">📨</button>`
+                : `<button class="btn-icon" onclick="openAppModalForJob(${j.id}, '${esc(j.company).replace(/'/g, "\\'")}', '${esc(j.job_title).replace(/'/g, "\\'")}')" title="Track Application" style="color:#4caf50;">📥</button>`
+            }
                             <button class="btn-icon danger" onclick="removeJob(${j.id})" title="Remover Vaga">🗑️</button>
                         </div>
                     </div>
@@ -559,7 +562,6 @@ async function refreshAppsBoard() {
     window.appsData = {};
     const columns = {
         'Applied': [],
-        'Assessment': [],
         'Screening': [],
         'Interview': [],
         'Offer': [],

@@ -148,7 +148,6 @@
                 <select id="app-status"
                     style="width:100%; padding:8px; border-radius:6px; border:1px solid var(--border); background:rgba(0,0,0,0.2); color:white; font-family:inherit;">
                     <option value="Applied">Applied</option>
-                    <option value="Assessment">Technical Assessment</option>
                     <option value="Screening">HR Screening</option>
                     <option value="Interview">Interview</option>
                 </select>
@@ -195,6 +194,11 @@
                             onclick="setFilter('scraped', this)">Scraped</button>
                         <button class="filter-tab" data-filter="done" onclick="setFilter('done', this)">Done</button>
                         <button class="filter-tab" data-filter="error" onclick="setFilter('error', this)">Error</button>
+                        <div style="width:1px; height:20px; background:var(--border); margin:0 8px;"></div>
+                        <button class="filter-tab" data-filter="easy_apply" onclick="setFilter('easy_apply', this)">Easy
+                            Apply</button>
+                        <button class="filter-tab" data-filter="not_applied"
+                            onclick="setFilter('not_applied', this)">Not Applied</button>
                     </div>
                 </div>
                 <div class="panel-body" id="jobs-list">

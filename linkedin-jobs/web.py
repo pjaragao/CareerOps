@@ -129,26 +129,41 @@ def api_jobs():
     conn = db.get_connection()
     try:
         with conn.cursor() as cur:
+            base_query = """
+                SELECT j.id, j.linkedin_job_id, j.url, j.status, j.job_title, j.company,
+                       j.location, j.language, j.file_name, j.easy_apply, j.created_at, j.updated_at,
+                       (j.description IS NOT NULL AND length(j.description) > 50) as has_details,
+                       j.description, j.cover_letter, j.company_description, j.company_profile_url, j.hiring_team_json,
+                       (EXISTS (SELECT 1 FROM public.applications a WHERE a.job_id = j.id)) as has_application
+                FROM public.job_listings j
+            """
+
             if status_filter == "all":
-                cur.execute("""
-                    SELECT id, linkedin_job_id, url, status, job_title, company,
-                           location, language, file_name, easy_apply, created_at, updated_at,
-                           (description IS NOT NULL AND length(description) > 50) as has_details,
-                           description, cover_letter, company_description, company_profile_url, hiring_team_json
-                    FROM public.job_listings
-                    WHERE status != 'removed'
-                    ORDER BY created_at DESC
+                cur.execute(f"""
+                    {base_query}
+                    WHERE j.status != 'removed'
+                    ORDER BY j.created_at DESC
+                    LIMIT 200
+                """)
+            elif status_filter == "easy_apply":
+                cur.execute(f"""
+                    {base_query}
+                    WHERE j.status != 'removed' AND j.easy_apply = true
+                    ORDER BY j.created_at DESC
+                    LIMIT 200
+                """)
+            elif status_filter == "not_applied":
+                cur.execute(f"""
+                    {base_query}
+                    WHERE j.status != 'removed' AND NOT EXISTS (SELECT 1 FROM public.applications a WHERE a.job_id = j.id)
+                    ORDER BY j.created_at DESC
                     LIMIT 200
                 """)
             else:
-                cur.execute("""
-                    SELECT id, linkedin_job_id, url, status, job_title, company,
-                           location, language, file_name, easy_apply, created_at, updated_at,
-                           (description IS NOT NULL AND length(description) > 50) as has_details,
-                           description, cover_letter, company_description, company_profile_url, hiring_team_json
-                    FROM public.job_listings
-                    WHERE status = %s
-                    ORDER BY created_at DESC
+                cur.execute(f"""
+                    {base_query}
+                    WHERE j.status = %s
+                    ORDER BY j.created_at DESC
                     LIMIT 200
                 """, (status_filter,))
 
