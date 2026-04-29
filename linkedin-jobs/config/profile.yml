@@ -1,0 +1,100 @@
+# User Profile Configuration
+# This file stores your personal profile, target roles, and preferences.
+# The AI uses this context for scoring jobs, generating resumes, and interview prep.
+
+# --- Personal Information ---
+personal:
+  full_name: "Paulo Jose Aragao Jr"
+  email: "pjaragaojr@gmail.com"
+  location: "Brazil"
+  timezone: "America/Sao_Paulo"
+  linkedin_url: ""
+  github_url: ""
+  portfolio_url: ""
+
+# --- Target Roles ---
+# What roles are you targeting? (e.g., "Senior Backend Engineer", "AI Product Manager")
+target_roles:
+  - "Senior Backend Engineer"
+  - "Full Stack Developer"
+  - "AI/ML Engineer"
+  - "Solutions Architect"
+
+# --- Salary & Compensation ---
+salary:
+  currency: "USD"
+  min_annual: 80000
+  target_annual: 120000
+  preferred_contract_rate: 50  # USD/hour
+
+# --- Work Preferences ---
+work_preferences:
+  remote_only: true
+  willing_to_relocate: false
+  min_company_size: 20  # Minimum employees
+  max_company_size: null  # null = no limit
+  preferred_contract_type: "full-time"  # full-time, contract, freelance
+  languages:
+    - "en"
+    - "pt"
+
+# --- Deal Breakers ---
+# What would make you reject a job? (e.g., "no on-site", "no Java shops", "no startups under 20")
+deal_breakers:
+  - "On-site only (no remote)"
+  - "Requires relocation"
+  - "Company with less than 20 employees"
+
+# --- Your Superpower ---
+# What makes you unique? What's your differentiator?
+superpower: |
+  Extensive experience in backend systems, automation, and AI integration.
+  Strong ability to build scalable systems and integrate LLMs into production workflows.
+
+# --- Key Skills ---
+# Your top technical skills (used for job matching/scoring)
+skills:
+  technical:
+    - "Python"
+    - "Flask"
+    - "PostgreSQL"
+    - "Docker"
+    - "Playwright"
+    - "REST APIs"
+    - "AI/LLM Integration"
+    - "Automation"
+    - "Git"
+  soft:
+    - "Problem Solving"
+    - "Communication"
+    - "Team Leadership"
+    - "Agile"
+
+# --- Professional Summary ---
+# A brief summary of your career story (used in resume generation)
+professional_summary: |
+  Experienced software engineer with a strong background in backend development,
+  automation, and AI integration. Proven track record of building scalable systems
+  and deploying production-ready applications.
+
+# --- Proof Points ---
+# Key achievements with metrics (used for resume and interview stories)
+proof_points:
+  - title: "Automation Platform"
+    description: "Built an automation platform that reduced manual tasks by 80%"
+    metrics: "80% reduction, 100+ automated workflows"
+  - title: "AI Integration"
+    description: "Integrated LLM APIs into production systems"
+    metrics: "Multiple AI-powered features deployed"
+
+# --- Interview Stories (STAR+R) ---
+# Pre-defined stories for behavioral interviews
+# These can be auto-generated or manually added
+interview_stories: []
+
+# --- Notes ---
+# Any additional context for the AI
+notes: |
+  Prefer roles that involve backend development, automation, and AI/ML.
+  Open to contract and full-time positions.
+  Strong preference for remote work.

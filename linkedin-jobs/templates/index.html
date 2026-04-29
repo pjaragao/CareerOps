@@ -20,7 +20,9 @@
 
             <div class="main-nav">
                 <button class="active" onclick="switchMainView('jobs-view', this)">🔍 Job Feed</button>
-                <button onclick="switchMainView('apps-view', this)">📊 My Applications</button>
+                <button onclick="switchMainView('apps-view', this)">📊 Applications</button>
+                <button onclick="switchMainView('strategies-view', this)">🎯 Strategies</button>
+                <button onclick="window.location.href='/config'">⚙️ Config</button>
             </div>
 
             <div class="actions-col" style="margin-left:auto;">
@@ -63,6 +65,9 @@
                     </div>
                     <button class="btn" onclick="runTask('retry')" id="btn-retry" title="Retry generation errors">
                         <span class="icon">🔄</span> Retry
+                    </button>
+                    <button class="btn" onclick="batchEvaluateJobs()" title="Evaluate selected jobs">
+                        <span class="icon">📊</span> Evaluate
                     </button>
                 </div>
             </div>
@@ -199,6 +204,10 @@
                             Apply</button>
                         <button class="filter-tab" data-filter="not_applied"
                             onclick="setFilter('not_applied', this)">Not Applied</button>
+                        <div style="width:1px; height:20px; background:var(--border); margin:0 8px;"></div>
+                        <button class="filter-tab" data-filter="score_high" onclick="setFilter('score_high', this)">🟢 High Score</button>
+                        <button class="filter-tab" data-filter="score_medium" onclick="setFilter('score_medium', this)">🟡 Medium Score</button>
+                        <button class="filter-tab" data-filter="score_low" onclick="setFilter('score_low', this)">🔴 Low Score</button>
                     </div>
                 </div>
                 <div class="panel-body" id="jobs-list">
@@ -262,6 +271,93 @@
                 <div class="apps-board" id="apps-board">
                     <!-- Kanban will be injected here -->
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Strategies View -->
+    <div id="strategies-view" style="display:none; margin-top: 10px;">
+        <div class="panel">
+            <div class="panel-header" style="justify-content: space-between;">
+                <div class="panel-title">
+                    <span>🎯</span> Search Strategies (Auto-Applier)
+                </div>
+                <div class="action-group">
+                    <button class="btn success" onclick="openAddStrategyModal()">➕ New Strategy</button>
+                    <button class="btn primary" onclick="runTask('search')" id="btn-run-search">🚀 Run Search Now</button>
+                </div>
+            </div>
+            <div class="panel-body" style="padding: 20px;">
+                <div id="strategies-list" class="strategies-grid">
+                    <!-- Strategies will be injected here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Strategy Modal -->
+    <div id="addStrategyModal" class="modal">
+        <div class="modal-content" style="max-width: 500px;">
+            <div class="modal-header">
+                <h2>🎯 New Search Strategy</h2>
+                <span class="close" onclick="closeAddStrategyModal()">&times;</span>
+            </div>
+            <div class="form-group">
+                <label>Strategy Title (e.g. "Senior Python Remote")</label>
+                <input type="text" id="strat-title" placeholder="Ex: AI Engineer Remote US">
+            </div>
+            <div class="form-group">
+                <label>Keywords (comma separated)</label>
+                <input type="text" id="strat-keywords" placeholder="Python, AI, LLM, Remote">
+            </div>
+            <div class="form-group">
+                <label>Locations (comma separated)</label>
+                <input type="text" id="strat-locations" placeholder="United States, Brazil, Europe">
+            </div>
+            <div class="form-group" style="display: flex; align-items: center; gap: 10px;">
+                <input type="checkbox" id="strat-remote" checked style="width: auto;">
+                <label for="strat-remote" style="margin: 0;">Remote Only</label>
+            </div>
+            <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:20px;">
+                <button class="btn" onclick="closeAddStrategyModal()">Cancel</button>
+                <button class="btn success" onclick="submitStrategy()">Save Strategy</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Outreach Modal -->
+    <div id="outreachModal" class="modal">
+        <div class="modal-content" style="max-width: 600px;">
+            <div class="modal-header">
+                <h2>📧 Outreach Prep</h2>
+                <span class="close" onclick="closeOutreachModal()">&times;</span>
+            </div>
+            <div id="outreach-content">
+                <div class="form-group">
+                    <label>E-mail do Recrutador</label>
+                    <input type="text" id="outreach-email" placeholder="exemplo@empresa.com">
+                </div>
+                <div class="form-group">
+                    <label>LinkedIn do Recrutador</label>
+                    <input type="text" id="outreach-linkedin" placeholder="https://linkedin.com/in/...">
+                </div>
+                
+                <div class="detail-tabs">
+                    <button class="detail-tab active" id="tab-btn-email" onclick="switchOutreachTab('email')">Email Draft</button>
+                    <button class="detail-tab" id="tab-btn-dm" onclick="switchOutreachTab('dm')">LinkedIn DM</button>
+                </div>
+                
+                <div id="outreach-email-panel" class="tab-panel active" style="margin-top: 10px;">
+                    <textarea id="outreach-email-draft" style="height: 200px; font-family: monospace; width: 100%; box-sizing: border-box; background: rgba(0,0,0,0.2); color: white; border: 1px solid var(--border); border-radius: 4px; padding: 10px;"></textarea>
+                </div>
+                <div id="outreach-dm-panel" class="tab-panel" style="margin-top: 10px; display: none;">
+                    <textarea id="outreach-dm-draft" style="height: 150px; font-family: monospace; width: 100%; box-sizing: border-box; background: rgba(0,0,0,0.2); color: white; border: 1px solid var(--border); border-radius: 4px; padding: 10px;"></textarea>
+                </div>
+            </div>
+            <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:20px;">
+                <button class="btn" onclick="closeOutreachModal()">Fechar</button>
+                <button class="btn success" onclick="sendOutreachEmail()">🚀 Enviar Email</button>
+                <button class="btn primary" onclick="sendOutreachDM()">🤝 Enviar Conexão</button>
             </div>
         </div>
     </div>

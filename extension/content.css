@@ -1,0 +1,42 @@
+.careerops-btn {
+    background-color: #6c63ff;
+    color: white;
+    border: none;
+    border-radius: 1600px;
+    padding: 10px 24px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    margin-right: 12px;
+    margin-bottom: 12px;
+    transition: all 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    box-shadow: 0 4px 12px rgba(108, 99, 255, 0.3);
+    font-family: -apple-system, system-ui, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', 'Fira Sans', Ubuntu, Oxygen, 'Oxygen Sans', Cantarell, 'Droid Sans', 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Lucida Grande', Helvetica, Arial, sans-serif;
+}
+
+.careerops-btn:hover {
+    background-color: #5a52d5;
+    transform: translateY(-1px);
+    box-shadow: 0 6px 16px rgba(108, 99, 255, 0.4);
+}
+
+.careerops-btn:active {
+    transform: translateY(0);
+}
+
+.careerops-btn:disabled {
+    background-color: #a0a0c0;
+    cursor: not-allowed;
+    box-shadow: none;
+}
+
+.careerops-btn.success {
+    background-color: #057642 !important;
+}
+
+.careerops-btn.error {
+    background-color: #cc1016 !important;
+}

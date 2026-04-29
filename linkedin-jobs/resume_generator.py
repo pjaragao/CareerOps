@@ -1,15 +1,14 @@
 """
-Resume Generator — uses Gemini API to create customized resumes,
-then converts to PDF via Gotenberg.
+Resume Generator — uses AI provider (Gemini, NVIDIA, Alibaba, Ollama) to create
+customized resumes, then converts to PDF via Gotenberg.
 """
 import json
 import re
 import requests
 from datetime import datetime, timezone
 
-import google.generativeai as genai
-
-from config import GEMINI_API_KEY, GOTENBERG_URL, OUTPUT_DIR, RESUME_BASE_FILE, PROMPT_FILE
+from ai_provider import get_provider, get_provider_info, get_available_models
+from config import GOTENBERG_URL, OUTPUT_DIR, RESUME_BASE_FILE, PROMPT_FILE, load_profile
 import db
 from resume_template import markdown_to_html, wrap_in_template
 
@@ -21,13 +20,43 @@ def _load_file(path) -> str:
     return path.read_text(encoding="utf-8").strip()
 
 
-def _build_prompt(job: dict) -> str:
+def _build_prompt(job: dict, profile: dict = None) -> str:
     """
-    Build the Gemini prompt by loading prompt_template.md and resume_base.md
-    and filling in the job details.
+    Build the AI prompt by loading prompt_template.md and resume_base.md
+    and filling in the job details. Includes user profile context.
     """
     prompt_template = _load_file(PROMPT_FILE)
     resume_base = _load_file(RESUME_BASE_FILE)
+
+    profile_context = ""
+    if profile:
+        personal = profile.get("personal", {})
+        target_roles = profile.get("target_roles", [])
+        skills = profile.get("skills", {})
+        superpower = profile.get("superpower", "")
+        proof_points = profile.get("proof_points", [])
+
+        profile_context = f"""
+# USER PROFILE CONTEXT
+
+## Personal
+Name: {personal.get('full_name', '')}
+Location: {personal.get('location', '')}
+
+## Target Roles
+{', '.join(target_roles) if target_roles else 'Not specified'}
+
+## Skills
+Technical: {', '.join(skills.get('technical', []))}
+Soft: {', '.join(skills.get('soft', []))}
+
+## Superpower
+{superpower}
+
+## Proof Points
+"""
+        for pp in proof_points:
+            profile_context += f"- {pp.get('title', '')}: {pp.get('description', '')} ({pp.get('metrics', '')})\n"
 
     return prompt_template.format(
         job_title=job.get("job_title", "Job Opportunity"),
@@ -36,47 +65,24 @@ def _build_prompt(job: dict) -> str:
         company_description=job.get("company_description", "Not available."),
         description=job.get("description", "")[:15000],
         resume_base=resume_base,
-    )
+    ) + profile_context
 
 
-def _call_gemini(prompt: str, model_name: str = "gemini-3-flash-preview") -> str:
+def _call_ai(prompt: str, model_name: str = None) -> str:
     """
-    Call Gemini API and return the resume markdown.
+    Call AI provider and return the resume markdown.
     """
-    genai.configure(api_key=GEMINI_API_KEY)
-    model = genai.GenerativeModel(model_name)
+    provider = get_provider()
+    response = provider.generate_json(prompt, model=model_name, temperature=0.7)
 
-    response = model.generate_content(
-        prompt,
-        generation_config=genai.types.GenerationConfig(
-            response_mime_type="application/json",
-            temperature=0.7,
-        ),
-    )
+    if "resume_markdown" in response:
+        return response["resume_markdown"]
+    if "raw_text" in response:
+        return response["raw_text"]
+    if "error" in response:
+        return f"Error: {response['error']}"
 
-    # Parse the JSON response
-    text = response.text.strip()
-
-    # Try direct JSON parse
-    try:
-        data = json.loads(text)
-        if "resume_markdown" in data:
-            return data["resume_markdown"]
-    except json.JSONDecodeError:
-        pass
-
-    # Try extracting JSON from markdown code block
-    match = re.search(r'```(?:json)?\s*\n?(.*?)\n?```', text, re.DOTALL)
-    if match:
-        try:
-            data = json.loads(match.group(1))
-            if "resume_markdown" in data:
-                return data["resume_markdown"]
-        except json.JSONDecodeError:
-            pass
-
-    # Fallback: return raw text
-    return text
+    return json.dumps(response)
 
 
 def _convert_to_pdf(html: str) -> bytes:
@@ -106,65 +112,57 @@ def _safe_filename(text: str, max_len: int = 30) -> str:
     return clean[:max_len]
 
 
-def get_gemini_models() -> list[str]:
-    """Fetch available models from Gemini API that support text generation."""
-    try:
-        genai.configure(api_key=GEMINI_API_KEY)
-        models = []
-        for m in genai.list_models():
-            if "generateContent" in m.supported_generation_methods:
-                name = m.name.replace("models/", "")
-                models.append(name)
-        return models
-    except Exception as e:
-        print(f"Error fetching models: {e}")
-        return ["gemini-3-flash-preview"]  # fallback
+def get_available_ai_models() -> dict:
+    """Fetch available models from all AI providers."""
+    return get_available_models()
 
 
-def generate_resumes(job_ids: list[int] = None, model_name: str = "gemini-3-flash-preview"):
+def get_ai_provider_info() -> dict:
+    """Get current AI provider configuration."""
+    return get_provider_info()
+
+
+def generate_resumes(job_ids: list[int] = None, model_name: str = None):
     """
     Generate customized resumes for jobs.
-    Pipeline: Gemini AI → HTML → Gotenberg PDF → save file.
+    Pipeline: AI → HTML → Gotenberg PDF → save file.
     """
     if job_ids:
         jobs = db.get_jobs_by_ids(job_ids)
     else:
         jobs = db.get_jobs_by_status("scraped")
-        
+
     if not jobs:
         print("\n✅ No scraped jobs to generate resumes for.")
         return
 
+    profile = load_profile()
+    provider_info = get_provider_info()
     print(f"\n📝 Generating resumes for {len(jobs)} jobs...")
+    print(f"   Provider: {provider_info['provider']} | Model: {provider_info['model']}")
 
     for i, job in enumerate(jobs, 1):
         title = job.get("job_title", "Unknown")
         company = job.get("company", "Unknown")
         print(f"\n   [{i}/{len(jobs)}] {title} @ {company}")
 
-        # Do not mark as generating prematurely. Keep as 'scraped' until 100% finished.
-
         try:
-            # Step 1: Build prompt and call Gemini
-            print(f"   🤖 Calling Gemini AI ({model_name})...")
-            prompt = _build_prompt(job)
-            resume_md = _call_gemini(prompt, model_name)
+            print(f"   🤖 Calling AI ({provider_info['provider']}/{provider_info['model']})...")
+            prompt = _build_prompt(job, profile)
+            resume_md = _call_ai(prompt, model_name)
 
-            if not resume_md or len(resume_md) < 100:
-                print(f"   ⚠️  Gemini response too short ({len(resume_md)} chars)")
+            if not resume_md or len(resume_md) < 100 or resume_md.startswith("Error:"):
+                print(f"   ⚠️  AI response too short or error ({len(resume_md)} chars)")
                 db.update_job_status(job["id"], "error")
                 continue
 
-            # Step 2: Convert Markdown to HTML
             print("   🎨 Converting to HTML...")
             html_content = markdown_to_html(resume_md)
             full_html = wrap_in_template(html_content)
 
-            # Step 3: Convert HTML to PDF via Gotenberg
             print("   📄 Generating PDF via Gotenberg...")
             pdf_bytes = _convert_to_pdf(full_html)
 
-            # Step 4: Save PDF
             date_str = datetime.now().strftime("%Y%m%d")
             file_name = (
                 f"{_safe_filename(company)}_{_safe_filename(title)}_{date_str}.pdf"
@@ -172,7 +170,6 @@ def generate_resumes(job_ids: list[int] = None, model_name: str = "gemini-3-flas
             pdf_path = OUTPUT_DIR / file_name
             pdf_path.write_bytes(pdf_bytes)
 
-            # Step 5: Update DB
             db.update_job_status(
                 job["id"], "done",
                 file_name=file_name,
@@ -189,7 +186,8 @@ def generate_resumes(job_ids: list[int] = None, model_name: str = "gemini-3-flas
 
     print("\n✅ Resume generation complete.")
 
-def generate_cover_letters(job_ids: list[int] = None, model_name: str = "gemini-3-flash-preview"):
+
+def generate_cover_letters(job_ids: list[int] = None, model_name: str = None):
     """
     Generate customized cover letters for jobs and save to DB.
     """
@@ -197,29 +195,35 @@ def generate_cover_letters(job_ids: list[int] = None, model_name: str = "gemini-
         jobs = db.get_jobs_by_ids(job_ids)
     else:
         jobs = db.get_jobs_by_status("scraped")
-        
+
     if not jobs:
         print("\n✅ No jobs to generate cover letters for.")
         return
 
-    print(f"\n📝 Generating cover letters for {len(jobs)} jobs...")
-    
-    genai.configure(api_key=GEMINI_API_KEY)
-    model = genai.GenerativeModel(model_name)
+    profile = load_profile()
+    provider = get_provider()
+    provider_info = get_provider_info()
     resume_base = _load_file(RESUME_BASE_FILE)
-    
+
+    print(f"\n📝 Generating cover letters for {len(jobs)} jobs...")
+    print(f"   Provider: {provider_info['provider']} | Model: {provider_info['model']}")
+
     for i, job in enumerate(jobs, 1):
         title = job.get("job_title", "Unknown")
         company = job.get("company", "Unknown")
         print(f"\n   [{i}/{len(jobs)}] {title} @ {company}")
 
         try:
-            print(f"   🤖 Calling Gemini AI ({model_name}) for Cover Letter...")
-            
+            profile_context = ""
+            if profile:
+                personal = profile.get("personal", {})
+                profile_context = f"\n## Candidate Info\nName: {personal.get('full_name', '')}\nLocation: {personal.get('location', '')}\n"
+
             prompt = f"""
 Baseado no currículo fornecido abaixo, escreva uma carta de apresentação (Cover Letter) profissional em {job.get('language', 'en')} para a vaga intitulada '{title}' na empresa '{company}'.
 A carta deve ser persuasiva, destacar as qualificações mais relevantes do currículo para a vaga baseando-se na descrição da vaga abaixo, e ser formatada de maneira limpa.
 NÃO use formatação markdown como asteriscos ou blocos de código. Apenas texto limpo, pronto para copiar.
+{profile_context}
 
 DESCRIÇÃO DA VAGA:
 {job.get('description', '')[:5000]}
@@ -227,16 +231,15 @@ DESCRIÇÃO DA VAGA:
 MEU CURRÍCULO BASE:
 {resume_base}
 """
-            response = model.generate_content(prompt, generation_config=genai.types.GenerationConfig(temperature=0.7))
-            
-            cover_letter_text = response.text.strip()
-            
-            if not cover_letter_text:
-                print(f"   ⚠️  Gemini response empty")
+            print(f"   🤖 Calling AI ({provider_info['provider']}) for Cover Letter...")
+            cover_letter_text = provider.generate_text(prompt, model=model_name, temperature=0.7)
+
+            if not cover_letter_text or cover_letter_text.startswith("Error:"):
+                print(f"   ⚠️  AI response empty or error")
                 continue
 
             db.update_job_status(
-                job["id"], job["status"],  # Keep current status
+                job["id"], job["status"],
                 cover_letter=cover_letter_text
             )
 
@@ -247,27 +250,39 @@ MEU CURRÍCULO BASE:
 
     print("\n✅ Cover Letter generation complete.")
 
-def chat_with_job(job: dict, question: str, orientation: str, tone: str = "semi-formal", model_name: str = "gemini-3-flash-preview") -> str:
+
+def chat_with_job(job: dict, question: str, orientation: str, tone: str = "semi-formal", model_name: str = None) -> str:
     """
     Generate an answer to an employer's question using the job context and candidate's resume/cover letter.
     """
-    genai.configure(api_key=GEMINI_API_KEY)
-    model = genai.GenerativeModel(model_name)
+    provider = get_provider()
     resume_base = _load_file(RESUME_BASE_FILE)
-    
+    profile = load_profile()
+
+    profile_context = ""
+    if profile:
+        personal = profile.get("personal", {})
+        superpower = profile.get("superpower", "")
+        profile_context = f"""
+## Candidate Profile
+Name: {personal.get('full_name', '')}
+Superpower: {superpower}
+"""
+
     if tone == "informal":
         tone_instruction = "Tom: Informal, leve, direto, amigável (um pouco menos formal)."
     elif tone == "formal":
         tone_instruction = "Tom: Muito formal, estritamente profissional e polido."
     else:
         tone_instruction = "Tom: Semi-formal, equilibrado, profissional mas acessível."
-        
+
     prompt = f"""Você é um assistente especialista em ajudar o candidato a responder perguntas de formulários de emprego.
 Por favor, responda a pergunta do empregador abaixo com base no currículo, na carta de apresentação e nas orientações do candidato.
 Siga rigidamente as instruções de Tom abaixo ao construir sua resposta.
 {tone_instruction}
 Idioma obrigatório: {job.get('language', 'en')}.
 Apenas forneça a resposta final, sem introduções adicionais.
+{profile_context}
 
 VAGA: {job.get('job_title')} na empresa {job.get('company')}
 
@@ -287,8 +302,6 @@ PERGUNTA DO EMPREGADOR:
 {question}
 """
     try:
-        response = model.generate_content(prompt, generation_config=genai.types.GenerationConfig(temperature=0.7))
-        return response.text.strip()
+        return provider.generate_text(prompt, model=model_name, temperature=0.7)
     except Exception as e:
-        return f"Error connecting to Gemini: {str(e)}"
-
+        return f"Error connecting to AI provider: {str(e)}"

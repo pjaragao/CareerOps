@@ -14,130 +14,192 @@
             --text-secondary: #8888a8;
             --border: rgba(108, 99, 255, 0.15);
             --radius: 12px;
+            --success: #00d4aa;
+            --warning: #ffb347;
         }
         body { font-family: 'Inter', sans-serif; background: var(--bg-primary); color: var(--text-primary); margin: 0; padding: 20px; }
         .container { max-width: 800px; margin: 0 auto; background: var(--bg-card); padding: 20px; border-radius: var(--radius); border: 1px solid var(--border); }
-        h2 { margin-top: 0; font-size: 18px; color: var(--accent); }
+        h2 { margin-top: 0; font-size: 18px; color: var(--accent); display: flex; align-items: center; gap: 10px; }
         .form-group { margin-bottom: 20px; }
         label { display: block; font-size: 13px; color: var(--text-secondary); margin-bottom: 8px; }
         textarea { width: 100%; height: 100px; padding: 12px; border-radius: 8px; border: 1px solid var(--border); background: rgba(0,0,0,0.2); color: var(--text-primary); font-family: inherit; font-size: 14px; box-sizing: border-box; }
         textarea:focus { outline: none; border-color: var(--accent); }
         button { background: var(--accent); color: white; border: none; padding: 12px 20px; border-radius: 8px; font-weight: 600; cursor: pointer; transition: 0.2s; }
         button:hover { background: #7c74ff; }
+        button.secondary { background: rgba(255,255,255,0.05); color: var(--text-secondary); }
+        button.secondary:hover { background: rgba(255,255,255,0.1); }
         button:disabled { opacity: 0.5; cursor: not-allowed; }
+        
+        .tabs { display: flex; gap: 10px; margin-bottom: 20px; border-bottom: 1px solid var(--border); padding-bottom: 10px; }
+        .tab { padding: 8px 16px; cursor: pointer; border-radius: 8px; font-size: 14px; color: var(--text-secondary); }
+        .tab.active { background: var(--accent); color: white; }
+        
+        .chat-view { display: none; }
+        .chat-view.active { display: block; }
+        
         .answer-box { margin-top: 20px; padding: 15px; background: rgba(0,0,0,0.3); border-left: 4px solid var(--accent); border-radius: 4px; white-space: pre-wrap; display: none; }
         .loading { display: none; color: var(--accent); font-size: 14px; margin-top: 10px; }
-        .controls { display: flex; gap: 15px; margin-bottom: 20px; }
-        .control-group { flex: 1; }
-        select { width: 100%; padding: 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-primary); color: var(--text-primary); }
+        
+        /* Simulation styles */
+        .simulation-log { max-height: 400px; overflow-y: auto; padding: 10px; background: rgba(0,0,0,0.2); border-radius: 8px; margin-bottom: 20px; display: flex; flex-direction: column; gap: 15px; }
+        .bubble { padding: 12px 16px; border-radius: 12px; font-size: 14px; max-width: 85%; line-height: 1.5; }
+        .bubble.ai { background: rgba(108, 99, 255, 0.1); border: 1px solid var(--accent); align-self: flex-start; }
+        .bubble.user { background: rgba(255, 255, 255, 0.05); align-self: flex-end; }
+        .feedback { font-size: 12px; color: var(--success); font-style: italic; margin-bottom: 4px; }
     </style>
 </head>
 <body>
     <div class="container">
-        <h2>💬 Assistente de Entrevista</h2>
-        <div style="font-size: 13px; color: var(--text-secondary); margin-bottom: 20px;">
-            Vaga: {{ job_title }} @ {{ company }}
+        <h2>💬 {{ job_title }} @ {{ company }}</h2>
+        
+        <div class="tabs">
+            <div class="tab active" onclick="switchTab('assist')">💡 Assistente de Resposta</div>
+            <div class="tab" onclick="switchTab('simulate')">🎭 Simulador de Entrevista</div>
         </div>
         
-        <div class="controls">
-            <div class="control-group">
-                <label>Tom da Resposta:</label>
-                <select id="tone">
-                    <option value="formal">Muito Formal</option>
-                    <option value="semi-formal" selected>Semi-Formal (Equilibrado)</option>
-                    <option value="informal">Informal, Direto e Amigável</option>
-                </select>
+        <!-- Assistente View -->
+        <div id="assist-view" class="chat-view active">
+            <div class="controls" style="display:flex; gap:15px; margin-bottom:20px;">
+                <div style="flex:1">
+                    <label>Tom:</label>
+                    <select id="tone" style="width:100%; padding:8px; border-radius:8px; background:var(--bg-primary); color:white; border:1px solid var(--border);">
+                        <option value="formal">Muito Formal</option>
+                        <option value="semi-formal" selected>Semi-Formal</option>
+                        <option value="informal">Informal</option>
+                    </select>
+                </div>
             </div>
-            <div class="control-group">
-                <label>Modelo IA:</label>
-                <select id="model-select">
-                    <option value="gemini-3-flash-preview">gemini-3-flash-preview</option>
-                </select>
+            
+            <div class="form-group">
+                <label>Pergunta do Empregador:</label>
+                <textarea id="question" placeholder="Ex: Por que devemos te contratar?"></textarea>
+            </div>
+            <div class="form-group">
+                <label>Sua Orientação (Opcional):</label>
+                <textarea id="orientation" placeholder="Ex: Enfatize minha experiência com Python." style="height: 60px;"></textarea>
+            </div>
+            <button id="submitBtn" onclick="generateAnswer()">Gerar Resposta</button>
+            <div id="loading" class="loading">⏳ Gerando...</div>
+            <div id="answerBox" class="answer-box">
+                <div id="answerText"></div>
+                <button onclick="copyAnswer()" style="margin-top:10px; font-size:12px; background:rgba(255,255,255,0.05);">Copiar</button>
             </div>
         </div>
         
-        <div class="form-group">
-            <label>Pergunta do Formulário / Empregador:</label>
-            <textarea id="question" placeholder="Ex: Qual sua pretensão salarial? ou Why do you want to work here?"></textarea>
-        </div>
-
-        <div class="form-group">
-            <label>Sua Orientação / Resposta curta (Opcional):</label>
-            <textarea id="orientation" placeholder="Ex: Diga que é negociável, em torno de 5k. Mantenha profissional." style="height: 60px;"></textarea>
-        </div>
-
-        <button id="submitBtn" onclick="generateAnswer()">Gerar Resposta</button>
-        <div id="loading" class="loading">⏳ Gerando resposta...</div>
-
-        <div id="answerBox" class="answer-box">
-            <label style="color:var(--accent)">Resposta:</label>
-            <div id="answerText"></div>
-            <button onclick="copyAnswer()" style="margin-top: 10px; padding: 6px 12px; font-size: 12px; background: rgba(255,255,255,0.1);">Copiar</button>
+        <!-- Simulador View -->
+        <div id="simulate-view" class="chat-view">
+            <div id="simulation-log" class="simulation-log">
+                <div class="bubble ai">Olá! Sou o recrutador para esta posição. Vamos começar a simulação? Clique no botão abaixo para iniciar.</div>
+            </div>
+            
+            <div id="simulation-controls">
+                <div class="form-group" id="answer-input-group" style="display:none;">
+                    <label>Sua Resposta:</label>
+                    <textarea id="user-answer" placeholder="Digite sua resposta aqui..." style="height:80px;"></textarea>
+                    <div style="display:flex; gap:10px; margin-top:10px;">
+                        <button onclick="sendSimulationAnswer()" id="sendSimBtn">Enviar Resposta</button>
+                        <button class="secondary" onclick="resetSimulation()">Reiniciar</button>
+                    </div>
+                </div>
+                <button id="startSimBtn" onclick="startSimulation()">🚀 Iniciar Simulação</button>
+            </div>
+            <div id="sim-loading" class="loading">⏳ O recrutador está pensando...</div>
         </div>
     </div>
 
     <script>
-        async function generateAnswer() {
-            const question = document.getElementById('question').value.trim();
-            const orientation = document.getElementById('orientation').value.trim();
-            const tone = document.getElementById('tone').value;
-            const modelName = document.getElementById('model-select').value;
-            
-            if (!question) { alert('Digite a pergunta.'); return; }
+        function switchTab(view) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.innerText.toLowerCase().includes(view === 'assist' ? 'assistente' : 'simulador')));
+            document.querySelectorAll('.chat-view').forEach(v => v.classList.remove('active'));
+            document.getElementById(view + '-view').classList.add('active');
+        }
 
+        async function generateAnswer() {
+            const question = document.getElementById('question').value;
+            const orientation = document.getElementById('orientation').value;
+            const tone = document.getElementById('tone').value;
+            
             const btn = document.getElementById('submitBtn');
             const loading = document.getElementById('loading');
-            const answerBox = document.getElementById('answerBox');
+            const box = document.getElementById('answerBox');
             
-            btn.disabled = true;
-            loading.style.display = 'block';
-            answerBox.style.display = 'none';
+            btn.disabled = true; loading.style.display = 'block'; box.style.display = 'none';
 
             try {
                 const res = await fetch('/api/chat/{{ job_id }}', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ question, orientation, tone, model_name: modelName })
+                    body: JSON.stringify({ question, orientation, tone })
                 });
                 const data = await res.json();
-                
                 if (data.ok) {
-                    document.getElementById('answerText').textContent = data.answer;
-                    answerBox.style.display = 'block';
-                } else {
-                    alert('Erro: ' + data.error);
-                }
-            } catch (e) {
-                alert('Erro de conexão.');
-            } finally {
-                btn.disabled = false;
-                loading.style.display = 'none';
-            }
+                    document.getElementById('answerText').innerText = data.answer;
+                    box.style.display = 'block';
+                } else alert(data.error);
+            } catch (e) { alert('Erro de rede'); }
+            finally { btn.disabled = false; loading.style.display = 'none'; }
         }
 
         function copyAnswer() {
-            const text = document.getElementById('answerText').textContent;
-            navigator.clipboard.writeText(text).then(() => {
-                alert('Copiado!');
-            });
+            navigator.clipboard.writeText(document.getElementById('answerText').innerText);
+            alert('Copiado!');
         }
 
-        async function refreshModels() {
+        // Simulation Logic
+        let simHistory = [];
+
+        async function startSimulation() {
+            document.getElementById('startSimBtn').style.display = 'none';
+            document.getElementById('answer-input-group').style.display = 'block';
+            simHistory = [];
+            document.getElementById('simulation-log').innerHTML = '';
+            await sendSimulationAnswer("");
+        }
+
+        async function sendSimulationAnswer() {
+            const answer = document.getElementById('user-answer').value.trim();
+            const log = document.getElementById('simulation-log');
+            const loading = document.getElementById('sim-loading');
+            const btn = document.getElementById('sendSimBtn');
+            
+            if (answer) {
+                log.innerHTML += `<div class="bubble user">${answer}</div>`;
+                document.getElementById('user-answer').value = '';
+            }
+            
+            btn.disabled = true; loading.style.display = 'block';
+            log.scrollTop = log.scrollHeight;
+
             try {
-                const res = await fetch('/api/models');
+                const res = await fetch('/api/chat/{{ job_id }}/simulate', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ answer, history: simHistory })
+                });
                 const data = await res.json();
-                const selectElement = document.getElementById('model-select');
-                if (data.models && data.models.length > 0) {
-                    selectElement.innerHTML = data.models.map(m => `
-                        <option value="${m}" ${m === 'gemini-3-flash-preview' ? 'selected' : ''}>${m}</option>
-                    `).join('');
+                
+                if (data.feedback) {
+                    log.innerHTML += `<div style="align-self:flex-start; margin-bottom:5px;"><span class="feedback">Recrutador: ${data.feedback}</span></div>`;
                 }
-            } catch (e) {
-                console.error("Failed to load models list");
+                
+                log.innerHTML += `<div class="bubble ai">${data.next_question}</div>`;
+                
+                simHistory.push({ role: "user", content: answer });
+                simHistory.push({ role: "assistant", content: data.next_question });
+                
+                if (data.is_over) {
+                    document.getElementById('answer-input-group').innerHTML = '<div style="color:var(--success); font-weight:600;">Simulação finalizada! Boa sorte.</div>';
+                }
+            } catch (e) { alert('Erro na simulação'); }
+            finally { 
+                btn.disabled = false; loading.style.display = 'none'; 
+                log.scrollTop = log.scrollHeight;
             }
         }
-        
-        refreshModels();
+
+        function resetSimulation() {
+            if (confirm('Reiniciar simulação?')) startSimulation();
+        }
     </script>
 </body>
 </html>

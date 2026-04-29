@@ -505,3 +505,59 @@ def _detect_language(text: str) -> str:
     en_score = sum(1 for w in en_words if w in lower)
 
     return 'pt' if pt_score > en_score else 'en'
+
+
+def send_linkedin_connection_note(profile_url: str, message: str) -> bool:
+    """
+    Navega até um perfil do LinkedIn e tenta enviar uma solicitação de conexão com uma nota personalizada.
+    Limite do LinkedIn para a nota: 300 caracteres.
+    """
+    print(f"\n🤝 Enviando nota de conexão para: {profile_url}")
+    with sync_playwright() as p:
+        browser, context = _create_context(p, headless=True)
+        page = context.new_page()
+        try:
+            page.goto(profile_url, wait_until="domcontentloaded", timeout=60000)
+            time.sleep(5)
+            
+            # Tentar encontrar botão de conexão principal
+            # LinkedIn usa diferentes seletores dependendo do idioma e layout
+            connect_btn = page.query_selector('button:has-text("Connect"), button:has-text("Conectar")')
+            
+            if not connect_btn:
+                # Tentar no menu "Mais"
+                more_btn = page.query_selector('button:has-text("More"), button:has-text("Mais")')
+                if more_btn:
+                    more_btn.click()
+                    time.sleep(1)
+                    connect_btn = page.query_selector('div[role="button"]:has-text("Connect"), div[role="button"]:has-text("Conectar")')
+            
+            if connect_btn:
+                # Verificar se o botão está habilitado
+                if not connect_btn.is_disabled():
+                    connect_btn.click()
+                    time.sleep(2)
+                    
+                    # Clicar em "Adicionar nota"
+                    add_note_btn = page.query_selector('button[aria-label="Add a note"], button[aria-label="Adicionar nota"]')
+                    if add_note_btn:
+                        add_note_btn.click()
+                        time.sleep(1)
+                        # Preencher nota (truncar para 300)
+                        page.fill('textarea[name="message"]', message[:300])
+                        
+                        # Enviar
+                        send_btn = page.query_selector('button[aria-label="Send now"], button[aria-label="Enviar agora"], button:has-text("Send"), button:has-text("Enviar")')
+                        if send_btn:
+                            send_btn.click()
+                            time.sleep(2)
+                            print("   ✅ Solicitação de conexão enviada com sucesso!")
+                            return True
+            
+            print("   ⚠️ Não foi possível encontrar o botão de conexão ou a opção de nota.")
+            return False
+        except Exception as e:
+            print(f"   ❌ Erro ao enviar conexão: {e}")
+            return False
+        finally:
+            browser.close()

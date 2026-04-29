@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Configuration - LinkedIn Job Scraper</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        /* Config Page Specific Styles */
+        .config-nav {
+            display: flex;
+            gap: 4px;
+            padding: 12px 20px;
+            background: rgba(255, 255, 255, 0.03);
+            border-bottom: 1px solid var(--border);
+        }
+
+        .config-nav button {
+            padding: 8px 16px;
+            border-radius: 6px;
+            border: 1px solid transparent;
+            background: transparent;
+            color: var(--text-secondary);
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .config-nav button:hover {
+            background: rgba(255, 255, 255, 0.05);
+            color: white;
+        }
+
+        .config-nav button.active {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: var(--border);
+            color: white;
+        }
+
+        .config-content {
+            padding: 24px;
+        }
+
+        .config-tab {
+            display: none;
+        }
+
+        .config-tab.active {
+            display: block;
+        }
+
+        /* Profile Tabs */
+        .profile-nav {
+            display: flex;
+            gap: 2px;
+            margin-bottom: 20px;
+            padding: 4px;
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 8px;
+        }
+
+        .profile-nav button {
+            flex: 1;
+            padding: 10px 16px;
+            border-radius: 6px;
+            border: none;
+            background: transparent;
+            color: var(--text-secondary);
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+        }
+
+        .profile-nav button:hover {
+            background: rgba(255, 255, 255, 0.05);
+            color: white;
+        }
+
+        .profile-nav button.active {
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        }
+
+        .profile-tab-content {
+            display: none;
+            animation: fadeIn 0.2s ease;
+        }
+
+        .profile-tab-content.active {
+            display: block;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(4px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Provider Grid */
+        .providers-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+            gap: 16px;
+        }
+
+        .provider-card {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 16px;
+            transition: all 0.2s;
+        }
+
+        .provider-card:hover {
+            border-color: var(--accent);
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .provider-card.active {
+            border-color: #2e7d32;
+            background: rgba(46, 125, 50, 0.1);
+        }
+
+        .provider-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+
+        .provider-name {
+            font-weight: 600;
+            font-size: 15px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .provider-icon {
+            width: 28px;
+            height: 28px;
+            border-radius: 6px;
+            background: rgba(255, 255, 255, 0.1);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+        }
+
+        .provider-status-badge {
+            font-size: 11px;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-weight: 500;
+        }
+
+        .provider-status-badge.connected {
+            background: rgba(46, 125, 50, 0.2);
+            color: #81c784;
+        }
+
+        .provider-status-badge.disconnected {
+            background: rgba(198, 40, 40, 0.2);
+            color: #e57373;
+        }
+
+        /* Compact form */
+        .compact-form .form-group {
+            margin-bottom: 12px;
+        }
+
+        .compact-form label {
+            font-size: 12px;
+            margin-bottom: 4px;
+        }
+
+        .compact-form input,
+        .compact-form select,
+        .compact-form textarea {
+            padding: 6px 10px;
+            font-size: 13px;
+        }
+
+        /* Section cards */
+        .section-card {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 16px;
+        }
+
+        .section-card-title {
+            font-weight: 600;
+            font-size: 14px;
+            margin-bottom: 12px;
+            color: white;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        /* Save button sticky */
+        .sticky-actions {
+            position: sticky;
+            bottom: 0;
+            background: linear-gradient(transparent, #1e1e2e 20%);
+            padding: 16px 0;
+            margin-top: 20px;
+        }
+
+        /* Stories layout */
+        .stories-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+            gap: 16px;
+        }
+
+        .add-story-card {
+            border: 2px dashed var(--border);
+            border-radius: 10px;
+            padding: 24px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .add-story-card:hover {
+            border-color: var(--accent);
+            background: rgba(255, 255, 255, 0.03);
+        }
+    </style>
+</head>
+
+<body>
+    <div class="header" style="padding: 12px 24px;">
+        <div class="header-left">
+            <div class="logo">⚙️</div>
+            <div style="display:flex; flex-direction:column; margin-right: 10px;">
+                <h1 style="margin:0; font-size: 18px; line-height:1.2">Configuration</h1>
+                <span style="font-size:12px; color:var(--text-secondary); line-height:1">Settings & AI Providers</span>
+            </div>
+            <div class="main-nav">
+                <button onclick="window.location.href='/jobs'">🔍 Jobs</button>
+                <button onclick="window.location.href='/'">👤 Profile</button>
+                <button class="active">⚙️ Config</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="panel" style="margin-top: 20px;">
+            <!-- Main Config Navigation -->
+            <div class="config-nav">
+                <button class="active" onclick="showConfigTab('ai-providers', this)">
+                    <span>🤖</span> AI Providers
+                </button>
+                <button onclick="showConfigTab('profile', this)">
+                    <span>👤</span> Profile
+                </button>
+                <button onclick="showConfigTab('stories', this)">
+                    <span>📚</span> Interview Stories
+                </button>
+            </div>
+
+            <!-- AI Providers Tab -->
+            <div id="tab-ai-providers" class="config-tab active">
+                <div class="config-content">
+                    <div style="margin-bottom: 16px;">
+                        <h3 style="margin:0 0 4px 0; font-size: 16px;">AI Provider Configuration</h3>
+                        <p style="margin:0; color: var(--text-secondary); font-size: 13px;">
+                            Configure and test multiple AI providers for resume generation and job evaluation
+                        </p>
+                    </div>
+                    <div id="ai-providers-container" class="providers-grid">
+                        <!-- AI providers injected here -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Profile Tab -->
+            <div id="tab-profile" class="config-tab">
+                <div class="config-content">
+                    <div style="margin-bottom: 16px;">
+                        <h3 style="margin:0 0 4px 0; font-size: 16px;">Profile Settings</h3>
+                        <p style="margin:0; color: var(--text-secondary); font-size: 13px;">
+                            Manage your professional profile for better job matching
+                        </p>
+                    </div>
+                    
+                    <!-- Profile Sub-navigation -->
+                    <div class="profile-nav">
+                        <button class="active" onclick="showProfileTab('personal', this)">
+                            <span>📝</span> Personal
+                        </button>
+                        <button onclick="showProfileTab('professional', this)">
+                            <span>💼</span> Professional
+                        </button>
+                        <button onclick="showProfileTab('preferences', this)">
+                            <span>⚡</span> Preferences
+                        </button>
+                    </div>
+
+                    <!-- Profile Content -->
+                    <div id="profile-settings-container">
+                        <!-- Profile content injected here -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Stories Tab -->
+            <div id="tab-stories" class="config-tab">
+                <div class="config-content">
+                    <div style="margin-bottom: 16px; display:flex; justify-content:space-between; align-items:center;">
+                        <div>
+                            <h3 style="margin:0 0 4px 0; font-size: 16px;">Interview Stories</h3>
+                            <p style="margin:0; color: var(--text-secondary); font-size: 13px;">
+                                STAR+R stories for interview preparation
+                            </p>
+                        </div>
+                        <button class="btn primary" onclick="openStoryModal()">
+                            <span>➕</span> Add Story
+                        </button>
+                    </div>
+                    <div id="stories-container" class="stories-grid">
+                        <!-- Stories injected here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/config.js') }}"></script>
+    <script>
+        // Config tab switching
+        function showConfigTab(tabName, btn) {
+            // Hide all tabs
+            document.querySelectorAll('.config-tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            // Show selected tab
+            document.getElementById('tab-' + tabName).classList.add('active');
+            // Update nav buttons
+            document.querySelectorAll('.config-nav button').forEach(b => {
+                b.classList.remove('active');
+            });
+            btn.classList.add('active');
+        }
+
+        // Profile tab switching
+        function showProfileTab(tabName, btn) {
+            // Hide all profile tabs
+            document.querySelectorAll('.profile-tab-content').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            // Show selected tab
+            const selectedTab = document.getElementById('profile-tab-' + tabName);
+            if (selectedTab) {
+                selectedTab.classList.add('active');
+            }
+            // Update nav buttons
+            document.querySelectorAll('.profile-nav button').forEach(b => {
+                b.classList.remove('active');
+            });
+            btn.classList.add('active');
+        }
+    </script>
+</body>
+
+</html>
