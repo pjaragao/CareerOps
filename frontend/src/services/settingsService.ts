@@ -12,6 +12,8 @@ export interface AppSettings {
   ai_model_chat?: string;
   ai_model_outreach?: string;
   ai_model_import?: string;
+  ai_model_optimizer?: string;
+  ai_model_interview?: string;
   ai_model_fallback?: string;
 }
 

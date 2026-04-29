@@ -50,10 +50,6 @@ async def optimize(req: OptimizeRequest):
     result = await ProfileService.optimize_section(req.section, req.content)
     return {"result": result}
 
-@router.post("/import-linkedin")
-async def import_linkedin():
-    extracted = await ProfileService.import_from_linkedin()
-    return extracted
 
 class ContentRequest(BaseModel):
     content: str
@@ -85,3 +81,45 @@ async def import_extension(request: Request):
         return {"ok": True}
     except Exception as e:
         return {"ok": False, "error": str(e)}
+
+class SkillsAnalysisRequest(BaseModel):
+    target_role: str
+
+@router.post("/analyze-skills")
+async def analyze_skills(req: SkillsAnalysisRequest):
+    profile = ProfileService.get_profile()
+    return await ProfileService.analyze_skills(profile, req.target_role)
+
+class ExperienceOptimizeRequest(BaseModel):
+    lang: str = "pt"
+
+@router.post("/optimize-experience")
+async def optimize_experience(req: ExperienceOptimizeRequest):
+    profile = ProfileService.get_profile()
+    experience = profile.get("experience", [])
+    if not experience:
+        return {"results": []}
+    results = await ProfileService.optimize_experience_bullets(experience, req.lang)
+    return {"results": results}
+
+class HeadlineVariantsRequest(BaseModel):
+    lang: str = "pt"
+    count: int = 3
+
+@router.post("/headline-variants")
+async def headline_variants(req: HeadlineVariantsRequest):
+    profile = ProfileService.get_profile()
+    return await ProfileService.generate_headline_variants(profile, req.lang, req.count)
+
+@router.post("/ssi-simulate")
+async def ssi_simulate():
+    profile = ProfileService.get_profile()
+    return await ProfileService.simulate_ssi(profile)
+
+class ATSMatchRequest(BaseModel):
+    job_description: str
+
+@router.post("/ats-match")
+async def ats_match(req: ATSMatchRequest):
+    profile = ProfileService.get_profile()
+    return await ProfileService.analyze_ats_match(profile, req.job_description)

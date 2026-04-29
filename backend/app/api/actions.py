@@ -42,7 +42,7 @@ async def generate_resume(job_id: int, options: ActionOptions):
     settings_ai = SettingsService.get_settings()
     model = options.model or settings_ai.get("ai_model_resume")
     
-    provider = AIService.get_provider()
+    provider = AIService.get_provider("ai_model_resume")
     prompt = RESUME_ATS_PROMPT.format(
         job_title=job['job_title'],
         company=job['company'],
@@ -90,7 +90,7 @@ async def generate_cover_letter(job_id: int, options: ActionOptions):
     settings_ai = SettingsService.get_settings()
     model = options.model or settings_ai.get("ai_model_cover")
     
-    provider = AIService.get_provider()
+    provider = AIService.get_provider("ai_model_cover")
     prompt = COVER_LETTER_PROMPT.format(
         language=job.get('language', 'pt-BR'),
         tone_instruction=tone_instr,
@@ -129,7 +129,7 @@ async def chat_with_job(job_id: int, options: ActionOptions):
     settings_ai = SettingsService.get_settings()
     model = options.model or settings_ai.get("ai_model_chat")
     
-    provider = AIService.get_provider()
+    provider = AIService.get_provider("ai_model_chat")
     prompt = CHAT_PROMPT.format(
         tone_instruction=tone_instr,
         language=job.get('language', 'pt-BR'),
@@ -153,7 +153,7 @@ async def generate_outreach(job_id: int, type: str = "dm", options: ActionOption
     settings_ai = SettingsService.get_settings()
     model = (options.model if options else None) or settings_ai.get("ai_model_outreach")
     
-    provider = AIService.get_provider()
+    provider = AIService.get_provider("ai_model_outreach")
     if type == "dm":
         prompt = f"Generate a short LinkedIn DM (max 300 chars) for this job: {job['job_title']} at {job['company']}. {tone_instr} Instructions: {options.orientation if options else ''}"
     else:
@@ -177,8 +177,3 @@ async def download_pdf(job_id: int, data: Dict[str, str]):
         headers={"Content-Disposition": f"attachment; filename=resume_{job_id}.pdf"}
     )
 
-@router.post("/{job_id}/auto-apply")
-async def auto_apply(job_id: int, background_tasks: BackgroundTasks):
-    from app.services.scraper_service import ScraperService
-    background_tasks.add_task(ScraperService.auto_apply, job_id)
-    return {"message": "Auto-apply started in background"}

@@ -122,27 +122,12 @@ def api_add_strategy():
     )
     return jsonify({"ok": success})
 
-@app.route("/api/search/run", methods=["POST"])
-def api_run_search():
-    from auto_applier import run_all_strategies
-    if _run_task("Search", run_all_strategies):
-        return jsonify({"ok": True})
-    return jsonify({"ok": False, "error": "Task already running"})
-
 @app.route("/api/outreach/email", methods=["POST"])
 def api_outreach_email():
     data = request.json
     from services.email_sender import send_email
     success = send_email(data.get("email"), "Job Application Inquiry", data.get("body"))
     return jsonify({"ok": success})
-
-@app.route("/api/outreach/dm", methods=["POST"])
-def api_outreach_dm():
-    data = request.json
-    from scraper import send_linkedin_connection_note
-    if _run_task("LinkedIn Outreach", send_linkedin_connection_note, data.get("url"), data.get("message")):
-        return jsonify({"ok": True})
-    return jsonify({"ok": False, "error": "Task already running"})
 
 @app.route("/api/strategies/delete/<int:id>", methods=["POST"])
 def api_delete_strategy(id):
@@ -397,23 +382,7 @@ def api_run():
         if task_status["running"]:
             return jsonify({"ok": False, "error": "A task is already running."})
 
-    if task == "pipeline":
-        m_name = data.get("model_name", "gemini-3-flash-preview")
-        def full_pipeline(m_name=m_name):
-            from scraper import scrape_saved_jobs
-            from processor import process_new_jobs
-            from resume_generator import generate_resumes
-            scrape_saved_jobs(max_jobs=100)
-            process_new_jobs()
-            generate_resumes(model_name=m_name)
-        started = _run_task("Full Pipeline", full_pipeline)
-    elif task == "scrape":
-        from scraper import scrape_saved_jobs
-        started = _run_task("Scrape Jobs", scrape_saved_jobs, 100)
-    elif task == "process":
-        from processor import process_new_jobs
-        started = _run_task("Process Jobs", process_new_jobs)
-    elif task == "generate":
+    if task == "generate":
         from resume_generator import generate_resumes
         job_ids = data.get("job_ids")
         m_name = data.get("model_name", "gemini-3-flash-preview")
@@ -442,9 +411,6 @@ def api_run():
                 conn.close()
             generate_resumes(model_name=m_name)
         started = _run_task("Retry Errors", retry_errors)
-    elif task == "login":
-        from scraper import login as linkedin_login
-        started = _run_task("LinkedIn Login", linkedin_login)
     else:
         return jsonify({"ok": False, "error": f"Unknown task: {task}"})
 
@@ -462,13 +428,6 @@ def api_cancel():
     return jsonify({"ok": True, "was_running": was_running})
 
 
-@app.route("/api/finish-login", methods=["POST"])
-def api_finish_login():
-    """Signal the login process to save session and close browser."""
-    from scraper import finish_login
-    finish_login()
-    _log("🏁 Finish Login signal sent — saving session...")
-    return jsonify({"ok": True})
 
 
 @app.route("/api/jobs/delete/<int:job_id>", methods=["POST"])
@@ -729,36 +688,6 @@ def api_profile_ssi():
     result = profile_optimizer.generate_ssi_plan(content, model_name=model_name)
     return jsonify({"ok": True, "result": result})
 
-# In-memory store for the latest scraped profile (per-session, not saved to disk)
-_scraped_profile = {"data": None}
-
-@app.route("/api/profile/import", methods=["POST"])
-def api_profile_import():
-    """
-    Scrape the user's LinkedIn profile in PT and EN using their saved session.
-    Stores the result in memory only — does NOT modify resume_base.md.
-    """
-    data = request.get_json() or {}
-    profile_url = data.get("profile_url", "https://www.linkedin.com/in/me/")
-
-    def _do_scrape():
-        import profile_scraper
-        result = profile_scraper.scrape_profile(profile_url)
-        _scraped_profile["data"] = result
-        print(f"✅ Profile import done: {result.get('name', '?')}")
-
-    started = _run_task("Import LinkedIn Profile", _do_scrape)
-    if not started:
-        return jsonify({"ok": False, "error": "A task is already running. Please wait."})
-    return jsonify({"ok": True, "message": "Profile import started."})
-
-
-@app.route("/api/profile/import-result", methods=["GET"])
-def api_profile_import_result():
-    """Return the latest scraped profile data (in-memory only)."""
-    if _scraped_profile["data"] is None:
-        return jsonify({"ok": False, "error": "No profile data yet. Run import first."})
-    return jsonify({"ok": True, "profile": _scraped_profile["data"]})
 
 
 @app.route("/api/profile/score", methods=["POST"])
@@ -788,32 +717,8 @@ def api_profile_status():
 
 @app.route("/api/profile/update-linkedin", methods=["POST"])
 def api_profile_update_linkedin():
-    data = request.get_json()
-    profile_data = {
-        "headline": data.get("headline"),
-        "about": data.get("about")
-    }
-
-    def _do_update():
-        import profile_updater
-        import profile_optimizer
-        success = profile_updater.update_linkedin_profile(profile_data)
-        if success:
-            # Update DB with last optimized date
-            # We fetch latest to keep the current score/analysis
-            latest = db.get_latest_profile_stats()
-            db.upsert_profile_stats(
-                score=latest.get("score") if latest else None,
-                analysis=latest.get("analysis") if latest else None,
-                last_optimized_at=datetime.now(timezone.utc),
-                current_data=profile_data
-            )
-            _log("✅ LinkedIn profile updated successfully!")
-
-    started = _run_task("Update LinkedIn Profile", _do_update)
-    if not started:
-        return jsonify({"ok": False, "error": "A task is already running."})
-    return jsonify({"ok": True, "message": "Update started."})
+    # Deprecated: Auto-updating LinkedIn was too fragile.
+    return jsonify({"ok": False, "error": "Auto-update is disabled. Please update your profile manually on LinkedIn."})
 
 
 # ---------------------------------------------------------------------------

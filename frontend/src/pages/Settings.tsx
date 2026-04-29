@@ -176,6 +176,28 @@ const SettingsPage = () => {
                 {availableModels.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
               </select>
             </div>
+            <div>
+              <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.85rem', color: '#aaa' }}>LinkedIn Optimizer</label>
+              <select 
+                value={settings.ai_model_optimizer || ''}
+                onChange={e => setSettings({...settings, ai_model_optimizer: e.target.value})}
+                style={{ width: '100%', padding: '0.7rem', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: '#fff' }}
+              >
+                <option value="">Default (Fast)</option>
+                {availableModels.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.85rem', color: '#aaa' }}>Interview Prep</label>
+              <select 
+                value={settings.ai_model_interview || ''}
+                onChange={e => setSettings({...settings, ai_model_interview: e.target.value})}
+                style={{ width: '100%', padding: '0.7rem', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: '#fff' }}
+              >
+                <option value="">Default (Chat-based)</option>
+                {availableModels.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+              </select>
+            </div>
             <div style={{ gridColumn: 'span 2' }}>
               <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.85rem', color: '#aaa', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '1.2rem', marginTop: '0.5rem' }}>
                 <Shield size={14} style={{ verticalAlign: 'middle', marginRight: '5px' }} /> 

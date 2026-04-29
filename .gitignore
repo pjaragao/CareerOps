@@ -1,26 +1,29 @@
-# OS files
+# ─── OS ────────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
 db.sqlite3
 
-# IDEs
+# ─── IDEs ──────────────────────────────────────────────────────
 .vscode/
 .idea/
 *.swp
 *.swo
+*.code-workspace
 
-# Environment variables
+# ─── Environment Variables ─────────────────────────────────────
 .env
 .env.*
 !.env.example
 
-# Logs
+# ─── Logs ──────────────────────────────────────────────────────
 *.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+logs/
+debug_payload.json
 
-# Python
+# ─── Python ────────────────────────────────────────────────────
 __pycache__/
 *.py[cod]
 *$py.class
@@ -34,21 +37,36 @@ dist/
 *.egg-info/
 .installed.cfg
 *.egg
+.pytest_cache/
+htmlcov/
+.mypy_cache/
 
-# Node.js
+# ─── Node.js ──────────────────────────────────────────────────
 node_modules/
 dist/
 lib/
+.vite/
 
-# n8n / Project specific
-credentials_export.json
-workflows_export.json
-resume_raw.txt
-linkedin-jobs/output/
-linkedin-jobs/session.json
+# ─── Project Sensitive Data ────────────────────────────────────
 **/auth/*.json
 **/*session.json
+**/auth/user_agent.txt
+credentials_export.json
+workflows_export.json
 
-# Docker
+# ─── Project Generated Files ──────────────────────────────────
+linkedin-jobs/output/
+backend/output/
+output/
+resume_raw.txt
+config/profile.yml
+linkedin-jobs/config/profile.yml
+
+# ─── Docker ────────────────────────────────────────────────────
 docker-compose.override.yml
 supabase/volumes/
+
+# ─── AI/Agent Tooling ─────────────────────────────────────────
+.gemini/
+.cursor/
+.aider*

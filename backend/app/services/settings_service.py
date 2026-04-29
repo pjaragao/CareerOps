@@ -20,7 +20,10 @@ class SettingsService:
                 "ai_model_resume": settings.AI_MODEL,
                 "ai_model_cover": settings.AI_MODEL,
                 "ai_model_chat": settings.AI_MODEL,
+                "ai_model_import": settings.AI_MODEL,
                 "ai_model_outreach": settings.AI_MODEL,
+                "ai_model_optimizer": settings.AI_MODEL,
+                "ai_model_interview": settings.AI_MODEL,
                 "ai_model_fallback": "gemini-1.5-flash"
             }
             path.write_text(json.dumps(defaults, indent=2))
@@ -41,7 +44,10 @@ class SettingsService:
                     "ai_model_resume": settings.AI_MODEL,
                     "ai_model_cover": settings.AI_MODEL,
                     "ai_model_chat": settings.AI_MODEL,
+                    "ai_model_import": settings.AI_MODEL,
                     "ai_model_outreach": settings.AI_MODEL,
+                    "ai_model_optimizer": settings.AI_MODEL,
+                    "ai_model_interview": settings.AI_MODEL,
                     "ai_model_fallback": "gemini-1.5-flash"
                 }
                 for k, v in defaults.items():

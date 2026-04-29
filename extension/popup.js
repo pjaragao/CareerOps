@@ -1,5 +1,7 @@
 document.addEventListener('DOMContentLoaded', () => {
     const importBtn = document.getElementById('import-btn');
+    const importJobBtn = document.getElementById('import-job-btn');
+    const bulkBtn = document.getElementById('bulk-jobs-btn');
     const statusText = document.getElementById('status-text');
     const loader = document.getElementById('loader');
 
@@ -7,31 +9,20 @@ document.addEventListener('DOMContentLoaded', () => {
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
         const { careerops_import_active, careerops_status } = await chrome.storage.local.get(['careerops_import_active', 'careerops_status']);
         
-        // Detect Page Context
         const isLinkedIn = tab?.url?.includes('linkedin.com');
-        const isProfile = isLinkedIn && tab?.url?.includes('/in/');
-        const isJob = isLinkedIn && tab?.url?.includes('/jobs/');
+        const isSearch = isLinkedIn && tab?.url?.includes('/jobs/search');
 
         if (careerops_import_active) {
             importBtn.disabled = true;
-            importBtn.innerText = 'Processando...';
+            importJobBtn.disabled = true;
+            bulkBtn.disabled = true;
             statusText.innerText = careerops_status || 'Iniciando...';
             loader.style.display = 'block';
         } else {
             importBtn.disabled = false;
+            importJobBtn.disabled = false;
+            bulkBtn.disabled = !isSearch;
             loader.style.display = 'none';
-
-            if (isProfile) {
-                importBtn.innerText = 'Importar Perfil LinkedIn';
-                importBtn.style.background = '#38bdf8';
-            } else if (isJob) {
-                importBtn.innerText = 'Importar Vaga LinkedIn';
-                importBtn.style.background = '#22c55e';
-            } else {
-                importBtn.innerText = 'Importar Vaga (Universal)';
-                importBtn.style.background = '#a855f7'; // Purple for universal
-                importBtn.disabled = false;
-            }
 
             if (careerops_status && (careerops_status.includes('✅') || careerops_status.includes('❌'))) {
                 statusText.innerText = careerops_status;
@@ -44,34 +35,44 @@ document.addEventListener('DOMContentLoaded', () => {
     setInterval(updateUI, 1000);
     updateUI();
 
-    importBtn.addEventListener('click', async () => {
-        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-        const isLinkedIn = tab.url.includes('linkedin.com');
-        const isProfile = isLinkedIn && tab.url.includes('/in/');
-        const isJob = isLinkedIn && tab.url.includes('/jobs/');
-
+    async function ensureContentScript(tab) {
         try {
-            await chrome.storage.local.remove(['careerops_import_data', 'careerops_status']);
-            await chrome.storage.local.set({ careerops_import_active: true, careerops_status: 'Iniciando...' });
-            
-            // Inject content script if needed
+            await chrome.tabs.sendMessage(tab.id, { action: 'ping' });
+        } catch (e) {
             await chrome.scripting.executeScript({
                 target: { tabId: tab.id },
                 files: ['content.js']
             });
-
-            if (isProfile) {
-                chrome.tabs.sendMessage(tab.id, { action: 'extractProfile' });
-            } else if (isJob) {
-                chrome.tabs.sendMessage(tab.id, { action: 'extractJob' });
-            } else {
-                chrome.tabs.sendMessage(tab.id, { action: 'extractUniversal' });
-            }
-        } catch (err) {
-            // If already injected
-            if (isProfile) chrome.tabs.sendMessage(tab.id, { action: 'extractProfile' });
-            else if (isJob) chrome.tabs.sendMessage(tab.id, { action: 'extractJob' });
-            else chrome.tabs.sendMessage(tab.id, { action: 'extractUniversal' });
+            await new Promise(r => setTimeout(r, 500));
         }
+    }
+
+    importBtn.addEventListener('click', async () => {
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        await chrome.storage.local.set({ careerops_import_active: true, careerops_status: 'Importando Perfil...' });
+        await ensureContentScript(tab);
+        chrome.tabs.sendMessage(tab.id, { action: 'extractProfile' });
+    });
+
+    importJobBtn.addEventListener('click', async () => {
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        await chrome.storage.local.set({ careerops_import_active: true, careerops_status: 'Importando Vaga...' });
+        await ensureContentScript(tab);
+        
+        const isLinkedIn = tab.url.includes('linkedin.com');
+        const isJob = isLinkedIn && (tab.url.includes('/jobs/view/') || tab.url.includes('/jobs/search/'));
+        
+        if (isJob) {
+            chrome.tabs.sendMessage(tab.id, { action: 'extractJob' });
+        } else {
+            chrome.tabs.sendMessage(tab.id, { action: 'extractUniversal' });
+        }
+    });
+
+    bulkBtn.addEventListener('click', async () => {
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        await chrome.storage.local.set({ careerops_import_active: true, careerops_status: 'Iniciando captura em massa...' });
+        await ensureContentScript(tab);
+        chrome.tabs.sendMessage(tab.id, { action: 'bulkCapture' });
     });
 });

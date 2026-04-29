@@ -44,8 +44,11 @@ const StrategiesPage = () => {
   };
 
   const handleRun = async (id: number) => {
-    await strategyService.runStrategy(id);
-    alert("Search started in background.");
+    const strat = strategies.find(s => s.id === id);
+    if (strat) {
+      await strategyService.runStrategy(id);
+      alert("Busca iniciada. A extensão do navegador irá capturar as vagas automaticamente ao abrir o LinkedIn.");
+    }
   };
 
   return (

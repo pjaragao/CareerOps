@@ -37,6 +37,7 @@ export interface Profile {
   }>;
   skills?: string[];
   keywords?: string[];
+  about?: string;
 }
 
 export const profileService = {
@@ -71,5 +72,29 @@ export const profileService = {
   optimizeSection: async (section: string, content: string) => {
     const response = await api.post<{ result: string }>('/profile/optimize', { section, content });
     return response.data.result;
-  }
+  },
+  getScore: async (content: string) => {
+    const response = await api.post('/profile/score', { content });
+    return response.data;
+  },
+  getHeadlineVariants: async (lang: string, count = 3) => {
+    const response = await api.post('/profile/headline-variants', { lang, count });
+    return response.data;
+  },
+  optimizeExperience: async (lang: string) => {
+    const response = await api.post('/profile/optimize-experience', { lang });
+    return response.data;
+  },
+  analyzeSkills: async (targetRole: string) => {
+    const response = await api.post('/profile/analyze-skills', { target_role: targetRole });
+    return response.data;
+  },
+  simulateSSI: async () => {
+    const response = await api.post('/profile/ssi-simulate');
+    return response.data;
+  },
+  atsMatch: async (jobDescription: string) => {
+    const response = await api.post('/profile/ats-match', { job_description: jobDescription });
+    return response.data;
+  },
 };

@@ -125,7 +125,7 @@ class JobService:
         if not job: return
         
         profile = ProfileService.get_profile()
-        provider = AIService.get_provider()
+        provider = AIService.get_provider("ai_model_resume")
         
         archetype = JobService.detect_archetype(job['job_title'], job['description'])
         
@@ -173,7 +173,7 @@ class JobService:
     async def import_job_universal_ai(raw_text: str, url: str) -> bool:
         """Use AI to extract job details from a raw text dump from any website."""
         from app.services.ai_service import AIService
-        provider = AIService.get_provider()
+        provider = AIService.get_provider("ai_model_import")
         
         prompt = f"""
         Extract job details from the following raw text dump from a job posting website ({url}).

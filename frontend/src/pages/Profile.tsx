@@ -33,7 +33,7 @@ const ProfilePage = () => {
   const loadData = async () => {
     setLoading(true);
     try {
-      const p = await profileService.getProfile().catch(() => ({}));
+      const p = await profileService.getProfile().catch(() => ({} as Profile));
       const r = await profileService.getResume().catch(() => ({ content: '' }));
       
       setProfile({

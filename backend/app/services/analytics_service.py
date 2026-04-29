@@ -27,7 +27,7 @@ class AnalyticsService:
             return []
 
         # Use AI to extract common skills from descriptions and find gaps
-        provider = AIService.get_provider()
+        provider = AIService.get_provider("ai_model_optimizer")
         prompt = f"""
         Analyze these job descriptions and the candidate's skills.
         Candidate Skills: {list(user_skills)}

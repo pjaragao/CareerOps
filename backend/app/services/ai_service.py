@@ -140,7 +140,7 @@ from app.services.settings_service import SettingsService
 
 class AIService:
     @staticmethod
-    def get_provider() -> AIProvider:
+    def get_provider(model_key: Optional[str] = None) -> AIProvider:
         # Load dynamic settings
         live_settings = SettingsService.get_settings()
         
@@ -148,13 +148,23 @@ class AIService:
         api_key = live_settings.get("gemini_api_key") or settings.AI_API_KEY
         
         if provider_type == "gemini":
-            # Using selectable models from settings
-            model = live_settings.get("ai_model_import") or live_settings.get("ai_model_chat") or "gemini-1.5-flash"
+            # Using selectable models from settings based on model_key
+            model = "gemini-1.5-flash" # Default
+            if model_key and live_settings.get(model_key):
+                model = live_settings.get(model_key)
+            elif live_settings.get("ai_model_chat"):
+                model = live_settings.get("ai_model_chat")
+                
             fallback = live_settings.get("ai_model_fallback") or "gemini-1.5-pro"
             return GeminiProvider(api_key, model, fallback_model=fallback)
         elif provider_type in ["nvidia", "alibaba", "ollama", "openai"]:
             base_url = live_settings.get("openai_base_url") or settings.AI_BASE_URL
             api_key = live_settings.get("openai_api_key") or api_key
+            
+            # Use same logic for default model
+            model = "gpt-4o" # or whatever is default for these providers
+            if model_key and live_settings.get(model_key):
+                model = live_settings.get(model_key)
             
             if not base_url:
                 if provider_type == "nvidia": base_url = "https://integrate.api.nvidia.com/v1"
