@@ -65,6 +65,10 @@
             cursor: pointer;
             transition: all 0.2s;
             font-size: 1rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
         }
         button:hover {
             background: #7dd3fc;
@@ -94,12 +98,12 @@
             <div id="loader" class="loader"></div>
         </div>
 
-        <button id="import-btn">Importar Perfil</button>
-        <button id="import-job-btn" style="background: #10b981;">Importar Vaga Atual</button>
-        <button id="bulk-jobs-btn" style="background: #f59e0b;">Capturar Todas da Busca</button>
+        <button id="import-btn">Importar (Perfil/Vaga)</button>
+        <button id="bulk-btn" style="background: #f59e0b;">📋 Capturar Todas da Busca</button>
+        <button id="cancel-btn" style="background: #ef4444; color: white; display: none;">✕ Cancelar Operação</button>
         
         <div class="footer">
-            Versão 22.0 - Automação IA Ativa
+            Versão 27.0 - Extração Robusta
         </div>
     </div>
     <script src="popup.js"></script>

@@ -12,7 +12,15 @@ class ManualJobCreate(BaseModel):
     url: Optional[str] = ""
     description: str
 
-@router.get("")
+class MarkAppliedRequest(BaseModel):
+    jobId: str
+
+@router.post("/mark-applied")
+async def mark_applied(req: MarkAppliedRequest):
+    success = JobService.mark_job_applied(req.jobId)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to mark job as applied")
+    return {"ok": True}
 async def get_jobs(status: Optional[str] = Query("all"), limit: int = Query(200)):
     return {"jobs": JobService.get_jobs(status, limit)}
 
@@ -63,7 +71,8 @@ async def import_job_extension(request: Request):
             data.get("company", ""),
             data.get("location", ""),
             data.get("url", ""),
-            data.get("description", "")
+            data.get("description", ""),
+            linkedin_job_id=data.get("linkedin_job_id")
         )
         # Force status to applied if saved successfully to ensure it shows up
         if success:
@@ -71,7 +80,7 @@ async def import_job_extension(request: Request):
                 from app.db.session import get_db_connection
                 conn = get_db_connection()
                 with conn.cursor() as cur:
-                    cur.execute("UPDATE public.job_listings SET status = 'applied' WHERE url = %s", (data.get("url"),))
+                    cur.execute("UPDATE public.job_listings SET status = 'applied' WHERE url = %s OR linkedin_job_id = %s", (data.get("url"), data.get("linkedin_job_id")))
                 conn.commit()
                 conn.close()
             except: pass

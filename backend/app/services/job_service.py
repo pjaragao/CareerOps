@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 from typing import List, Optional, Set
+import re
 from app.db.session import get_db_connection, get_db_cursor
 import uuid
 
@@ -38,26 +39,56 @@ class JobService:
             conn.close()
 
     @staticmethod
-    def insert_manual_job(job_title: str, company: str, location: str, url: str, description: str) -> bool:
+    def insert_manual_job(job_title: str, company: str, location: str, url: str, description: str, linkedin_job_id: Optional[str] = None) -> bool:
         conn = get_db_connection()
-        synthetic_id = f"manual_{uuid.uuid4().hex[:8]}"
+        # If no LinkedIn ID, generate a synthetic one from URL or UUID
+        if not linkedin_job_id:
+            if 'linkedin.com/jobs/view/' in url:
+                match = re.search(r'/view/(\d+)', url)
+                linkedin_job_id = match.group(1) if match else f"manual_{uuid.uuid4().hex[:8]}"
+            else:
+                linkedin_job_id = f"manual_{uuid.uuid4().hex[:8]}"
+        
         try:
             with conn.cursor() as cur:
+                # We use COALESCE to keep existing data if the new data is empty
+                # and ON CONFLICT (linkedin_job_id) to prevent duplicates
                 cur.execute("""
                     INSERT INTO public.job_listings
-                        (url, linkedin_job_id, job_title, company, location, description, status)
-                    VALUES (%s, %s, %s, %s, %s, %s, 'scraped')
-                    ON CONFLICT (url) DO UPDATE SET
-                        description = EXCLUDED.description,
+                        (linkedin_job_id, url, job_title, company, location, description, status, scraped_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, 'scraped', %s)
+                    ON CONFLICT (linkedin_job_id) DO UPDATE SET
+                        url = EXCLUDED.url,
                         job_title = EXCLUDED.job_title,
                         company = EXCLUDED.company,
                         location = EXCLUDED.location,
-                        status = 'scraped'
-                """, (url, synthetic_id, job_title, company, location, description))
+                        description = EXCLUDED.description,
+                        status = 'scraped',
+                        scraped_at = EXCLUDED.scraped_at
+                    WHERE public.job_listings.status != 'applied'
+                """, (linkedin_job_id, url, job_title, company, location, description, datetime.now(timezone.utc)))
             conn.commit()
             return True
         except Exception as e:
             print(f"Error inserting manual job: {e}")
+            return False
+        finally:
+            conn.close()
+
+    @staticmethod
+    def mark_job_applied(linkedin_job_id: str) -> bool:
+        conn = get_db_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    UPDATE public.job_listings 
+                    SET status = 'applied', updated_at = %s 
+                    WHERE linkedin_job_id = %s OR url LIKE %s
+                """, (datetime.now(timezone.utc), linkedin_job_id, f'%{linkedin_job_id}%'))
+            conn.commit()
+            return True
+        except Exception as e:
+            print(f"Error marking job as applied: {e}")
             return False
         finally:
             conn.close()

@@ -107,5 +107,30 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             });
         });
         return true;
+    } else if (request.action === 'markAsApplied') {
+        console.log('Background: Marking job as applied:', request.jobId);
+        const endpoints = [
+            'http://127.0.0.1:8005/api/jobs/mark-applied',
+            'http://localhost:8005/api/jobs/mark-applied',
+            'http://100.109.242.35:8005/api/jobs/mark-applied'
+        ];
+
+        async function tryMarkApplied() {
+            for (const url of endpoints) {
+                try {
+                    await fetch(url, {
+                        method: 'POST',
+                        mode: 'no-cors',
+                        body: JSON.stringify({ jobId: String(request.jobId) })
+                    });
+                    return true;
+                } catch (e) {
+                    console.warn(`Background: Mark applied failed for ${url}`);
+                }
+            }
+            return false;
+        }
+        tryMarkApplied();
+        return true;
     }
 });
