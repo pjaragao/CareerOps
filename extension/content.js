@@ -114,9 +114,14 @@ async function performFullExtraction() {
             if (careerops_import_data.step === 'start') {
                 updateVisualStatus('Fase 1: Analizando Perfil (PT)...');
                 await wait(2000);
+                
+                // Robust segmented data extraction for the main page
+                const segments = await getSegmentedData();
+                
                 careerops_import_data.name = document.querySelector('h1')?.innerText?.trim() || document.querySelector('.text-heading-xlarge')?.innerText?.trim() || '';
                 careerops_import_data.headline = document.querySelector('.text-body-medium')?.innerText?.trim() || '';
-                careerops_import_data.about = (document.querySelector('section.pv-about-section, #about')?.parentElement?.innerText || '') + '\n' + (document.querySelector('.pv-about-section__top-skills')?.innerText || '');
+                careerops_import_data.about_raw = segments.about_raw;
+                careerops_import_data.about = segments.about_raw || (document.querySelector('section.pv-about-section, #about')?.parentElement?.innerText || '') + '\n' + (document.querySelector('.pv-about-section__top-skills')?.innerText || '');
                 careerops_import_data.url = url.split('?')[0];
                 careerops_import_data.step = 'go_to_exp';
                 await chrome.storage.local.set({ careerops_import_data, careerops_import_active: true });

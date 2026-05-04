@@ -52,11 +52,13 @@ const LinkedInOptimizer = () => {
 
   const loadData = async () => {
     try {
-      const [profileData, strats, jobs, latestAnalysis] = await Promise.all([
+      const [profileData, strats, jobs, latestAnalysis, latestExp, latestSkills] = await Promise.all([
         profileService.getProfile(),
         strategyService.getStrategies(),
         jobService.getJobs(),
-        profileService.getLatestAnalysis('full_audit').catch(() => null)
+        profileService.getLatestAnalysis('full_audit').catch(() => null),
+        profileService.getLatestAnalysis('experience').catch(() => null),
+        profileService.getLatestAnalysis('skills').catch(() => null)
       ]);
       setProfile(profileData);
       setStrategies(strats || []);
@@ -66,6 +68,12 @@ const LinkedInOptimizer = () => {
         setResults(latestAnalysis.results);
         setStrategyContext(latestAnalysis.strategy_context);
         setLang(latestAnalysis.lang || 'pt');
+      }
+      if (latestExp && latestExp.results) {
+        setExpResult(latestExp.results.results || latestExp.results);
+      }
+      if (latestSkills) {
+        setSkillsResult(latestSkills.results);
       }
     } catch (error) {
       console.error("Failed to load data", error);
@@ -287,8 +295,8 @@ const LinkedInOptimizer = () => {
       <div className="animate-fade-in" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '2rem' }}>
          <div className="panel" style={{ marginBottom: 0 }}>
             <h3 style={{ fontSize: '0.8rem', fontWeight: 800, textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '1rem', letterSpacing: '1px' }}>Current Summary</h3>
-            <div style={{ padding: '1.5rem', background: 'rgba(255,255,255,0.03)', borderRadius: '16px', color: 'var(--text-muted)', fontSize: '0.9rem', whiteSpace: 'pre-wrap', minHeight: '300px', lineHeight: 1.6 }}>
-              {results.about.original}
+            <div style={{ padding: '1.5rem', background: 'rgba(255,255,255,0.03)', borderRadius: '16px', color: '#fff', fontSize: '0.9rem', whiteSpace: 'pre-wrap', minHeight: '300px', lineHeight: 1.6 }}>
+              {results.about.original || "No original summary found in profile."}
             </div>
          </div>
          <div className="panel" style={{ marginBottom: 0, background: 'rgba(108, 99, 255, 0.05)', border: '1px solid rgba(108, 99, 255, 0.2)' }}>

@@ -61,6 +61,8 @@ async def get_optimizer_analysis(type: str):
     analysis = ProfileService.get_latest_analysis(type)
     return {"analysis": analysis}
 
+import asyncio
+
 class FullAuditRequest(BaseModel):
     lang: str = "pt"
     strategy_context: Optional[Dict[str, Any]] = None
@@ -70,11 +72,15 @@ async def run_full_audit(req: FullAuditRequest):
     profile = ProfileService.get_profile()
     content = json.dumps(profile)
     
-    # Run the core parts
-    score = await ProfileService.get_profile_score(content)
-    ssi = await ProfileService.simulate_ssi(profile)
-    headlines = await ProfileService.generate_headline_variants(profile, req.lang, 3, req.strategy_context)
-    about_opt = await ProfileService.optimize_section(f"LinkedIn About", profile.get("about", ""), req.lang, req.strategy_context)
+    # Run the core parts in parallel to prevent 504 timeouts
+    score_task = ProfileService.get_profile_score(content)
+    ssi_task = ProfileService.simulate_ssi(profile)
+    headlines_task = ProfileService.generate_headline_variants(profile, req.lang, 3, req.strategy_context)
+    about_opt_task = ProfileService.optimize_section(f"LinkedIn About", profile.get("about", ""), req.lang, req.strategy_context)
+    
+    score, ssi, headlines, about_opt = await asyncio.gather(
+        score_task, ssi_task, headlines_task, about_opt_task
+    )
     
     results = {
         "score": score,
