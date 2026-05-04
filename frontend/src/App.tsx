@@ -10,6 +10,7 @@ import Pipeline from './pages/Pipeline';
 import Kanban from './pages/Kanban';
 import Settings from './pages/Settings';
 import LinkedInOptimizer from './pages/LinkedInOptimizer';
+import Companies from './pages/Companies';
 
 function App() {
   return (
@@ -20,6 +21,7 @@ function App() {
           <Route path="profile" element={<Profile />} />
           <Route path="strategies" element={<Strategies />} />
           <Route path="jobs" element={<JobBoard />} />
+          <Route path="companies" element={<Companies />} />
           <Route path="kanban" element={<Kanban />} />
           <Route path="pipeline" element={<Pipeline />} />
           <Route path="interview" element={<Interview />} />

@@ -21,6 +21,7 @@ async def mark_applied(req: MarkAppliedRequest):
     if not success:
         raise HTTPException(status_code=500, detail="Failed to mark job as applied")
     return {"ok": True}
+@router.get("/")
 async def get_jobs(status: Optional[str] = Query("all"), limit: int = Query(200)):
     return {"jobs": JobService.get_jobs(status, limit)}
 

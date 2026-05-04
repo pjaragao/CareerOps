@@ -1,16 +1,15 @@
-from app.db.session import get_db_connection, get_db_cursor
-import json
+
+import psycopg2
+from app.db.session import get_db_connection
 
 def check_schema():
     conn = get_db_connection()
-    tables = ['job_listings', 'pipeline_urls', 'search_strategies', 'star_stories', 'profiles']
-    schema = {}
     try:
-        with get_db_cursor(conn) as cur:
-            for table in tables:
-                cur.execute(f"SELECT column_name, data_type FROM information_schema.columns WHERE table_name = '{table}'")
-                schema[table] = [dict(row) for row in cur.fetchall()]
-        print(json.dumps(schema, indent=2))
+        with conn.cursor() as cur:
+            cur.execute("SELECT column_name, data_type FROM information_schema.columns WHERE table_name = 'job_listings'")
+            rows = cur.fetchall()
+            for row in rows:
+                print(row)
     finally:
         conn.close()
 

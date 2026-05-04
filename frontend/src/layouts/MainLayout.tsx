@@ -10,7 +10,8 @@ import {
   Settings,
   Rocket,
   Shield,
-  Layout
+  Layout,
+  Building2
 } from 'lucide-react';
 
 const Sidebar = () => {
@@ -19,6 +20,7 @@ const Sidebar = () => {
     { icon: <UserCircle size={20} />, label: 'Profile & Onboarding', path: '/profile' },
     { icon: <Target size={20} />, label: 'Search Strategies', path: '/strategies' },
     { icon: <Briefcase size={20} />, label: 'Job Board', path: '/jobs' },
+    { icon: <Building2 size={20} />, label: 'Empresas', path: '/companies' },
     { icon: <LayoutDashboard size={20} />, label: 'Kanban Board', path: '/kanban' },
     { icon: <GitPullRequest size={20} />, label: 'Pipeline', path: '/pipeline' },
     { icon: <MessageSquare size={20} />, label: 'Interview Prep', path: '/interview' },

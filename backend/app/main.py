@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
-from app.api import jobs, interview, profile, strategies, pipeline, dashboard, auth, actions, settings as settings_api
+from app.api import jobs, interview, profile, strategies, pipeline, dashboard, auth, actions, companies, settings as settings_api
 
 app = FastAPI(
     title="LinkedIn Career Ops API",
@@ -26,6 +26,7 @@ app.include_router(strategies.router, prefix="/api")
 app.include_router(pipeline.router, prefix="/api")
 app.include_router(dashboard.router, prefix="/api")
 app.include_router(auth.router, prefix="/api/auth")
+app.include_router(companies.router, prefix="/api/companies")
 app.include_router(settings_api.router, prefix="/api")
 
 @app.get("/")

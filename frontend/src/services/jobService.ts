@@ -14,6 +14,10 @@ export interface Job {
   resume_markdown?: string;
   cover_letter?: string;
   linkedin_dm_draft?: string;
+  company_name?: string;
+  logo_url?: string;
+  company_type?: string;
+  career_site_url?: string;
 }
 
 export interface AIOptions {
@@ -22,12 +26,13 @@ export interface AIOptions {
 }
 
 export const jobService = {
-  getJobs: async (status: string = 'all') => {
-    const response = await api.get<{ jobs: Job[] }>(`/jobs?status=${status}`);
+  getJobs: async (status?: string) => {
+    const url = status ? `/jobs/?status=${status}` : '/jobs/';
+    const response = await api.get<{ jobs: Job[] }>(url);
     return response.data.jobs;
   },
   addManualJob: async (job: any) => {
-    const response = await api.post('/jobs', job);
+    const response = await api.post('/jobs/', job);
     return response.data;
   },
   deleteJob: async (id: number) => {

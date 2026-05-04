@@ -10,20 +10,39 @@ class JobService:
         conn = get_db_connection()
         try:
             with get_db_cursor(conn) as cur:
-                query = "SELECT * FROM public.job_listings"
+                query = """
+                    SELECT j.*, c.name as company_name, c.logo_url, c.company_type, c.career_site_url
+                    FROM public.job_listings j
+                    LEFT JOIN public.companies c ON j.company_id = c.id
+                """
                 params = []
                 if status and status != 'all':
-                    query += " WHERE status = %s"
+                    query += " WHERE j.status = %s"
                     params.append(status)
                 else:
-                    query += " WHERE status != 'removed'"
+                    query += " WHERE j.status != 'removed'"
                 
-                query += " ORDER BY created_at DESC LIMIT %s"
+                query += " ORDER BY j.created_at DESC LIMIT %s"
                 params.append(limit)
                 
                 cur.execute(query, params)
                 rows = cur.fetchall()
                 return [dict(row) for row in rows]
+        finally:
+            conn.close()
+
+    @staticmethod
+    def get_jobs_by_company(company_id: int) -> List[dict]:
+        conn = get_db_connection()
+        try:
+            with get_db_cursor(conn) as cur:
+                query = """
+                    SELECT * FROM public.job_listings
+                    WHERE company_id = %s
+                    ORDER BY created_at DESC
+                """
+                cur.execute(query, (company_id,))
+                return [dict(row) for row in cur.fetchall()]
         finally:
             conn.close()
 
@@ -49,14 +68,18 @@ class JobService:
             else:
                 linkedin_job_id = f"manual_{uuid.uuid4().hex[:8]}"
         
+        # Link to company
+        from app.services.company_service import CompanyService
+        company_id = CompanyService.get_or_create_company(company, url)
+        
         try:
             with conn.cursor() as cur:
                 # We use COALESCE to keep existing data if the new data is empty
                 # and ON CONFLICT (linkedin_job_id) to prevent duplicates
                 cur.execute("""
                     INSERT INTO public.job_listings
-                        (linkedin_job_id, url, job_title, company, location, description, status, scraped_at)
-                    VALUES (%s, %s, %s, %s, %s, %s, 'scraped', %s)
+                        (linkedin_job_id, url, job_title, company, location, description, status, scraped_at, company_id)
+                    VALUES (%s, %s, %s, %s, %s, %s, 'scraped', %s, %s)
                     ON CONFLICT (linkedin_job_id) DO UPDATE SET
                         url = EXCLUDED.url,
                         job_title = EXCLUDED.job_title,
@@ -64,9 +87,10 @@ class JobService:
                         location = EXCLUDED.location,
                         description = EXCLUDED.description,
                         status = 'scraped',
-                        scraped_at = EXCLUDED.scraped_at
+                        scraped_at = EXCLUDED.scraped_at,
+                        company_id = EXCLUDED.company_id
                     WHERE public.job_listings.status != 'applied'
-                """, (linkedin_job_id, url, job_title, company, location, description, datetime.now(timezone.utc)))
+                """, (linkedin_job_id, url, job_title, company, location, description, datetime.now(timezone.utc), company_id))
             conn.commit()
             return True
         except Exception as e:

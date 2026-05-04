@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { jobService, Job } from '../services/jobService';
-import { Plus, MapPin, Calendar, ExternalLink, Trash2 } from 'lucide-react';
+import { Plus, MapPin, Calendar, ExternalLink, Trash2, Building2, Globe } from 'lucide-react';
 import JobDetail from '../components/JobDetail';
 
 const JobBoard = () => {
@@ -120,8 +120,43 @@ const JobBoard = () => {
                   setSelectedJob(job);
                 }}>
                   <td style={{ padding: '1rem' }}>
-                    <div style={{ fontWeight: 600, color: '#fff' }}>{job.job_title}</div>
-                    <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>{job.company}</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <div style={{ 
+                        width: '36px', 
+                        height: '36px', 
+                        background: 'rgba(255,255,255,0.05)', 
+                        borderRadius: '6px', 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        justifyContent: 'center',
+                        overflow: 'hidden',
+                        flexShrink: 0
+                      }}>
+                        {job.logo_url ? (
+                          <img src={job.logo_url} alt={job.company_name} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                        ) : (
+                          <Building2 size={18} color="var(--text-muted)" />
+                        )}
+                      </div>
+                      <div>
+                        <div style={{ fontWeight: 600, color: '#fff' }}>{job.job_title}</div>
+                        <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          {job.company_name || job.company}
+                          {job.company_type && (
+                            <span style={{ 
+                              fontSize: '0.65rem', 
+                              padding: '1px 6px', 
+                              borderRadius: '4px', 
+                              background: 'rgba(255,255,255,0.05)',
+                              color: 'var(--text-muted)',
+                              border: '1px solid rgba(255,255,255,0.1)'
+                            }}>
+                              {job.company_type.replace('_', ' ')}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
                   </td>
                   <td style={{ padding: '1rem', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
@@ -149,8 +184,13 @@ const JobBoard = () => {
                   <td style={{ padding: '1rem', textAlign: 'right' }}>
                     <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
                       {job.url && (
-                        <a href={job.url} target="_blank" rel="noreferrer" className="btn btn-secondary" style={{ padding: '6px' }} onClick={(e) => e.stopPropagation()}>
+                        <a href={job.url} target="_blank" rel="noreferrer" className="btn btn-secondary" style={{ padding: '6px' }} title="Anúncio Original" onClick={(e) => e.stopPropagation()}>
                           <ExternalLink size={16} />
+                        </a>
+                      )}
+                      {job.career_site_url && (
+                        <a href={job.career_site_url} target="_blank" rel="noreferrer" className="btn btn-primary" style={{ padding: '6px', background: 'rgba(108, 99, 255, 0.2)' }} title="Site de Carreira" onClick={(e) => e.stopPropagation()}>
+                          <Globe size={16} />
                         </a>
                       )}
                       <button onClick={(e) => { e.stopPropagation(); handleDelete(job.id); }} className="btn btn-secondary" style={{ padding: '6px', color: '#ff4d4d' }}>
