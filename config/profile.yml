@@ -1,45 +1,57 @@
 personal:
-  name: ''
+  name: Paulo José Aragão Júnior
   email: pjaragaojr@gmail.com
   phone: ''
   location: ''
   linkedin: ''
   github: ''
-  headline: ''
-legal: {}
+legal:
+  visa_status: sponsorship_required
+  gender: male
+  ethnicity: white
 preferences: {}
-experience: []
+experience:
+- company: MPB Engenharia
+  role: Diretor financeiro
+  period: fev de 2023 - o momento
+  description: 'Tempo integral. Florianópolis, Santa Catarina, Brasil. Competências:
+    Analítica de dados, Gestão de pessoas.'
+- company: MPB Engenharia
+  role: Engenheiro
+  period: jun de 2008 - o momento
+  description: 'Gerente de TI. Soluções Tecnológicas para Gerenciamento de Projetos.
+    Propostas Financeiras. Estudos de Viabilidade Econômica. Competências: Analítica
+    de dados, VBA Excel.'
 education:
 - institution: Fundação Getulio Vargas
   degree: Pós-graduação Lato Sensu - MBA Executivo, Business/Commerce, General
-  year: mar de 2013 – fev de 2025
+  year: 2013 – 2025
 - institution: Universidade Federal de Santa Catarina
   degree: Bacharelado em Engenharia, Environmental/Environmental Health Engineering
   year: 2005 – 2011
 - institution: Universidade Paulista
   degree: Pós-graduação Lato Sensu - MBA Executivo, MBA EM PLATAFORMA BIM - MODELAGEM
     3D, PLANEJAMENTO 4D E ORÇAMENTO 5D / 6D / 7D
-  year: fev de 2019 – mar de 2021
-skills: []
+  year: 2019 – 2021
+skills:
+- Comunicação
+- Visualização de dados
+- ETL (Extração, transformação e carregamento)
+- Engajamento de clientes
+- Inteligência de negócios (BI)
+- Dashboards
+- Analítica de dados
+- Habilidades analíticas
+- SQL
+- Resolução de problemas
+- Gestão de pessoas
+- VBA Excel
+- Tabelas dinâmicas
+- Microsoft Excel Macros
+- Plano de Negócio
+- Planejamento Estratégico
+- Marketing
+- Economia
+- Matemática Financeira
+- Contabilidade
 keywords: []
-about: 'Líder estratégico com formação em Engenharia e MBA, com sólida trajetória
-  como Diretor na condução de projetos de infraestrutura de larga escala. Ao longo
-  da minha carreira, especializei-me na gestão de contratos governamentais complexos
-  e na coordenação de operações de alto impacto, garantindo a conformidade técnica
-  e a viabilidade financeira em cenários desafiadores.
-
-
-  Minha atuação atual é pautada pela convergência entre a gestão de engenharia e a
-  inovação tecnológica. Utilizo minha visão analítica e executiva para liderar a automação
-  de processos e a implementação de soluções de inteligência artificial que elevam
-  a eficiência operacional. Sou movido pelo desafio de transformar operações tradicionais
-  em fluxos de trabalho ágeis e orientados a resultados, unindo o rigor da engenharia
-  à agilidade das novas tecnologias para otimizar negócios e infraestruturas.
-
-  … mais
-
-
-  Principais competências
-
-
-  SQL • Microsoft Office • Habilidades analíticas • Visualização de dados'

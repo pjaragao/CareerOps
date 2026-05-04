@@ -8,6 +8,64 @@ from app.services.ai_service import AIService
 
 class ProfileService:
     @staticmethod
+    def _ensure_table_exists():
+        conn = get_db_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS public.optimizer_analyses (
+                        id SERIAL PRIMARY KEY,
+                        analysis_type TEXT NOT NULL,
+                        lang TEXT DEFAULT 'pt',
+                        strategy_context JSONB,
+                        results JSONB NOT NULL,
+                        profile_snapshot JSONB,
+                        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                    );
+                    CREATE INDEX IF NOT EXISTS idx_optimizer_analyses_type ON public.optimizer_analyses(analysis_type);
+                    CREATE INDEX IF NOT EXISTS idx_optimizer_analyses_created ON public.optimizer_analyses(created_at DESC);
+                """)
+            conn.commit()
+        except Exception as e:
+            print(f"DEBUG: Error auto-creating table: {e}")
+        finally:
+            conn.close()
+
+    @staticmethod
+    def save_analysis(analysis_type: str, lang: str, strategy_context: Optional[dict], results: dict, profile_snapshot: dict):
+        ProfileService._ensure_table_exists()
+        conn = get_db_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO public.optimizer_analyses (analysis_type, lang, strategy_context, results, profile_snapshot, created_at)
+                    VALUES (%s, %s, %s, %s, %s, NOW())
+                """, (analysis_type, lang, json.dumps(strategy_context) if strategy_context else None, json.dumps(results), json.dumps(profile_snapshot)))
+            conn.commit()
+        except Exception as e:
+            print(f"DEBUG: Error saving analysis: {e}")
+        finally:
+            conn.close()
+
+    @staticmethod
+    def get_latest_analysis(analysis_type: str) -> Optional[dict]:
+        ProfileService._ensure_table_exists()
+        conn = get_db_connection()
+        try:
+            with get_db_cursor(conn) as cur:
+                cur.execute("""
+                    SELECT * FROM public.optimizer_analyses 
+                    WHERE analysis_type = %s 
+                    ORDER BY created_at DESC LIMIT 1
+                """, (analysis_type,))
+                row = cur.fetchone()
+                return dict(row) if row else None
+        except Exception as e:
+            print(f"DEBUG: Error fetching latest analysis: {e}")
+            return None
+        finally:
+            conn.close()
+    @staticmethod
     def get_profile() -> dict:
         print(f"DEBUG: Reading profile from {settings.PROFILE_FILE}")
         if settings.PROFILE_FILE.exists():
@@ -114,13 +172,39 @@ class ProfileService:
         return extracted
 
     @staticmethod
-    async def optimize_section(section: str, content: str) -> str:
+    def _format_strategy_context(strategy_context: Optional[dict] = None) -> str:
+        if not strategy_context:
+            return ""
+        
+        ctx_type = strategy_context.get("type")
+        label = strategy_context.get("label", "")
+        keywords = strategy_context.get("keywords", [])
+        
+        # Filter out None values that might come from undefined frontend fields
+        safe_keywords = [str(k) for k in keywords if k]
+        
+        if ctx_type == "strategy":
+            return f"\nTARGET STRATEGY CONTEXT:\n- Target: {label}\n- Key Keywords to Include: {', '.join(safe_keywords)}\nMake sure to strongly align the content with this target strategy and include these keywords naturally."
+        elif ctx_type == "job":
+            return f"\nTARGET JOB CONTEXT:\n- Target Role/Company: {label}\n- Job Keywords/Description context: {', '.join(safe_keywords)}\nMake sure to strongly align the content with this specific job opportunity."
+        elif ctx_type == "custom":
+            return f"\nTARGET ROLE CONTEXT:\n- Target Role: {label}\nMake sure to strongly align the content to appeal to recruiters hiring for this role."
+        
+        return ""
+
+    @staticmethod
+    async def optimize_section(section: str, content: str, lang: str = "pt", strategy_context: Optional[dict] = None) -> str:
         provider = AIService.get_provider("ai_model_optimizer")
+        lang_name = "Portuguese" if lang == "pt" else "English"
+        context_prompt = ProfileService._format_strategy_context(strategy_context)
+        
         prompt = f"""
         You are a career consultant expert in LinkedIn and Resume optimization.
         Optimize the following '{section}' section of a professional profile.
         Make it more impactful, results-oriented, and include relevant keywords for Applicant Tracking Systems (ATS).
-        Use professional language and maintain the original language (PT or EN).
+        Use professional language.{context_prompt}
+        
+        RESPOND ENTIRELY IN {lang_name.upper()}.
         
         Original Content:
         {content}
@@ -201,13 +285,15 @@ class ProfileService:
         return provider.generate_json(prompt)
 
     @staticmethod
-    async def analyze_skills(profile: dict, target_role: str) -> Dict[str, Any]:
+    async def analyze_skills(profile: dict, target_role: str, strategy_context: Optional[dict] = None) -> Dict[str, Any]:
         """Analyzes skills gap vs target role and categorizes them."""
         provider = AIService.get_provider("ai_model_optimizer")
         current_skills = profile.get("skills", [])
+        context_prompt = ProfileService._format_strategy_context(strategy_context)
+        
         prompt = f"""
         You are a technical recruiter expert in LinkedIn profile optimization.
-        Analyze the candidate's current skills vs their target role.
+        Analyze the candidate's current skills vs their target role.{context_prompt}
 
         Target Role: {target_role}
         Current Skills: {json.dumps(current_skills, ensure_ascii=False)}
@@ -225,10 +311,12 @@ class ProfileService:
         return provider.generate_json(prompt)
 
     @staticmethod
-    async def optimize_experience_bullets(experience_list: list, lang: str = "pt") -> List[Dict[str, Any]]:
+    async def optimize_experience_bullets(experience_list: list, lang: str = "pt", strategy_context: Optional[dict] = None) -> List[Dict[str, Any]]:
         """Rewrites each experience with impact statements and action verbs."""
         provider = AIService.get_provider("ai_model_optimizer")
         lang_name = "Portuguese" if lang == "pt" else "English"
+        context_prompt = ProfileService._format_strategy_context(strategy_context)
+        
         results = []
         for exp in experience_list:
             prompt = f"""
@@ -237,8 +325,9 @@ class ProfileService:
             1. Strong action verbs (Led, Built, Reduced, Increased, Delivered, Architected...)
             2. Quantified achievements (%, $, numbers, timeframes)
             3. Keywords relevant to ATS systems
-            4. Impact-first format: [Verb] + [Action] + [Result]
-            Language: {lang_name}
+            4. Impact-first format: [Verb] + [Action] + [Result]{context_prompt}
+            
+            RESPOND ENTIRELY IN {lang_name.upper()}.
 
             Role: {exp.get('role', '')} at {exp.get('company', '')}
             Period: {exp.get('period', '')}
@@ -261,7 +350,7 @@ class ProfileService:
         return results
 
     @staticmethod
-    async def generate_headline_variants(profile: dict, lang: str = "pt", count: int = 3) -> Dict[str, Any]:
+    async def generate_headline_variants(profile: dict, lang: str = "pt", count: int = 3, strategy_context: Optional[dict] = None) -> Dict[str, Any]:
         """Generates N optimized headline variants with character counts."""
         provider = AIService.get_provider("ai_model_optimizer")
         lang_name = "Portuguese" if lang == "pt" else "English"
@@ -269,16 +358,20 @@ class ProfileService:
         skills = profile.get("skills", [])[:15]
         experience = profile.get("experience", [])
         current_role = experience[0].get("role", "") if experience else ""
+        context_prompt = ProfileService._format_strategy_context(strategy_context)
+        
         prompt = f"""
         You are a LinkedIn optimization expert.
-        Generate {count} different optimized LinkedIn headline variants in {lang_name}.
+        Generate {count} different optimized LinkedIn headline variants.
+        
+        RESPOND ENTIRELY IN {lang_name.upper()}.
 
         LinkedIn headline rules:
         - Maximum 220 characters
         - Use | to separate sections
         - Formula: [Role] | [Specialty] | [Key Tools/Stack] | [Value Proposition]
         - Include relevant keywords for recruiter searches
-        - Be specific, not generic
+        - Be specific, not generic{context_prompt}
 
         Candidate info:
         - Current headline: {personal.get('headline', 'Not set')}

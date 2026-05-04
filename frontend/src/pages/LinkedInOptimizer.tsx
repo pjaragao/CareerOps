@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { profileService } from '../services/profileService';
+import { strategyService, Strategy } from '../services/strategyService';
+import { jobService, Job } from '../services/jobService';
 import { 
   Wand2, 
   CheckCircle, 
@@ -40,46 +42,55 @@ const LinkedInOptimizer = () => {
   const [atsMatchResult, setAtsMatchResult] = useState<any>(null);
   const [skillsResult, setSkillsResult] = useState<any>(null);
   const [expResult, setExpResult] = useState<any>(null);
+  const [strategies, setStrategies] = useState<Strategy[]>([]);
+  const [savedJobs, setSavedJobs] = useState<Job[]>([]);
+  const [strategyContext, setStrategyContext] = useState<{type: string, id: number, label: string, keywords: string[]}|null>(null);
 
   useEffect(() => {
-    loadProfile();
+    loadData();
   }, []);
 
-  const loadProfile = async () => {
+  const loadData = async () => {
     try {
-      const data = await profileService.getProfile();
-      setProfile(data);
+      const [profileData, strats, jobs, latestAnalysis] = await Promise.all([
+        profileService.getProfile(),
+        strategyService.getStrategies(),
+        jobService.getJobs(),
+        profileService.getLatestAnalysis('full_audit').catch(() => null)
+      ]);
+      setProfile(profileData);
+      setStrategies(strats || []);
+      setSavedJobs(jobs || []);
+      
+      if (latestAnalysis) {
+        setResults(latestAnalysis.results);
+        setStrategyContext(latestAnalysis.strategy_context);
+        setLang(latestAnalysis.lang || 'pt');
+      }
     } catch (error) {
-      console.error("Failed to load profile", error);
+      console.error("Failed to load data", error);
     }
   };
 
+  const checkCompleteness = (p: any) => {
+    if (!p.personal?.name || !p.experience?.length || !p.skills?.length) {
+      return false;
+    }
+    return true;
+  };
+
   const runFullAnalysis = async () => {
+    const p = await profileService.getProfile();
+    if (!checkCompleteness(p)) {
+      alert("⚠️ Profile is incomplete. Please ensure you have a Name, Experience, and Skills in the Profile page before running optimization.");
+      return;
+    }
+
     setLoading(true);
     try {
-      const p = await profileService.getProfile();
       setProfile(p);
-      
-      const content = JSON.stringify(p);
-      
-      // Parallel requests for core metrics
-      const [score, ssi, headlines] = await Promise.all([
-        profileService.getScore(content),
-        profileService.simulateSSI(),
-        profileService.getHeadlineVariants(lang)
-      ]);
-
-      const aboutOpt = await profileService.optimizeSection(`LinkedIn About in ${lang === 'pt' ? 'Portuguese' : 'English'}`, p.about || '');
-
-      setResults({
-        score,
-        ssi,
-        headlines,
-        about: {
-          original: p.about || "No summary found",
-          optimized: aboutOpt
-        }
-      });
+      const res = await profileService.runFullAudit(lang, strategyContext);
+      setResults(res);
       setActiveTab('overview');
     } catch (error) {
       alert("Failed to run optimization.");
@@ -92,7 +103,7 @@ const LinkedInOptimizer = () => {
     if (!atsJobDesc) return;
     setLoading(true);
     try {
-      const res = await profileService.atsMatch(atsJobDesc);
+      const res = await profileService.atsMatch(atsJobDesc, lang, strategyContext);
       setAtsMatchResult(res);
     } catch (error) {
       alert("ATS Analysis failed.");
@@ -104,7 +115,8 @@ const LinkedInOptimizer = () => {
   const handleSkillsAnalysis = async () => {
     setLoading(true);
     try {
-      const res = await profileService.analyzeSkills(profile.preferences?.target_role || 'Software Engineer');
+      const target = strategyContext?.label || profile.preferences?.target_role || 'Software Engineer';
+      const res = await profileService.analyzeSkills(target, lang, strategyContext);
       setSkillsResult(res);
     } catch (error) {
       alert("Skills analysis failed.");
@@ -116,7 +128,7 @@ const LinkedInOptimizer = () => {
   const handleExpOptimization = async () => {
     setLoading(true);
     try {
-      const res = await profileService.optimizeExperience(lang);
+      const res = await profileService.optimizeExperience(lang, strategyContext);
       setExpResult(res.results);
     } catch (error) {
       alert("Experience optimization failed.");
@@ -241,11 +253,11 @@ const LinkedInOptimizer = () => {
                     <Users size={60} color="#90a4ae" />
                   </div>
                   <div>
-                     <h2 style={{ fontSize: '1.5rem', fontWeight: 700, margin: 0 }}>{profile.personal?.name || 'Your Name'}</h2>
+                     <h2 style={{ fontSize: '1.5rem', fontWeight: 700, margin: 0, color: profile.personal?.name ? '#000' : '#d32f2f' }}>{profile.personal?.name || '⚠️ Name not set'}</h2>
                      <p style={{ fontSize: '1rem', lineHeight: 1.3, color: '#333', marginTop: '4px' }}>
                        {results.headlines.variants[results.headlines.best_pick].text}
                      </p>
-                     <p style={{ fontSize: '0.8rem', color: '#666', marginTop: '8px' }}>{profile.personal?.location || 'Your Location'} • <span style={{ color: '#0a66c2', fontWeight: 700 }}>500+ connections</span></p>
+                     <p style={{ fontSize: '0.8rem', color: '#666', marginTop: '8px' }}>{profile.personal?.location || 'Location not set'} • <span style={{ color: '#0a66c2', fontWeight: 700 }}>500+ connections</span></p>
                   </div>
                   <div style={{ marginTop: '1rem', display: 'flex', gap: '8px' }}>
                     <button style={{ background: '#0a66c2', color: '#fff', border: 'none', padding: '0.4rem 1rem', borderRadius: '20px', fontWeight: 700, fontSize: '0.85rem' }}>Open to</button>
@@ -485,9 +497,52 @@ const LinkedInOptimizer = () => {
     );
   };
 
+  const renderContextSelector = () => (
+    <div style={{ marginBottom: '1.5rem', display: 'flex', gap: '1rem', alignItems: 'center' }}>
+      <label style={{ fontSize: '0.9rem', color: 'var(--text-muted)', fontWeight: 600 }}>Optimize for:</label>
+      <select 
+        style={{ 
+          background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border)', borderRadius: '8px', 
+          color: '#fff', padding: '0.5rem 1rem', outline: 'none' 
+        }}
+        value={strategyContext ? `${strategyContext.type}-${strategyContext.id}` : ''}
+        onChange={(e) => {
+          const val = e.target.value;
+          if (!val) {
+            setStrategyContext(null);
+            return;
+          }
+          const [type, idStr] = val.split('-');
+          const id = parseInt(idStr);
+          if (type === 'strategy') {
+            const s = strategies.find(x => x.id === id);
+            if (s) setStrategyContext({ type: 'strategy', id, label: s.title, keywords: s.keywords });
+          } else if (type === 'job') {
+            const j = savedJobs.find(x => x.id === id);
+            if (j) setStrategyContext({ type: 'job', id, label: `${j.job_title} at ${j.company}`, keywords: [j.job_title, j.company] });
+          }
+        }}
+      >
+        <option value="">General (No specific target)</option>
+        <optgroup label="Search Strategies">
+          {strategies.map(s => <option key={`strategy-${s.id}`} value={`strategy-${s.id}`}>{s.title}</option>)}
+        </optgroup>
+        <optgroup label="Saved Jobs">
+          {savedJobs.map(j => <option key={`job-${j.id}`} value={`job-${j.id}`}>{j.job_title} @ {j.company}</option>)}
+        </optgroup>
+      </select>
+      
+      {strategyContext && (
+         <div style={{ padding: '4px 10px', background: 'rgba(108, 99, 255, 0.1)', border: '1px solid rgba(108, 99, 255, 0.3)', borderRadius: '12px', fontSize: '11px', color: 'var(--accent)', fontWeight: 700 }}>
+           Targeting: {strategyContext.label}
+         </div>
+      )}
+    </div>
+  );
+
   return (
     <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '1rem' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2.5rem', gap: '1.5rem' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', gap: '1.5rem' }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '0.5rem' }}>
              <div style={{ padding: '2px 8px', background: 'rgba(108, 99, 255, 0.1)', border: '1px solid rgba(108, 99, 255, 0.2)', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold', color: 'var(--accent)', letterSpacing: '1px' }}>BETA</div>
@@ -545,6 +600,8 @@ const LinkedInOptimizer = () => {
           </button>
         </div>
       </div>
+      
+      {renderContextSelector()}
 
       {!results && !loading && (
         <div className="panel" style={{ position: 'relative', overflow: 'hidden', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '4rem 2rem', textAlign: 'center', minHeight: '400px' }}>

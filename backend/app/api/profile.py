@@ -21,6 +21,12 @@ class ResumeUpdate(BaseModel):
 class OptimizeRequest(BaseModel):
     section: str
     content: str
+    lang: str = "pt"
+    strategy_context: Optional[Dict[str, Any]] = None
+
+class StrategyContextRequest(BaseModel):
+    lang: str = "pt"
+    strategy_context: Optional[Dict[str, Any]] = None
 
 @router.get("")
 async def get_profile():
@@ -47,8 +53,41 @@ async def get_status():
 
 @router.post("/optimize")
 async def optimize(req: OptimizeRequest):
-    result = await ProfileService.optimize_section(req.section, req.content)
+    result = await ProfileService.optimize_section(req.section, req.content, req.lang, req.strategy_context)
     return {"result": result}
+
+@router.get("/optimizer-analysis")
+async def get_optimizer_analysis(type: str):
+    analysis = ProfileService.get_latest_analysis(type)
+    return {"analysis": analysis}
+
+class FullAuditRequest(BaseModel):
+    lang: str = "pt"
+    strategy_context: Optional[Dict[str, Any]] = None
+
+@router.post("/run-full-audit")
+async def run_full_audit(req: FullAuditRequest):
+    profile = ProfileService.get_profile()
+    content = json.dumps(profile)
+    
+    # Run the core parts
+    score = await ProfileService.get_profile_score(content)
+    ssi = await ProfileService.simulate_ssi(profile)
+    headlines = await ProfileService.generate_headline_variants(profile, req.lang, 3, req.strategy_context)
+    about_opt = await ProfileService.optimize_section(f"LinkedIn About", profile.get("about", ""), req.lang, req.strategy_context)
+    
+    results = {
+        "score": score,
+        "ssi": ssi,
+        "headlines": headlines,
+        "about": {
+            "original": profile.get("about", ""),
+            "optimized": about_opt
+        }
+    }
+    
+    ProfileService.save_analysis("full_audit", req.lang, req.strategy_context, results, profile)
+    return {"results": results}
 
 
 class ContentRequest(BaseModel):
@@ -82,16 +121,18 @@ async def import_extension(request: Request):
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
-class SkillsAnalysisRequest(BaseModel):
+class SkillsAnalysisRequest(StrategyContextRequest):
     target_role: str
 
 @router.post("/analyze-skills")
 async def analyze_skills(req: SkillsAnalysisRequest):
     profile = ProfileService.get_profile()
-    return await ProfileService.analyze_skills(profile, req.target_role)
+    results = await ProfileService.analyze_skills(profile, req.target_role, req.strategy_context)
+    ProfileService.save_analysis("skills", req.lang, req.strategy_context, results, profile)
+    return results
 
-class ExperienceOptimizeRequest(BaseModel):
-    lang: str = "pt"
+class ExperienceOptimizeRequest(StrategyContextRequest):
+    pass
 
 @router.post("/optimize-experience")
 async def optimize_experience(req: ExperienceOptimizeRequest):
@@ -99,27 +140,30 @@ async def optimize_experience(req: ExperienceOptimizeRequest):
     experience = profile.get("experience", [])
     if not experience:
         return {"results": []}
-    results = await ProfileService.optimize_experience_bullets(experience, req.lang)
+    results = await ProfileService.optimize_experience_bullets(experience, req.lang, req.strategy_context)
+    ProfileService.save_analysis("experience", req.lang, req.strategy_context, {"results": results}, profile)
     return {"results": results}
 
-class HeadlineVariantsRequest(BaseModel):
-    lang: str = "pt"
+class HeadlineVariantsRequest(StrategyContextRequest):
     count: int = 3
 
 @router.post("/headline-variants")
 async def headline_variants(req: HeadlineVariantsRequest):
     profile = ProfileService.get_profile()
-    return await ProfileService.generate_headline_variants(profile, req.lang, req.count)
+    results = await ProfileService.generate_headline_variants(profile, req.lang, req.count, req.strategy_context)
+    return results
 
 @router.post("/ssi-simulate")
 async def ssi_simulate():
     profile = ProfileService.get_profile()
     return await ProfileService.simulate_ssi(profile)
 
-class ATSMatchRequest(BaseModel):
+class ATSMatchRequest(StrategyContextRequest):
     job_description: str
 
 @router.post("/ats-match")
 async def ats_match(req: ATSMatchRequest):
     profile = ProfileService.get_profile()
-    return await ProfileService.analyze_ats_match(profile, req.job_description)
+    results = await ProfileService.analyze_ats_match(profile, req.job_description)
+    ProfileService.save_analysis("ats_match", req.lang, req.strategy_context, results, profile)
+    return results
