@@ -81,7 +81,12 @@ const LinkedInOptimizer = () => {
   };
 
   const checkCompleteness = (p: any) => {
-    if (!p.personal?.name || !p.experience?.length || !p.skills?.length) {
+    const langData = p.languages?.[lang] || {};
+    const name = p.personal?.name;
+    const experience = langData.experience || p.experience || [];
+    const skills = langData.skills || p.skills || [];
+    
+    if (!name || !experience.length || !skills.length) {
       return false;
     }
     return true;
@@ -90,7 +95,7 @@ const LinkedInOptimizer = () => {
   const runFullAnalysis = async () => {
     const p = await profileService.getProfile();
     if (!checkCompleteness(p)) {
-      alert("⚠️ Profile is incomplete. Please ensure you have a Name, Experience, and Skills in the Profile page before running optimization.");
+      alert("⚠️ Profile is incomplete. Please ensure you have a Name, Experience, and Skills (for the selected language " + lang.toUpperCase() + ") in the Profile page before running optimization.");
       return;
     }
 
@@ -170,27 +175,32 @@ const LinkedInOptimizer = () => {
         <div className="panel" style={{ marginBottom: 0, display: 'flex', flexDirection: 'column' }}>
           <h3 className="panel-title"><ListChecks color="var(--accent)" /> All-Star Checklist</h3>
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.8rem', marginTop: '1rem' }}>
-            {[
-              { label: 'Professional Headline', checked: !!profile.personal?.headline },
-              { label: 'Detailed About Section', checked: (profile.about?.length > 100) },
-              { label: 'Work Experience (2+ roles)', checked: (profile.experience?.length >= 2) },
-              { label: 'Skills (5+ listed)', checked: (profile.skills?.length >= 5) },
-              { label: 'Education Details', checked: (profile.education?.length >= 1) },
-              { label: 'Contact Information', checked: !!profile.personal?.email },
-            ].map((item, i) => (
-              <div key={i} style={{ 
-                display: 'flex', 
-                alignItems: 'center', 
-                gap: '12px', 
-                padding: '0.8rem 1rem', 
-                borderRadius: '12px', 
-                background: item.checked ? 'rgba(0, 200, 83, 0.05)' : 'rgba(255, 255, 255, 0.03)',
-                border: '1px solid rgba(255,255,255,0.02)'
-              }}>
-                {item.checked ? <CheckCircle color="var(--success)" size={18} /> : <div style={{ width: '18px', height: '18px', borderRadius: '50%', border: '2px dashed var(--text-muted)', opacity: 0.3 }} />}
-                <span style={{ fontSize: '0.9rem', fontWeight: 500, color: item.checked ? '#fff' : 'var(--text-muted)' }}>{item.label}</span>
-              </div>
-            ))}
+            {(() => {
+              const langData = profile.languages?.[lang] || {};
+              const checklist = [
+                { label: 'Professional Headline', checked: !!profile.personal?.headline },
+                { label: 'Detailed About Section', checked: (langData.about?.length > 100 || profile.about?.length > 100) },
+                { label: 'Work Experience (2+ roles)', checked: ((langData.experience?.length || profile.experience?.length || 0) >= 2) },
+                { label: 'Skills (5+ listed)', checked: ((langData.skills?.length || profile.skills?.length || 0) >= 5) },
+                { label: 'Education Details', checked: ((langData.education?.length || profile.education?.length || 0) >= 1) },
+                { label: 'Contact Information', checked: !!profile.personal?.email },
+              ];
+
+              return checklist.map((item, i) => (
+                <div key={i} style={{ 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: '12px', 
+                  padding: '0.8rem 1rem', 
+                  borderRadius: '12px', 
+                  background: item.checked ? 'rgba(0, 200, 83, 0.05)' : 'rgba(255, 255, 255, 0.03)',
+                  border: '1px solid rgba(255,255,255,0.02)'
+                }}>
+                  {item.checked ? <CheckCircle color="var(--success)" size={18} /> : <div style={{ width: '18px', height: '18px', borderRadius: '50%', border: '2px dashed var(--text-muted)', opacity: 0.3 }} />}
+                  <span style={{ fontSize: '0.9rem', fontWeight: 500, color: item.checked ? '#fff' : 'var(--text-muted)' }}>{item.label}</span>
+                </div>
+              ));
+            })()}
           </div>
         </div>
 

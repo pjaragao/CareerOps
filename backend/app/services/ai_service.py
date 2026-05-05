@@ -149,7 +149,8 @@ class AIService:
         
         if provider_type == "gemini":
             # Using selectable models from settings based on model_key
-            model = "gemini-1.5-flash" # Default
+            # Priority: 1. Exact model_key, 2. ai_model_chat, 3. hardcoded default
+            model = "gemini-1.5-flash"
             if model_key and live_settings.get(model_key):
                 model = live_settings.get(model_key)
             elif live_settings.get("ai_model_chat"):

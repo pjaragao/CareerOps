@@ -101,53 +101,99 @@ async function updateVisualStatus(message, isError = false) {
     await chrome.storage.local.set({ careerops_status: message });
 }
 
+function forceNavigate(url, params = {}) {
+    const form = document.createElement('form');
+    form.action = url;
+    form.method = 'GET';
+    for (const [key, value] of Object.entries(params)) {
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = key;
+        input.value = value;
+        form.appendChild(input);
+    }
+    document.body.appendChild(form);
+    form.submit();
+}
+
 async function performFullExtraction() {
     try {
         const url = window.location.href;
         let { careerops_import_data } = await chrome.storage.local.get('careerops_import_data');
         if (!careerops_import_data) careerops_import_data = { step: 'start' };
 
+        // Force redirect to main profile page if starting from a details page
+        if (careerops_import_data.step === 'start' && url.includes('/in/') && url.includes('/details/')) {
+            updateVisualStatus('Fase 1: Redirecionando para a página principal...');
+            const profileSlug = url.split('/in/')[1].split('/')[0];
+            await chrome.storage.local.set({ careerops_import_data, careerops_import_active: true });
+            forceNavigate(`https://www.linkedin.com/in/${profileSlug}/`);
+            return;
+        }
+
         // Stage 1: Main Profile Page (Start or Language Switch)
         if (url.includes('/in/') && !url.includes('/details/')) {
             const profileSlug = url.split('/in/')[1].split('/')[0];
 
             if (careerops_import_data.step === 'start') {
-                updateVisualStatus('Fase 1: Analizando Perfil (PT)...');
+                updateVisualStatus('Fase 1: Preparando Idioma (PT)...');
+                careerops_import_data.step = 'start_pt';
+                await chrome.storage.local.set({ careerops_import_data, careerops_import_active: true });
+                forceNavigate(`https://www.linkedin.com/in/${profileSlug}/`, { locale: 'pt-BR' });
+                return;
+            }
+
+            if (careerops_import_data.step === 'start_pt') {
+                updateVisualStatus('Fase 1: Analizando Perfil...');
+                
+                // Scroll down to force lazy-loaded elements (like About section) to render
+                window.scrollTo(0, document.body.scrollHeight / 3);
+                await wait(1000);
+                window.scrollTo(0, document.body.scrollHeight / 1.5);
+                await wait(1000);
+                window.scrollTo(0, document.body.scrollHeight);
                 await wait(2000);
                 
-                // Robust segmented data extraction for the main page
                 const segments = await getSegmentedData();
-                
-                careerops_import_data.name = document.querySelector('h1')?.innerText?.trim() || document.querySelector('.text-heading-xlarge')?.innerText?.trim() || '';
+                const titleName = document.title.split('|')[0].trim();
+                careerops_import_data.name = document.querySelector('h1')?.innerText?.trim() || document.querySelector('.text-heading-xlarge')?.innerText?.trim() || titleName || '';
                 careerops_import_data.headline = document.querySelector('.text-body-medium')?.innerText?.trim() || '';
-                careerops_import_data.about_raw = segments.about_raw;
-                careerops_import_data.about = segments.about_raw || (document.querySelector('section.pv-about-section, #about')?.parentElement?.innerText || '') + '\n' + (document.querySelector('.pv-about-section__top-skills')?.innerText || '');
+                
+                // Specifically click "see more" on About section if it exists
+                const aboutSection = document.querySelector('section.pv-about-section, #about')?.closest('section');
+                if (aboutSection) {
+                    const btn = aboutSection.querySelector('button.inline-show-more-text__button');
+                    if (btn && (btn.innerText.toLowerCase().includes('ver mais') || btn.innerText.toLowerCase().includes('see more'))) {
+                        btn.click();
+                        await wait(500);
+                    }
+                }
+                
+                careerops_import_data.about_raw = segments.about_raw || (aboutSection?.innerText || '') + '\n' + (document.querySelector('.pv-about-section__top-skills')?.innerText || '');
+                careerops_import_data.about = careerops_import_data.about_raw;
                 careerops_import_data.url = url.split('?')[0];
+                
                 careerops_import_data.step = 'go_to_exp';
                 await chrome.storage.local.set({ careerops_import_data, careerops_import_active: true });
-                window.location.href = `https://www.linkedin.com/in/${profileSlug}/details/experience/`;
+                forceNavigate(`https://www.linkedin.com/in/${profileSlug}/details/experience/`);
                 return;
             }
 
             if (careerops_import_data.step === 'switch_lang') {
                 updateVisualStatus('Fase 2: Trocando para Inglês...');
-                const langButtons = document.querySelectorAll('.pv-about-section--secondary-languages button, .artdeco-pill, .pv-profile-section__language-pill');
-                let found = false;
-                for (const btn of langButtons) {
-                    const txt = btn.innerText.toLowerCase();
-                    if ((txt.includes('english') || txt.includes('inglês')) && !btn.classList.contains('active')) {
-                        btn.click();
-                        found = true;
-                        await wait(3000);
-                        break;
-                    }
-                }
                 careerops_import_data.step = 'go_to_exp_en';
                 await chrome.storage.local.set({ careerops_import_data });
+                forceNavigate(`https://www.linkedin.com/in/${profileSlug}/details/experience/`, { locale: 'en-US' });
+                return;
+            }
+
+            if (careerops_import_data.step === 'go_to_exp_en') {
                 window.location.href = `https://www.linkedin.com/in/${profileSlug}/details/experience/`;
                 return;
             }
         }
+
+
 
         // Stage 2: Experience
         if (url.includes('/details/experience/')) {
@@ -159,7 +205,8 @@ async function performFullExtraction() {
             careerops_import_data.step = careerops_import_data.step.includes('en') ? 'go_to_edu_en' : 'go_to_edu';
             await chrome.storage.local.set({ careerops_import_data });
             const profileSlug = url.split('/in/')[1].split('/')[0];
-            window.location.href = `https://www.linkedin.com/in/${profileSlug}/details/education/`;
+            const params = careerops_import_data.step.includes('en') ? { locale: 'en-US' } : {};
+            forceNavigate(`https://www.linkedin.com/in/${profileSlug}/details/education/`, params);
             return;
         }
 
@@ -173,7 +220,8 @@ async function performFullExtraction() {
             careerops_import_data.step = careerops_import_data.step.includes('en') ? 'go_to_skills_en' : 'go_to_skills';
             await chrome.storage.local.set({ careerops_import_data });
             const profileSlug = url.split('/in/')[1].split('/')[0];
-            window.location.href = `https://www.linkedin.com/in/${profileSlug}/details/skills/`;
+            const params = careerops_import_data.step.includes('en') ? { locale: 'en-US' } : {};
+            forceNavigate(`https://www.linkedin.com/in/${profileSlug}/details/skills/`, params);
             return;
         }
 

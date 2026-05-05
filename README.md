@@ -22,15 +22,15 @@
 - **AI-powered extraction** — sends raw page text to backend for structured parsing
 - Auto-syncs with backend via REST API
 
-### 🤖 AI Resume & Cover Letter Engine
-- **ATS-optimized resume generation** using Google's XYZ formula
-- **Clean cover letters** (no markdown, ready to paste)
-- **Chat assistant** for answering employer form questions
-- **Outreach generator** for LinkedIn DMs and emails
+### 🤖 Modular AI Skills Engine
+- **Template-driven architecture** using Jinja2 for all AI prompts
+- **Isolated Skill folders** (`profile`, `jobs`, `interview`, `analytics`) for easy prompt maintenance
+- **Dynamic AI model mapping** — assign specific models to each skill domain via Settings
+- **Common rule inheritance** — centralized anti-hallucination and output format rules
 - Multi-provider support: **Gemini**, **NVIDIA NIM**, **Alibaba Cloud**, **Ollama**
-- Per-feature model selection (different models for resume, cover letter, chat, etc.)
 
 ### 📊 LinkedIn Profile Optimizer
+- **PostgreSQL JSONB storage** — definitive source of truth for all profile data (legacy YAML deprecated)
 - **Profile audit** with strength score (0-100)
 - **SSI Score simulator** across 4 LinkedIn pillars
 - **Headline builder** with LinkedIn preview mockup
@@ -50,7 +50,7 @@
 ## 🏗️ Architecture
 
 ```
-Chrome Extension ──▶ FastAPI Backend ──▶ PostgreSQL (Supabase)
+Chrome Extension ──▶ FastAPI Backend (Skills + Jinja2) ──▶ PostgreSQL (JSONB)
                           │
                     React Dashboard
                           │
@@ -60,10 +60,10 @@ Chrome Extension ──▶ FastAPI Backend ──▶ PostgreSQL (Supabase)
 | Component | Tech | Port |
 |-----------|------|------|
 | Frontend | React 18 + Vite + TypeScript | 5173 |
-| Backend | FastAPI + Python 3.11 | 8005 |
-| Database | PostgreSQL 15 (Supabase) | 5432 |
+| Backend | FastAPI + Python 3.12 + Jinja2 | 8005 |
+| Database | PostgreSQL 15 (Supabase/Local) | 5432 |
+| AI Engine | SkillService (Modular Templates) | — |
 | PDF Engine | Gotenberg 8 | 3002 |
-| Extension | Chrome Manifest V3 | — |
 
 ---
 
@@ -89,62 +89,47 @@ cp .env.example .env
 ### 2. Start Services
 
 ```bash
-# Start the v2 stack (FastAPI + React + Gotenberg)
+# Start the full stack
 docker compose -f docker-compose.v2.yml up --build -d
 ```
 
-### 3. Install Extension
-
-1. Open `chrome://extensions/`
-2. Enable **Developer Mode**
-3. Click **Load unpacked** → select the `extension/` folder
-4. Navigate to LinkedIn and click the extension icon
-
-### 4. Access Dashboard
-
-Open [http://localhost:5173](http://localhost:5173) in your browser.
+### 3. Data Migration (Optional)
+If you have legacy `profile.yml` data, migrate it to the database:
+```bash
+docker exec careerops-backend python app/scripts/migrate_yaml_to_db.py
+```
 
 ---
 
-## 🔧 Configuration
+## 🔧 AI Skills Configuration
 
-### AI Providers
+### Per-Domain Model Mapping
 
-Set your preferred AI provider in `.env`:
+Configure different AI models for each domain in the Settings page. The `SkillService` automatically routes requests based on the prompt folder:
 
-```bash
-AI_PROVIDER=gemini              # gemini | nvidia | alibaba | ollama
-GEMINI_API_KEY=your-key-here    # For Gemini
-AI_API_KEY=your-key-here        # For other providers
-AI_BASE_URL=                    # Required for nvidia/alibaba/ollama
-```
-
-### Per-Feature Models
-
-Configure different AI models for each feature in the Settings page:
-
-| Feature | Setting Key | Recommended |
-|---------|------------|-------------|
-| Resume Generation | `ai_model_resume` | gemini-2.5-pro |
-| Cover Letter | `ai_model_cover` | gemini-2.0-flash |
-| Chat Assistant | `ai_model_chat` | gemini-2.0-flash |
-| Profile Optimization | `ai_model_optimizer` | gemini-2.5-pro |
-| Job Evaluation | `ai_model_evaluator` | gemini-2.0-flash |
-| Profile Import | `ai_model_import` | gemini-2.0-flash |
+| Domain (Folder) | Setting Key | Recommended |
+|-----------------|-------------|-------------|
+| `profile/` | `ai_model_profile` | gemini-1.5-pro |
+| `jobs/` | `ai_model_jobs` | gemini-1.5-pro |
+| `interview/` | `ai_model_interview` | gemini-1.5-flash |
+| `analytics/` | `ai_model_analytics` | gemini-1.5-flash |
+| `common/` | `ai_model_chat` | gemini-1.5-flash |
 
 ---
 
 ## 📁 Project Structure
 
 ```
-├── backend/          # FastAPI backend (API + AI services)
-├── frontend/         # React dashboard (Vite + TypeScript)
-├── extension/        # Chrome extension (Manifest V3)
-├── linkedin-jobs/    # Legacy Flask system (reference only)
+├── backend/          # FastAPI backend
+│   ├── app/
+│   │   ├── services/ # Business logic (SkillService, ProfileService...)
+│   │   ├── skills/   # 🤖 AI Prompt Templates (.md)
+│   │   └── api/      # REST Endpoints
+├── frontend/         # React dashboard
+├── extension/        # Chrome extension
 ├── docs/             # Documentation
-│   └── SYSTEM.md     # Full system architecture & dev guide
-├── config/           # Shared configuration files
-└── docker-compose.v2.yml  # Production Docker stack
+│   └── SYSTEM.md     # Full technical specification
+└── docker-compose.yml
 ```
 
 > 📖 See [docs/SYSTEM.md](docs/SYSTEM.md) for the complete system architecture, feature parity tables, and development guidelines.

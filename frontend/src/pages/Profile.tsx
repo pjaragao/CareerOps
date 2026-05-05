@@ -17,12 +17,14 @@ import {
 
 const ProfilePage = () => {
   const [profile, setProfile] = useState<Profile>({
-    experience: [],
-    education: [],
-    skills: []
+    languages: {
+      pt: { experience: [], education: [], skills: [] }
+    }
   });
   const [resume, setResume] = useState('');
   const [activeTab, setActiveTab] = useState('personal');
+  const [activeLanguage, setActiveLanguage] = useState('pt');
+  const [newLanguage, setNewLanguage] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -40,10 +42,7 @@ const ProfilePage = () => {
         personal: p.personal || {},
         legal: p.legal || {},
         preferences: p.preferences || {},
-        experience: Array.isArray(p.experience) ? p.experience : [],
-        education: Array.isArray(p.education) ? p.education : [],
-        skills: Array.isArray(p.skills) ? p.skills : [],
-        keywords: Array.isArray(p.keywords) ? p.keywords : []
+        languages: p.languages || { pt: { experience: [], education: [], skills: [] } }
       });
       setResume(r.content || '');
     } catch (error) {
@@ -76,6 +75,19 @@ const ProfilePage = () => {
     }));
   };
 
+  const updateLanguageData = (field: 'experience' | 'education' | 'skills' | 'about', value: any) => {
+    setProfile(prev => ({
+      ...prev,
+      languages: {
+        ...(prev.languages || {}),
+        [activeLanguage]: {
+          ...(prev.languages?.[activeLanguage] || {}),
+          [field]: value
+        }
+      }
+    }));
+  };
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -86,9 +98,15 @@ const ProfilePage = () => {
       setProfile(prev => ({
         ...prev,
         ...extractedProfile,
-        experience: extractedProfile.experience || prev.experience,
-        education: extractedProfile.education || prev.education,
-        skills: extractedProfile.skills || prev.skills
+        languages: {
+          ...(prev.languages || {}),
+          [activeLanguage]: {
+            ...(prev.languages?.[activeLanguage] || {}),
+            experience: extractedProfile.languages?.[activeLanguage]?.experience || extractedProfile.experience || prev.languages?.[activeLanguage]?.experience,
+            education: extractedProfile.languages?.[activeLanguage]?.education || extractedProfile.education || prev.languages?.[activeLanguage]?.education,
+            skills: extractedProfile.languages?.[activeLanguage]?.skills || extractedProfile.skills || prev.languages?.[activeLanguage]?.skills
+          }
+        }
       }));
       alert("AI extracted your info successfully! Please review the tabs.");
     } catch (error) {
@@ -136,6 +154,7 @@ const ProfilePage = () => {
         <div className="panel" style={{ height: 'max-content', padding: '0.5rem' }}>
           {[
             { id: 'personal', icon: <User size={18} />, label: 'Personal Info' },
+            { id: 'about', icon: <Code size={18} />, label: 'About / Summary' },
             { id: 'experience', icon: <Briefcase size={18} />, label: 'Work Experience' },
             { id: 'education', icon: <GraduationCap size={18} />, label: 'Education' },
             { id: 'skills', icon: <Code size={18} />, label: 'Skills & Stack' },
@@ -155,7 +174,39 @@ const ProfilePage = () => {
           ))}
         </div>
 
-        <div className="panel" style={{ padding: '2rem' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          {['experience', 'education', 'skills', 'about'].includes(activeTab) && (
+            <div className="panel" style={{ padding: '1rem', display: 'flex', gap: '1rem', alignItems: 'center' }}>
+              <span style={{ fontWeight: 'bold' }}>Language:</span>
+              {Object.keys(profile.languages || { pt: {} }).map(lang => (
+                <button 
+                  key={lang}
+                  className={`btn ${activeLanguage === lang ? 'btn-primary' : 'btn-secondary'}`}
+                  onClick={() => setActiveLanguage(lang)}
+                >
+                  {lang.toUpperCase()}
+                </button>
+              ))}
+              <div style={{ display: 'flex', gap: '0.5rem', marginLeft: 'auto' }}>
+                <input 
+                  type="text" 
+                  placeholder="New (e.g. es)" 
+                  value={newLanguage} 
+                  onChange={e => setNewLanguage(e.target.value)}
+                  style={{ width: '100px', padding: '0.4rem', background: 'rgba(255,255,255,0.05)', color: 'white', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px' }}
+                />
+                <button className="btn btn-secondary" onClick={() => {
+                  if (newLanguage && !profile.languages?.[newLanguage]) {
+                    setProfile({ ...profile, languages: { ...(profile.languages || {}), [newLanguage]: { experience: [], education: [], skills: [], about: '' } } });
+                    setActiveLanguage(newLanguage);
+                    setNewLanguage('');
+                  }
+                }}><Plus size={16} /> Add</button>
+              </div>
+            </div>
+          )}
+          
+          <div className="panel" style={{ padding: '2rem' }}>
           {activeTab === 'personal' && (
             <div className="animate-fade-in">
               <h2 style={{ marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -190,42 +241,56 @@ const ProfilePage = () => {
             </div>
           )}
 
+          {activeTab === 'about' && (
+            <div className="animate-fade-in">
+              <h2 style={{ marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '10px' }}><User /> About / Summary</h2>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                <textarea 
+                  value={profile.languages?.[activeLanguage]?.about || ''} 
+                  onChange={e => updateLanguageData('about', e.target.value)}
+                  placeholder="Professional summary..."
+                  style={{ height: '200px' }}
+                />
+              </div>
+            </div>
+          )}
+
           {activeTab === 'experience' && (
             <div className="animate-fade-in">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
                 <h2 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><Briefcase /> Work Experience</h2>
-                <button className="btn btn-secondary" onClick={() => setProfile({ ...profile, experience: [...(profile.experience || []), { company: '', role: '', period: '', description: '' }] })}>
+                <button className="btn btn-secondary" onClick={() => updateLanguageData('experience', [...(profile.languages?.[activeLanguage]?.experience || []), { company: '', role: '', period: '', description: '' }])}>
                   <Plus size={16} /> Add Role
                 </button>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-                {profile.experience?.map((exp, i) => (
+                {(profile.languages?.[activeLanguage]?.experience || []).map((exp, i) => (
                   <div key={i} className="panel" style={{ background: 'rgba(255,255,255,0.02)', padding: '1.5rem' }}>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: '1rem', marginBottom: '1rem' }}>
                       <input placeholder="Company" value={exp.company} onChange={e => {
-                        const next = [...(profile.experience || [])];
+                        const next = [...(profile.languages?.[activeLanguage]?.experience || [])];
                         next[i].company = e.target.value;
-                        setProfile({ ...profile, experience: next });
+                        updateLanguageData('experience', next);
                       }} />
                       <input placeholder="Role" value={exp.role} onChange={e => {
-                        const next = [...(profile.experience || [])];
+                        const next = [...(profile.languages?.[activeLanguage]?.experience || [])];
                         next[i].role = e.target.value;
-                        setProfile({ ...profile, experience: next });
+                        updateLanguageData('experience', next);
                       }} />
                       <input placeholder="Period (e.g. 2020 - Present)" value={exp.period} onChange={e => {
-                        const next = [...(profile.experience || [])];
+                        const next = [...(profile.languages?.[activeLanguage]?.experience || [])];
                         next[i].period = e.target.value;
-                        setProfile({ ...profile, experience: next });
+                        updateLanguageData('experience', next);
                       }} />
                       <button className="btn btn-secondary" style={{ color: '#ff4d4d' }} onClick={() => {
-                        const next = profile.experience?.filter((_, idx) => idx !== i);
-                        setProfile({ ...profile, experience: next });
+                        const next = profile.languages?.[activeLanguage]?.experience?.filter((_, idx) => idx !== i);
+                        updateLanguageData('experience', next);
                       }}><Trash2 size={16} /></button>
                     </div>
                     <textarea placeholder="Key Achievements / Description" value={exp.description} onChange={e => {
-                      const next = [...(profile.experience || [])];
+                      const next = [...(profile.languages?.[activeLanguage]?.experience || [])];
                       next[i].description = e.target.value;
-                      setProfile({ ...profile, experience: next });
+                      updateLanguageData('experience', next);
                     }} style={{ height: '100px' }} />
                   </div>
                 ))}
@@ -237,31 +302,31 @@ const ProfilePage = () => {
             <div className="animate-fade-in">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
                 <h2 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><GraduationCap /> Education</h2>
-                <button className="btn btn-secondary" onClick={() => setProfile({ ...profile, education: [...(profile.education || []), { institution: '', degree: '', year: '' }] })}>
+                <button className="btn btn-secondary" onClick={() => updateLanguageData('education', [...(profile.languages?.[activeLanguage]?.education || []), { institution: '', degree: '', year: '' }])}>
                   <Plus size={16} /> Add Education
                 </button>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-                {profile.education?.map((edu, i) => (
+                {(profile.languages?.[activeLanguage]?.education || []).map((edu, i) => (
                   <div key={i} className="panel" style={{ background: 'rgba(255,255,255,0.02)', padding: '1.5rem', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: '1rem' }}>
                     <input placeholder="Institution" value={edu.institution} onChange={e => {
-                      const next = [...(profile.education || [])];
+                      const next = [...(profile.languages?.[activeLanguage]?.education || [])];
                       next[i].institution = e.target.value;
-                      setProfile({ ...profile, education: next });
+                      updateLanguageData('education', next);
                     }} />
                     <input placeholder="Degree" value={edu.degree} onChange={e => {
-                      const next = [...(profile.education || [])];
+                      const next = [...(profile.languages?.[activeLanguage]?.education || [])];
                       next[i].degree = e.target.value;
-                      setProfile({ ...profile, education: next });
+                      updateLanguageData('education', next);
                     }} />
                     <input placeholder="Year" value={edu.year} onChange={e => {
-                      const next = [...(profile.education || [])];
+                      const next = [...(profile.languages?.[activeLanguage]?.education || [])];
                       next[i].year = e.target.value;
-                      setProfile({ ...profile, education: next });
+                      updateLanguageData('education', next);
                     }} />
                     <button className="btn btn-secondary" style={{ color: '#ff4d4d' }} onClick={() => {
-                      const next = profile.education?.filter((_, idx) => idx !== i);
-                      setProfile({ ...profile, education: next });
+                      const next = profile.languages?.[activeLanguage]?.education?.filter((_, idx) => idx !== i);
+                      updateLanguageData('education', next);
                     }}><Trash2 size={16} /></button>
                   </div>
                 ))}
@@ -276,8 +341,8 @@ const ProfilePage = () => {
                 <div>
                   <label className="field-label">Tech Stack (one per line or comma separated)</label>
                   <textarea 
-                    value={profile.skills?.join(', ') || ''} 
-                    onChange={e => setProfile({ ...profile, skills: e.target.value.split(/[,|\n]/).map(s => s.trim()).filter(s => s) })}
+                    value={profile.languages?.[activeLanguage]?.skills?.join(', ') || ''} 
+                    onChange={e => updateLanguageData('skills', e.target.value.split(/[,|\n]/).map(s => s.trim()).filter(s => s))}
                     placeholder="Python, React, AWS, Docker, AI, LLMs..."
                     style={{ height: '200px' }}
                   />
@@ -378,6 +443,7 @@ const ProfilePage = () => {
               />
             </div>
           )}
+        </div>
         </div>
       </div>
     </div>

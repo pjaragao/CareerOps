@@ -1,14 +1,14 @@
 from fastapi import APIRouter, HTTPException, Response, BackgroundTasks
 from typing import Dict, Any, Optional
-from app.services.ai_service import AIService
+import os
+import re
+import json
+from pydantic import BaseModel
 from app.services.job_service import JobService
 from app.services.profile_service import ProfileService
 from app.services.pdf_service import PDFService
-from app.services.settings_service import SettingsService
-from pydantic import BaseModel
-from app.core.prompts import RESUME_ATS_PROMPT, CHAT_PROMPT, COVER_LETTER_PROMPT
+from app.services.skill_service import SkillService
 from app.core.config import settings
-import os
 
 router = APIRouter(tags=["job-actions"])
 
@@ -39,44 +39,21 @@ async def generate_resume(job_id: int, options: ActionOptions):
         with open(settings.RESUME_BASE_FILE, 'r') as f:
             resume_base = f.read()
     
-    settings_ai = SettingsService.get_settings()
-    model = options.model or settings_ai.get("ai_model_resume")
-    
-    provider = AIService.get_provider("ai_model_resume")
-    prompt = RESUME_ATS_PROMPT.format(
-        job_title=job['job_title'],
-        company=job['company'],
-        language=job.get('language', 'pt-BR'),
-        description=job['description'][:10000],
-        resume_base=resume_base
+    response = await SkillService.run_skill(
+        "jobs/resume.md",
+        {
+            "job_title": job['job_title'],
+            "company": job['company'],
+            "lang_name": "Portuguese" if "pt" in job.get('language', 'pt') else "English",
+            "job_description": job['description'][:10000],
+            "resume_base": resume_base,
+            "orientation": options.orientation
+        }
     )
     
-    print(f"DEBUG: Generating resume for job {job_id} using model {model}")
-    response = provider.generate_json(prompt, model=model)
-    print(f"DEBUG: AI Response keys: {list(response.keys())}")
-    if "error" in response:
-        print(f"DEBUG: AI Error: {response['error']}")
-    
     result = response.get("resume_markdown", "")
-    if not result and "raw_text" in response: 
-        # Robust parsing for JSON inside text
-        raw = response["raw_text"]
-        json_match = re.search(r'\{.*\}', raw, re.DOTALL)
-        if json_match:
-            try:
-                parsed = json.loads(json_match.group(0))
-                result = parsed.get("resume_markdown", "")
-            except:
-                result = raw
-        else:
-            result = raw
-            
     if result:
-        print(f"DEBUG: Success! Saving {len(result)} chars to DB")
         JobService.update_job_ai_content(job_id, 'resume', result)
-    else:
-        print("DEBUG: Failed to get any result from AI")
-        
     return {"content": result}
 
 @router.post("/{job_id}/generate-cover-letter")
@@ -84,37 +61,30 @@ async def generate_cover_letter(job_id: int, options: ActionOptions):
     job = JobService.get_job_by_id(job_id)
     if not job: raise HTTPException(status_code=404)
     profile = ProfileService.get_profile()
+    p = ProfileService._get_flattened_profile(profile, "pt")
+    profile_summary = f"Summary: {p.get('about','')}\nExperience: {json.dumps(p.get('experience',[]))}"
     
     tone_instr = get_tone_instruction(options.tone)
     
-    settings_ai = SettingsService.get_settings()
-    model = options.model or settings_ai.get("ai_model_cover")
-    
-    provider = AIService.get_provider("ai_model_cover")
-    prompt = COVER_LETTER_PROMPT.format(
-        language=job.get('language', 'pt-BR'),
-        tone_instruction=tone_instr,
-        job_title=job['job_title'],
-        company=job['company'],
-        description=job['description'][:4000],
-        profile_summary=profile,
-        orientation=options.orientation
+    result = await SkillService.run_skill(
+        "jobs/cover_letter.md",
+        {
+            "lang_name": "Portuguese" if "pt" in job.get('language', 'pt') else "English",
+            "tone_instruction": tone_instr,
+            "job_title": job['job_title'],
+            "company": job['company'],
+            "job_description": job['description'][:4000],
+            "profile_summary": profile_summary,
+            "orientation": options.orientation
+        },
+        response_format="text"
     )
-    result = provider.generate_text(prompt, model=model)
     
-    # Cleanup Cover Letter: Remove common AI fluff
+    # Cleanup
     if result:
-        # Remove patterns like "Since you did not provide...", "Note to User:", "Strategies for Success", etc.
-        # This is a bit heuristic but effective.
-        result = re.sub(r'(?i)Since you did not provide.*CV details.*?\n', '', result)
-        result = re.sub(r'(?i)# Cover Letter Template.*?\n', '', result)
-        result = re.sub(r'(?i)\*\*Note to User:\*\*.*?\n', '', result)
-        result = re.sub(r'(?i)### 💡 Strategies for Success.*', '', result, flags=re.DOTALL)
-        result = re.sub(r'(?i)To make this letter truly.*', '', result, flags=re.DOTALL)
         result = re.sub(r'```markdown\n', '', result)
         result = re.sub(r'```', '', result)
         result = result.strip()
-        
         JobService.update_job_ai_content(job_id, 'cover', result)
     return {"content": result}
 
@@ -123,24 +93,25 @@ async def chat_with_job(job_id: int, options: ActionOptions):
     job = JobService.get_job_by_id(job_id)
     if not job: raise HTTPException(status_code=404)
     profile = ProfileService.get_profile()
+    p = ProfileService._get_flattened_profile(profile, "pt")
+    profile_summary = f"Summary: {p.get('about','')}\nSkills: {', '.join(p.get('skills',[]))}"
     
     tone_instr = get_tone_instruction(options.tone)
     
-    settings_ai = SettingsService.get_settings()
-    model = options.model or settings_ai.get("ai_model_chat")
-    
-    provider = AIService.get_provider("ai_model_chat")
-    prompt = CHAT_PROMPT.format(
-        tone_instruction=tone_instr,
-        language=job.get('language', 'pt-BR'),
-        profile_summary=profile,
-        job_title=job['job_title'],
-        company=job['company'],
-        description=job['description'][:3000],
-        orientation=options.orientation,
-        question=options.message
+    result = await SkillService.run_skill(
+        "common/chat.md",
+        {
+            "tone_instruction": tone_instr,
+            "lang_name": "Portuguese" if "pt" in job.get('language', 'pt') else "English",
+            "profile_summary": profile_summary,
+            "job_title": job['job_title'],
+            "company": job['company'],
+            "job_description": job['description'][:3000],
+            "orientation": options.orientation,
+            "question": options.message
+        },
+        response_format="text"
     )
-    result = provider.generate_text(prompt, model=model)
     return {"reply": result}
 
 @router.post("/{job_id}/outreach")
@@ -150,16 +121,19 @@ async def generate_outreach(job_id: int, type: str = "dm", options: ActionOption
     
     tone_instr = get_tone_instruction(options.tone if options else "semi-formal")
     
-    settings_ai = SettingsService.get_settings()
-    model = (options.model if options else None) or settings_ai.get("ai_model_outreach")
-    
-    provider = AIService.get_provider("ai_model_outreach")
-    if type == "dm":
-        prompt = f"Generate a short LinkedIn DM (max 300 chars) for this job: {job['job_title']} at {job['company']}. {tone_instr} Instructions: {options.orientation if options else ''}"
-    else:
-        prompt = f"Generate a professional outreach email for this job: {job['job_title']} at {job['company']}. {tone_instr} Instructions: {options.orientation if options else ''}"
-        
-    result = provider.generate_text(prompt, model=model)
+    result = await SkillService.run_skill(
+        "jobs/outreach.md",
+        {
+            "type": type,
+            "job_title": job['job_title'],
+            "company": job['company'],
+            "lang_name": "Portuguese" if "pt" in job.get('language', 'pt') else "English",
+            "tone_instruction": tone_instr,
+            "orientation": options.orientation if options else "",
+            "job_description": job['description'][:3000]
+        },
+        response_format="text"
+    )
     if result and type == "dm":
         JobService.update_job_ai_content(job_id, 'dm', result)
     return {"content": result}

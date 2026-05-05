@@ -11,4 +11,4 @@ async def get_stats():
 
 @router.get("/skill-gaps/")
 async def get_skill_gaps():
-    return AnalyticsService.get_skill_gaps()
+    return await AnalyticsService.get_skill_gaps()

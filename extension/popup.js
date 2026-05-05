@@ -69,7 +69,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const isProfile = isLinkedIn && tab.url.includes('/in/');
         const isJob = isLinkedIn && tab.url.includes('/jobs/');
 
-        await chrome.storage.local.set({ careerops_import_active: true, careerops_status: 'Iniciando...' });
+        await chrome.storage.local.set({ careerops_import_active: true, careerops_status: 'Iniciando...', careerops_import_data: { step: 'start' } });
         await ensureContentScript(tab);
 
         if (isProfile) chrome.tabs.sendMessage(tab.id, { action: 'extractProfile' });

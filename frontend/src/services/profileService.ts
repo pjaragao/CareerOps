@@ -1,5 +1,22 @@
 import api from './api';
 
+export interface ProfileLanguageData {
+  about?: string;
+  experience?: Array<{
+    company: string;
+    role: string;
+    period: string;
+    description: string;
+  }>;
+  education?: Array<{
+    institution: string;
+    degree: string;
+    year: string;
+  }>;
+  skills?: string[];
+  keywords?: string[];
+}
+
 export interface Profile {
   personal?: {
     name?: string;
@@ -24,19 +41,12 @@ export interface Profile {
     min_salary?: string;
     experience_level?: string;
   };
-  experience?: Array<{
-    company: string;
-    role: string;
-    period: string;
-    description: string;
-  }>;
-  education?: Array<{
-    institution: string;
-    degree: string;
-    year: string;
-  }>;
-  skills?: string[];
-  keywords?: string[];
+  languages?: Record<string, ProfileLanguageData>;
+  // Fallback
+  experience?: any;
+  education?: any;
+  skills?: any;
+  keywords?: any;
   about?: string;
 }
 

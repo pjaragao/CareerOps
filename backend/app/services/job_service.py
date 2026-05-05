@@ -1,8 +1,10 @@
 from datetime import datetime, timezone
 from typing import List, Optional, Set
 import re
+import json
 from app.db.session import get_db_connection, get_db_cursor
 import uuid
+from app.services.skill_service import SkillService
 
 class JobService:
     @staticmethod
@@ -173,36 +175,26 @@ class JobService:
     @staticmethod
     async def evaluate_job(job_id: int):
         """AI-powered job scoring."""
-        from app.services.ai_service import AIService
         from app.services.profile_service import ProfileService
         
         job = JobService.get_job_by_id(job_id)
         if not job: return
         
         profile = ProfileService.get_profile()
-        provider = AIService.get_provider("ai_model_resume")
-        
+        p = ProfileService._get_flattened_profile(profile, "pt")
+        profile_summary = f"Summary: {p.get('about','')}\nExperience: {json.dumps(p.get('experience',[]))}\nSkills: {', '.join(p.get('skills',[]))}"
+
         archetype = JobService.detect_archetype(job['job_title'], job['description'])
         
-        prompt = f"""
-        Evaluate the following job against the candidate's profile.
-        Candidate Profile: {json.dumps(profile)}
-        Job Title: {job['job_title']}
-        Job Description: {job['description'][:5000]}
-        
-        Respond with valid JSON:
-        {{
-            "match_score": 1-5,
-            "north_star_score": 1-5,
-            "comp_score": 1-5,
-            "cultural_score": 1-5,
-            "overall_score": 1-5,
-            "red_flags": ["list", "of", "concerns"],
-            "analysis": "detailed justification"
-        }}
-        """
         try:
-            result = provider.generate_json(prompt)
+            result = await SkillService.run_skill(
+                "jobs/evaluate.md",
+                {
+                    "profile_summary": profile_summary,
+                    "job_title": job['job_title'],
+                    "job_description": job['description'][:5000]
+                }
+            )
             conn = get_db_connection()
             with conn.cursor() as cur:
                 cur.execute("""
@@ -227,25 +219,11 @@ class JobService:
     @staticmethod
     async def import_job_universal_ai(raw_text: str, url: str) -> bool:
         """Use AI to extract job details from a raw text dump from any website."""
-        from app.services.ai_service import AIService
-        provider = AIService.get_provider("ai_model_import")
-        
-        prompt = f"""
-        Extract job details from the following raw text dump from a job posting website ({url}).
-        
-        RAW TEXT:
-        {raw_text[:15000]}
-        
-        Respond with valid JSON:
-        {{
-            "title": "Job Title",
-            "company": "Company Name",
-            "location": "Location (if found)",
-            "description": "Full cleaned job description with requirements and benefits"
-        }}
-        """
         try:
-            result = provider.generate_json(prompt)
+            result = await SkillService.run_skill(
+                "jobs/extract.md",
+                {"raw_text": raw_text[:15000]}
+            )
             if not result.get('title') or not result.get('description'):
                 return False
                 

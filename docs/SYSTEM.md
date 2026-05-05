@@ -55,13 +55,16 @@ linkedin_resume/
 ├── backend/                    # FastAPI (v2) — Primary backend
 │   ├── app/
 │   │   ├── api/                # Route handlers
-│   │   ├── core/
-│   │   │   ├── config.py       # Settings (env vars, paths)
-│   │   │   └── prompts.py      # AI prompt templates (Optimized 2026)
 │   │   ├── db/
 │   │   │   └── session.py      # DB connection factory
+│   │   ├── skills/             # [NEW] AI Skills (Modular .md Prompts)
+│   │   │   ├── common/         # Shared constraints & rules
+│   │   │   ├── profile/        # LinkedIn optimization skills
+│   │   │   ├── jobs/           # Evaluation & ATS skills
+│   │   │   └── interview/      # STAR+R & question generation
 │   │   └── services/
 │   │       ├── ai_service.py       # Multi-provider AI abstraction
+│   │       ├── skill_service.py    # [NEW] Skill execution engine (Jinja2)
 │   │       ├── interview_service.py # Migrated STAR+R logic
 │   │       ├── job_evaluation_service.py # Migrated Scoring logic [NEW]
 │   │       ├── job_service.py       # Job DB operations
@@ -114,7 +117,8 @@ linkedin_resume/
 |---------|-------------|-------------|--------|
 | Job Evaluation | `job_evaluator.py` | `job_evaluation_service.py` | ✅ Migrated |
 | Interview Stories | `job_evaluator.py` | `interview_service.py` | ✅ Migrated |
-| Customizable Prompts | `profile_prompts.py`| `core/prompts.py` | ✅ Migrated |
+| Customizable Prompts | `profile_prompts.py`| `app/skills/` (Jinja2) | 🏗️ Refactoring |
+| Profile Storage | `profile.yml` (YAML) | PostgreSQL (JSONB) | ✅ Migrated |
 | Resume HTML Template | `resume_template.py`| `pdf_service.py` | ✅ Migrated |
 | PDF via Gotenberg | `resume_generator.py`| `pdf_service.py` | ✅ Migrated |
 | Scrapers (Playwright) | Server-side | Browser-side (Extension) | ✅ Modernized |

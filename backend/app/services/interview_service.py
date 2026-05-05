@@ -1,7 +1,7 @@
 from typing import List, Optional, Dict, Any
-from app.db.session import get_db_connection, get_db_cursor
-from app.services.ai_service import AIService
 import json
+from app.db.session import get_db_connection, get_db_cursor
+from app.services.skill_service import SkillService
 
 class InterviewService:
     @staticmethod
@@ -33,27 +33,14 @@ class InterviewService:
     @staticmethod
     async def generate_star_case(experience_description: str) -> Dict[str, str]:
         """Uses AI to generate a STAR case from a raw experience description."""
-        provider = AIService.get_provider("ai_model_interview")
-        prompt = f"""
-        Transform the following professional experience into a structured STAR method story.
-        S - Situation: Set the scene and give the necessary details of your example.
-        T - Task: Describe what your responsibility was in that situation.
-        A - Action: Explain exactly what steps you took to address it.
-        R - Result: Share what outcomes your actions achieved.
-
-        Experience: {experience_description}
-
-        Respond ONLY with a JSON object:
-        {{
-            "title": "Short catchy title",
-            "situation": "...",
-            "task": "...",
-            "action": "...",
-            "result": "..."
-        }}
-        """
-        result = provider.generate_json(prompt)
-        return result
+        return await SkillService.run_skill(
+            "interview/stories.md",
+            {
+                "count": 1,
+                "profile_summary": experience_description,
+                "job_title": "N/A"
+            }
+        )
 
     @staticmethod
     async def generate_interview_stories(job_id: int) -> List[int]:
@@ -62,53 +49,26 @@ class InterviewService:
         """
         from app.services.job_service import JobService
         from app.services.profile_service import ProfileService
-        from app.services.settings_service import SettingsService
 
         job = JobService.get_job_by_id(job_id)
         if not job: return []
         
         profile = ProfileService.get_profile()
-        settings_ai = SettingsService.get_settings()
-        model = settings_ai.get("ai_model_interview")
-        provider = AIService.get_provider("ai_model_interview")
+        
+        # Flatten profile for simplicity in prompt
+        p = ProfileService._get_flattened_profile(profile, "pt") # Default to pt or check job lang
+        profile_summary = f"Summary: {p.get('about','')}\nSkills: {', '.join(p.get('skills',[]))}"
 
-        proof_points = profile.get("proof_points", [])
-        professional_summary = profile.get("professional_summary", "")
-
-        prompt = f"""Based on the candidate's background and the job description, generate 3-5 interview stories using the STAR+R framework.
-
-STAR+R = Situation, Task, Action, Result, Reflection
-
-# Candidate Background
-Summary: {professional_summary}
-
-Proof Points:
-{json.dumps(proof_points, indent=2)}
-
-# Job Description
-Title: {job.get('job_title', 'Unknown')}
-Company: {job.get('company', 'Unknown')}
-{job.get('description', '')[:5000]}
-
-Generate stories that would be relevant for behavioral interview questions for this role.
-Each story should be specific, measurable, and highlight different competencies.
-
-Respond with valid JSON array:
-[
-  {{
-    "title": "Leading Migration to Microservices",
-    "situation": "Company was struggling with monolithic deployment...",
-    "task": "I was tasked with leading the migration...",
-    "action": "Designed event-driven architecture using...",
-    "result": "Reduced deployment time by 80%, zero downtime...",
-    "reflection": "Learned the importance of incremental migration...",
-    "tags": ["leadership", "architecture", "microservices"],
-    "archetypes": ["Backend Engineer", "Solutions Architect"]
-  }}
-]
-"""
         try:
-            result = provider.generate_json(prompt, model=model, temperature=0.7)
+            result = await SkillService.run_skill(
+                "interview/stories.md",
+                {
+                    "count": 5,
+                    "job_title": job.get('job_title', 'Unknown'),
+                    "job_description": job.get('description', ''),
+                    "profile_summary": profile_summary
+                }
+            )
             stories = result if isinstance(result, list) else result.get("stories", [])
 
             created_ids = []
@@ -126,7 +86,7 @@ Respond with valid JSON array:
                             story.get("task", ""),
                             story.get("action", ""),
                             story.get("result", ""),
-                            story.get("reflection", ""),
+                            story.get("reflection", "") or story.get("relevance", ""),
                             story.get("tags", []),
                             story.get("archetypes", [])
                         ))
@@ -164,24 +124,16 @@ Respond with valid JSON array:
         
         job = JobService.get_job_by_id(job_id)
         profile = ProfileService.get_profile()
-        provider = AIService.get_provider("ai_model_interview")
+        p = ProfileService._get_flattened_profile(profile, "pt")
+        profile_summary = f"Summary: {p.get('about','')}\nSkills: {', '.join(p.get('skills',[]))}"
         
-        prompt = f"""
-        You are an interviewer for the position of {job['job_title']} at {job['company']}.
-        Candidate Profile: {json.dumps(profile)}
-        Interview History: {json.dumps(history)}
-        Latest Answer from Candidate: "{answer}"
-        
-        Instruction:
-        - If history is empty, introduce yourself and ask the first question.
-        - If user answered, provide brief professional feedback and ask the NEXT question.
-        - If the simulation should end, set "is_over": true.
-        
-        Respond ONLY with JSON:
-        {{
-            "feedback": "...",
-            "next_question": "...",
-            "is_over": false
-        }}
-        """
-        return provider.generate_json(prompt)
+        return await SkillService.run_skill(
+            "interview/simulate.md",
+            {
+                "job_title": job['job_title'],
+                "company": job['company'],
+                "profile_summary": profile_summary,
+                "history": history,
+                "answer": answer
+            }
+        )

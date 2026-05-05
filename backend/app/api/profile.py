@@ -70,13 +70,14 @@ class FullAuditRequest(BaseModel):
 @router.post("/run-full-audit")
 async def run_full_audit(req: FullAuditRequest):
     profile = ProfileService.get_profile()
-    content = json.dumps(profile)
+    lang_profile = ProfileService._get_flattened_profile(profile, req.lang)
+    content = json.dumps(lang_profile)
     
     # Run the core parts in parallel to prevent 504 timeouts
     score_task = ProfileService.get_profile_score(content)
-    ssi_task = ProfileService.simulate_ssi(profile)
+    ssi_task = ProfileService.simulate_ssi(profile, req.lang)
     headlines_task = ProfileService.generate_headline_variants(profile, req.lang, 3, req.strategy_context)
-    about_opt_task = ProfileService.optimize_section(f"LinkedIn About", profile.get("about", ""), req.lang, req.strategy_context)
+    about_opt_task = ProfileService.optimize_section(f"LinkedIn About", lang_profile.get("about", ""), req.lang, req.strategy_context)
     
     score, ssi, headlines, about_opt = await asyncio.gather(
         score_task, ssi_task, headlines_task, about_opt_task
@@ -87,7 +88,7 @@ async def run_full_audit(req: FullAuditRequest):
         "ssi": ssi,
         "headlines": headlines,
         "about": {
-            "original": profile.get("about", ""),
+            "original": lang_profile.get("about", ""),
             "optimized": about_opt
         }
     }
@@ -133,7 +134,7 @@ class SkillsAnalysisRequest(StrategyContextRequest):
 @router.post("/analyze-skills")
 async def analyze_skills(req: SkillsAnalysisRequest):
     profile = ProfileService.get_profile()
-    results = await ProfileService.analyze_skills(profile, req.target_role, req.strategy_context)
+    results = await ProfileService.analyze_skills(profile, req.target_role, req.strategy_context, req.lang)
     ProfileService.save_analysis("skills", req.lang, req.strategy_context, results, profile)
     return results
 
@@ -143,7 +144,8 @@ class ExperienceOptimizeRequest(StrategyContextRequest):
 @router.post("/optimize-experience")
 async def optimize_experience(req: ExperienceOptimizeRequest):
     profile = ProfileService.get_profile()
-    experience = profile.get("experience", [])
+    lang_profile = ProfileService._get_flattened_profile(profile, req.lang)
+    experience = lang_profile.get("experience", [])
     if not experience:
         return {"results": []}
     results = await ProfileService.optimize_experience_bullets(experience, req.lang, req.strategy_context)
@@ -160,9 +162,9 @@ async def headline_variants(req: HeadlineVariantsRequest):
     return results
 
 @router.post("/ssi-simulate")
-async def ssi_simulate():
+async def ssi_simulate(req: StrategyContextRequest):
     profile = ProfileService.get_profile()
-    return await ProfileService.simulate_ssi(profile)
+    return await ProfileService.simulate_ssi(profile, req.lang)
 
 class ATSMatchRequest(StrategyContextRequest):
     job_description: str
@@ -170,6 +172,6 @@ class ATSMatchRequest(StrategyContextRequest):
 @router.post("/ats-match")
 async def ats_match(req: ATSMatchRequest):
     profile = ProfileService.get_profile()
-    results = await ProfileService.analyze_ats_match(profile, req.job_description)
+    results = await ProfileService.analyze_ats_match(profile, req.job_description, req.lang)
     ProfileService.save_analysis("ats_match", req.lang, req.strategy_context, results, profile)
     return results

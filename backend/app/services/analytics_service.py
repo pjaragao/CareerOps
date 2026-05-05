@@ -1,18 +1,20 @@
+import asyncio
 from typing import List, Dict
 from app.db.session import get_db_connection
 from app.services.profile_service import ProfileService
-from app.services.ai_service import AIService
+from app.services.skill_service import SkillService
 import json
 
 class AnalyticsService:
     @staticmethod
-    def get_skill_gaps() -> List[Dict]:
+    async def get_skill_gaps() -> List[Dict]:
         """
         Analyzes all jobs in the database, extracts skills, 
         and compares with user profile to identify gaps.
         """
         profile = ProfileService.get_profile()
-        user_skills = set([s.lower() for s in (profile.get('keywords', []) or [])])
+        p = ProfileService._get_flattened_profile(profile, "pt")
+        user_skills = p.get('skills', [])
         
         conn = get_db_connection()
         try:
@@ -26,24 +28,13 @@ class AnalyticsService:
         if not descriptions:
             return []
 
-        # Use AI to extract common skills from descriptions and find gaps
-        provider = AIService.get_provider("ai_model_optimizer")
-        prompt = f"""
-        Analyze these job descriptions and the candidate's skills.
-        Candidate Skills: {list(user_skills)}
-        
-        Descriptions (subset):
-        {' '.join(descriptions)[:10000]}
-        
-        Identify the top 10 technologies or skills that are frequently required in these jobs but are NOT in the candidate's skills.
-        Return a JSON array of objects:
-        [
-            {{"skill": "Docker", "frequency": 15, "priority": "high"}},
-            {{"skill": "Kubernetes", "frequency": 12, "priority": "medium"}}
-        ]
-        """
         try:
-            result = provider.generate_json(prompt)
-            return result
+            return await SkillService.run_skill(
+                "analytics/skill_gaps.md",
+                {
+                    "user_skills": user_skills,
+                    "descriptions_text": ' '.join(descriptions)[:10000]
+                }
+            )
         except:
             return []
