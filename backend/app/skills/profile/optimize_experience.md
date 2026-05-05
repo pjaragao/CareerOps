@@ -16,6 +16,9 @@ Period: {{ period }}
 Original description:
 {{ description }}
 
+Additional Professional Context (Knowledge Base):
+{% include 'common/user_context.md' %}
+
 Return JSON:
 {
     "company": "{{ company }}",

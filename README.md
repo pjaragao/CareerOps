@@ -29,6 +29,13 @@
 - **Common rule inheritance** — centralized anti-hallucination and output format rules
 - Multi-provider support: **Gemini**, **NVIDIA NIM**, **Alibaba Cloud**, **Ollama**
 
+### 🧠 AI Onboarding & Knowledge Base
+- **Document Repository**: Upload resumes, cover letters, and project descriptions.
+- **MarkItDown Integration**: High-fidelity conversion of PDF, DOCX, and XLSX to Markdown for AI processing.
+- **Validation Wizard**: Review and approve AI-extracted facts before they join the Knowledge Base.
+- **Prompt Injection**: Automatically enriches LinkedIn optimization, interview prep, and resume tailoring with validated knowledge.
+- **Base Resume Optimization**: AI-suggested improvements to your `resume_base.md` based on new achievements.
+
 ### 📊 LinkedIn Profile Optimizer
 - **PostgreSQL JSONB storage** — definitive source of truth for all profile data (legacy YAML deprecated)
 - **Profile Sync Alerts** — detect when your LinkedIn data has changed and needs a fresh AI audit
@@ -53,8 +60,8 @@
 
 ```
 Chrome Extension ──▶ FastAPI Backend (Skills + Jinja2) ──▶ PostgreSQL (JSONB)
-                          │
-                    React Dashboard
+                          │                   ▲
+                    React Dashboard ──────────┘
                           │
                     Gotenberg (PDF)
 ```
@@ -114,6 +121,7 @@ Configure different AI models for each domain in the Settings page. The `SkillSe
 | `profile/` | `ai_model_profile` | gemini-1.5-pro |
 | `jobs/` | `ai_model_jobs` | gemini-1.5-pro |
 | `interview/` | `ai_model_interview` | gemini-1.5-flash |
+| `onboarding/` | `ai_model_onboarding` | gemini-1.5-pro |
 | `analytics/` | `ai_model_analytics` | gemini-1.5-flash |
 | `common/` | `ai_model_chat` | gemini-1.5-flash |
 

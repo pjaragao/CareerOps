@@ -11,6 +11,7 @@ import Kanban from './pages/Kanban';
 import Settings from './pages/Settings';
 import LinkedInOptimizer from './pages/LinkedInOptimizer';
 import Companies from './pages/Companies';
+import DocumentRepository from './pages/DocumentRepository';
 
 function App() {
   return (
@@ -26,6 +27,7 @@ function App() {
           <Route path="pipeline" element={<Pipeline />} />
           <Route path="interview" element={<Interview />} />
           <Route path="linkedin-optimizer" element={<LinkedInOptimizer />} />
+          <Route path="onboarding" element={<DocumentRepository />} />
           <Route path="settings" element={<Settings />} />
         </Route>
       </Routes>

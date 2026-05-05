@@ -17,7 +17,8 @@ import {
 const Sidebar = () => {
   const navItems = [
     { icon: <LayoutDashboard size={20} />, label: 'Dashboard', path: '/' },
-    { icon: <UserCircle size={20} />, label: 'Profile & Onboarding', path: '/profile' },
+    { icon: <UserCircle size={20} />, label: 'User Profile', path: '/profile' },
+    { icon: <FileText size={20} />, label: 'Document Repository', path: '/onboarding' },
     { icon: <Target size={20} />, label: 'Search Strategies', path: '/strategies' },
     { icon: <Briefcase size={20} />, label: 'Job Board', path: '/jobs' },
     { icon: <Building2 size={20} />, label: 'Empresas', path: '/companies' },

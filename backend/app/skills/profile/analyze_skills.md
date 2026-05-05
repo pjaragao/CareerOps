@@ -8,6 +8,7 @@ Analyze the candidate's current skills vs their target role.
 
 Target Role: {{ target_role }}
 Current Skills: {{ skills | tojson }}
+{% include 'common/user_context.md' %}
 
 Return JSON with exactly this structure:
 {

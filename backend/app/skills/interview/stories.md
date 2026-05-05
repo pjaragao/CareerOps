@@ -5,6 +5,7 @@ Based on the candidate's background and the job description, generate {{ count }
 
 Target Job: {{ job_title }}
 Profile Data: {{ profile_summary }}
+{% include 'common/user_context.md' %}
 
 Return JSON:
 {

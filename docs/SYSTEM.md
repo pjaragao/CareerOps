@@ -13,6 +13,7 @@ CareerOps is an AI-powered career automation platform that helps users:
 - Generate ATS-optimized resumes and cover letters using a **Modular AI Skills Engine**
 - Evaluate and score jobs against the user's career goals
 - Prepare for interviews with STAR+R story generation
+- **Build a Knowledge Base** from uploaded documents (PDF, DOCX) via **MarkItDown**
 - Optimize their LinkedIn profile with AI-powered suggestions
 - Track applications through a Kanban pipeline
 
@@ -60,6 +61,8 @@ linkedin_resume/
 │   │   ├── skills/             # AI Skills (Modular .md Prompts)
 │   │   │   ├── common/         # Shared constraints & rules
 │   │   │   ├── profile/        # LinkedIn optimization skills
+│   │   │   ├── onboarding/     # Document parsing & resume optimization
+│   │   │   ├── knowledge/      # Aggregated context generation
 │   │   │   ├── jobs/           # Evaluation & ATS skills
 │   │   │   ├── interview/      # STAR+R & question generation
 │   │   │   └── analytics/      # Skill gaps & career insights
@@ -69,7 +72,8 @@ linkedin_resume/
 │   │   │   ├── interview_service.py # Refactored Interview skills
 │   │   │   ├── job_service.py       # Job DB operations
 │   │   │   ├── pdf_service.py       # Gotenberg PDF generation
-│   │   │   └── profile_service.py   # DB-only profile operations
+│   │   │   ├── profile_service.py   # DB-only profile operations
+│   │   │   └── document_service.py  # MarkItDown + Knowledge Base management
 │   ├── scripts/                # Utility scripts (e.g. migration)
 │   └── main.py
 │
@@ -78,7 +82,8 @@ linkedin_resume/
 │       ├── pages/
 │       │   ├── JobBoard.tsx         # Job listings table with AI actions
 │       │   ├── Strategies.tsx       # Search strategies (Ext. Automation)
-│       │   └── LinkedInOptimizer.tsx # Full LinkedIn audit suite
+│       │   ├── LinkedInOptimizer.tsx # Full LinkedIn audit suite
+│       │   └── DocumentRepository.tsx # Onboarding & Document management
 │
 ├── extension/                  # Chrome Extension (Manifest V3)
 │   ├── content.js              # DOM scraping + Bulk Capture + Auto Search
@@ -106,8 +111,14 @@ linkedin_resume/
 
 1. User clicks "Run Strategy" in Dashboard.
 2. Frontend triggers Extension via Message/Backend Flag.
-3. Extension navigates LinkedIn Search with keywords.
-4. Extension triggers Bulk Capture automatically.
+
+### 3.3 AI Onboarding & Knowledge Injection
+
+1. **Upload**: User uploads PDF/DOCX → `DocumentService` converts to Markdown via **MarkItDown**.
+2. **Extract**: `onboarding/process_document.md` skill extracts structured facts.
+3. **Validate**: User reviews and approves findings in the UI.
+4. **Aggregate**: `knowledge/compile_knowledge.md` builds `user_data.md` (Knowledge Base).
+5. **Inject**: Other skills (`interview`, `jobs`, `profile`) include `common/user_context.md` which pulls from the Knowledge Base.
 
 ---
 

@@ -11,6 +11,9 @@ Job Description: {{ job_description }}
 Base Resume:
 {{ resume_base }}
 
+Additional Professional Context (Knowledge Base):
+{% include 'common/user_context.md' %}
+
 {{ orientation }}
 
 Return JSON:
