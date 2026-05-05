@@ -1,4 +1,5 @@
 import yaml
+import asyncio
 import os
 import json
 from typing import Optional, Dict, Any, List
@@ -140,7 +141,7 @@ class ProfileService:
         Resume text:
         {text}
         """
-        response_text = provider.generate_text(prompt)
+        response_text = await asyncio.to_thread(provider.generate_text, prompt)
         
         # Robust JSON extraction
         import re
@@ -183,12 +184,14 @@ class ProfileService:
         # Filter out None values that might come from undefined frontend fields
         safe_keywords = [str(k) for k in keywords if k]
         
+        anti_hallucination = "\nCRITICAL RULE 1: Rely ONLY on the candidate's actual profile and the provided job keywords. DO NOT hallucinate or invent technologies/industries (e.g., Web3, blockchain) based on the target company's name.\nCRITICAL RULE 2: DO NOT mention the target company's name explicitly in your output. LinkedIn profiles must remain company-agnostic while still demonstrating strong synergy with the target role."
+        
         if ctx_type == "strategy":
-            return f"\nTARGET STRATEGY CONTEXT:\n- Target: {label}\n- Key Keywords to Include: {', '.join(safe_keywords)}\nMake sure to strongly align the content with this target strategy and include these keywords naturally."
+            return f"\nTARGET STRATEGY CONTEXT:\n- Target: {label}\n- Key Keywords to Include: {', '.join(safe_keywords)}\nMake sure to strongly align the content with this target strategy and include these keywords naturally.{anti_hallucination}"
         elif ctx_type == "job":
-            return f"\nTARGET JOB CONTEXT:\n- Target Role/Company: {label}\n- Job Keywords/Description context: {', '.join(safe_keywords)}\nMake sure to strongly align the content with this specific job opportunity."
+            return f"\nTARGET JOB CONTEXT:\n- Target Role/Company: {label}\n- Job Keywords/Description context: {', '.join(safe_keywords)}\nMake sure to strongly align the content with this specific job opportunity.{anti_hallucination}"
         elif ctx_type == "custom":
-            return f"\nTARGET ROLE CONTEXT:\n- Target Role: {label}\nMake sure to strongly align the content to appeal to recruiters hiring for this role."
+            return f"\nTARGET ROLE CONTEXT:\n- Target Role: {label}\nMake sure to strongly align the content to appeal to recruiters hiring for this role.{anti_hallucination}"
         
         return ""
 
@@ -211,7 +214,7 @@ class ProfileService:
         
         Return ONLY the optimized text, without explanations.
         """
-        return provider.generate_text(prompt)
+        return await asyncio.to_thread(provider.generate_text, prompt)
 
     @staticmethod
     async def get_profile_score(profile_md: str) -> Dict[str, Any]:
@@ -228,7 +231,7 @@ class ProfileService:
             "tips": ["tip1", "tip2"]
         }}
         """
-        result = provider.generate_json(prompt)
+        result = await asyncio.to_thread(provider.generate_json, prompt)
         
         conn = get_db_connection()
         with conn.cursor() as cur:
@@ -249,7 +252,7 @@ class ProfileService:
         Profile: {profile_md}
         Focus on: Establishing professional brand, finding the right people, engaging with insights, and building relationships.
         """
-        return provider.generate_text(prompt)
+        return await asyncio.to_thread(provider.generate_text, prompt)
 
     @staticmethod
     async def simulate_ssi(profile: dict) -> Dict[str, Any]:
@@ -282,7 +285,7 @@ class ProfileService:
             "weekly_plan": ["action1", "action2", "action3", "action4", "action5"]
         }}
         """
-        return provider.generate_json(prompt)
+        return await asyncio.to_thread(provider.generate_json, prompt)
 
     @staticmethod
     async def analyze_skills(profile: dict, target_role: str, strategy_context: Optional[dict] = None) -> Dict[str, Any]:
@@ -308,7 +311,7 @@ class ProfileService:
             "summary": "2-sentence analysis"
         }}
         """
-        return provider.generate_json(prompt)
+        return await asyncio.to_thread(provider.generate_json, prompt)
 
     @staticmethod
     async def optimize_experience_bullets(experience_list: list, lang: str = "pt", strategy_context: Optional[dict] = None) -> List[Dict[str, Any]]:
@@ -345,7 +348,7 @@ class ProfileService:
                 "impact_score": 0-10
             }}
             """
-            result = provider.generate_json(prompt)
+            result = await asyncio.to_thread(provider.generate_json, prompt)
             results.append(result)
         return results
 
@@ -369,9 +372,11 @@ class ProfileService:
         LinkedIn headline rules:
         - Maximum 220 characters
         - Use | to separate sections
-        - Formula: [Role] | [Specialty] | [Key Tools/Stack] | [Value Proposition]
+        - Formula: [Your Core Professional Identity] | [Key Skills matching the target] | [Value Proposition]
         - Include relevant keywords for recruiter searches
-        - Be specific, not generic{context_prompt}
+        - Be specific, not generic
+        - CRITICAL: DO NOT copy the exact target job title. Your headline must demonstrate SYNERGY with the target role by showing how your unique background and skills make you ideal for it.
+        - CRITICAL: DO NOT claim to already work for the target company or explicitly name the target company.{context_prompt}
 
         Candidate info:
         - Current headline: {personal.get('headline', 'Not set')}
@@ -388,7 +393,7 @@ class ProfileService:
             "tips": ["tip about headline optimization"]
         }}
         """
-        result = provider.generate_json(prompt)
+        result = await asyncio.to_thread(provider.generate_json, prompt)
         # Ensure char counts are accurate
         if isinstance(result.get("variants"), list):
             for v in result["variants"]:
@@ -429,7 +434,7 @@ class ProfileService:
             "recommendation": "overall advice in 2-3 sentences"
         }}
         """
-        return provider.generate_json(prompt)
+        return await asyncio.to_thread(provider.generate_json, prompt)
 
     @staticmethod
     async def save_profile_from_extension(data: dict):
@@ -528,7 +533,7 @@ class ProfileService:
         """
         
         try:
-            result = provider.generate_json(prompt)
+            result = await asyncio.to_thread(provider.generate_json, prompt)
             # Ensure skills is a list
             if isinstance(result.get("skills"), dict):
                 # Flatten skills if it came back as an object
