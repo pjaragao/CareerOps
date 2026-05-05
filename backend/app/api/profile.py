@@ -73,14 +73,20 @@ async def run_full_audit(req: FullAuditRequest):
     lang_profile = ProfileService._get_flattened_profile(profile, req.lang)
     content = json.dumps(lang_profile)
     
-    # Run the core parts in parallel to prevent 504 timeouts
+    # Define tasks for parallel execution
     score_task = ProfileService.get_profile_score(content)
     ssi_task = ProfileService.simulate_ssi(profile, req.lang)
     headlines_task = ProfileService.generate_headline_variants(profile, req.lang, 3, req.strategy_context)
     about_opt_task = ProfileService.optimize_section(f"LinkedIn About", lang_profile.get("about", ""), req.lang, req.strategy_context)
     
-    score, ssi, headlines, about_opt = await asyncio.gather(
-        score_task, ssi_task, headlines_task, about_opt_task
+    # Comprehensive optimization includes Skills and Experience
+    target_role = req.strategy_context.get("label") if req.strategy_context else lang_profile.get("preferences", {}).get("target_role", "Software Engineer")
+    skills_task = ProfileService.analyze_skills(profile, target_role, req.strategy_context, req.lang)
+    experience_task = ProfileService.optimize_experience_bullets(lang_profile.get("experience", []), req.lang, req.strategy_context)
+    
+    # Run all tasks in parallel
+    score, ssi, headlines, about_opt, skills, experience = await asyncio.gather(
+        score_task, ssi_task, headlines_task, about_opt_task, skills_task, experience_task
     )
     
     results = {
@@ -90,10 +96,18 @@ async def run_full_audit(req: FullAuditRequest):
         "about": {
             "original": lang_profile.get("about", ""),
             "optimized": about_opt
-        }
+        },
+        "skills": skills,
+        "experience": experience
     }
     
+    # Save the consolidated analysis
     ProfileService.save_analysis("full_audit", req.lang, req.strategy_context, results, profile)
+    
+    # Also update individual caches for UI consistency
+    ProfileService.save_analysis("skills", req.lang, req.strategy_context, skills, profile)
+    ProfileService.save_analysis("experience", req.lang, req.strategy_context, {"results": experience}, profile)
+    
     return {"results": results}
 
 

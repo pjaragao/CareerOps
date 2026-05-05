@@ -31,6 +31,8 @@
 
 ### 📊 LinkedIn Profile Optimizer
 - **PostgreSQL JSONB storage** — definitive source of truth for all profile data (legacy YAML deprecated)
+- **Profile Sync Alerts** — detect when your LinkedIn data has changed and needs a fresh AI audit
+- **One-click Full Audit** — comprehensive AI analysis of Score, SSI, Headlines, Bio, Experiences, and Skills in one step
 - **Profile audit** with strength score (0-100)
 - **SSI Score simulator** across 4 LinkedIn pillars
 - **Headline builder** with LinkedIn preview mockup

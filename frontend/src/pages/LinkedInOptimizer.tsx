@@ -92,6 +92,11 @@ const LinkedInOptimizer = () => {
     return true;
   };
 
+  const isOutOfSync = () => {
+    if (!profile?._metadata?.updated_at || !profile?._metadata?.last_audit_at) return false;
+    return new Date(profile._metadata.updated_at) > new Date(profile._metadata.last_audit_at);
+  };
+
   const runFullAnalysis = async () => {
     const p = await profileService.getProfile();
     if (!checkCompleteness(p)) {
@@ -102,10 +107,17 @@ const LinkedInOptimizer = () => {
     setLoading(true);
     try {
       setProfile(p);
-      const res = await profileService.runFullAudit(lang, strategyContext);
+      const data = await profileService.runFullAudit(lang, strategyContext);
+      const res = data.results || data;
       setResults(res);
+      
+      // Update individual states with the fresh comprehensive data
+      if (res.skills) setSkillsResult(res.skills);
+      if (res.experience) setExpResult(res.experience);
+      
       setActiveTab('overview');
     } catch (error) {
+      console.error("Optimization failed", error);
       alert("Failed to run optimization.");
     } finally {
       setLoading(false);
@@ -619,6 +631,34 @@ const LinkedInOptimizer = () => {
         </div>
       </div>
       
+      {isOutOfSync() && (
+        <div className="animate-fade-in" style={{ 
+          marginBottom: '1.5rem', 
+          padding: '1rem 1.5rem', 
+          background: 'rgba(255, 193, 7, 0.1)', 
+          border: '1px solid rgba(255, 193, 7, 0.3)', 
+          borderRadius: '16px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '1rem'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <AlertCircle color="#ffc107" size={20} />
+            <span style={{ fontSize: '0.9rem', color: '#ffc107', fontWeight: 600 }}>
+              Seu perfil foi atualizado no LinkedIn. Alguns resultados da auditoria podem estar obsoletos.
+            </span>
+          </div>
+          <button 
+            onClick={runFullAnalysis} 
+            className="btn btn-primary" 
+            style={{ padding: '0.5rem 1rem', fontSize: '12px', background: '#ffc107', color: '#000', border: 'none' }}
+          >
+            Refazer Auditoria Total
+          </button>
+        </div>
+      )}
+
       {renderContextSelector()}
 
       {!results && !loading && (

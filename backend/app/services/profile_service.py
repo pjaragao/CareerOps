@@ -43,6 +43,11 @@ class ProfileService:
                     INSERT INTO public.optimizer_analyses (analysis_type, lang, strategy_context, results, profile_snapshot, created_at)
                     VALUES (%s, %s, %s, %s, %s, NOW())
                 """, (analysis_type, lang, json.dumps(strategy_context) if strategy_context else None, json.dumps(results), json.dumps(profile_snapshot)))
+                
+                # If it's a full audit, update the profile's last_audit_at timestamp
+                if analysis_type == "full_audit":
+                    cur.execute("UPDATE public.user_profiles SET last_audit_at = NOW() WHERE id = 1")
+                    
             conn.commit()
         except Exception as e:
             print(f"DEBUG: Error saving analysis: {e}")
@@ -72,36 +77,44 @@ class ProfileService:
         conn = get_db_connection()
         try:
             with get_db_cursor(conn) as cur:
-                cur.execute("SELECT full_data as data FROM public.user_profiles WHERE id = 1")
+                cur.execute("SELECT full_data as data, updated_at, last_audit_at FROM public.user_profiles WHERE id = 1")
                 row = cur.fetchone()
                 if row and row['data']:
                     data = row['data']
                     if "languages" not in data:
                         data["languages"] = {}
+                    
+                    # Inject metadata for frontend use
+                    data["_metadata"] = {
+                        "updated_at": row['updated_at'].isoformat() if row['updated_at'] else None,
+                        "last_audit_at": row['last_audit_at'].isoformat() if row['last_audit_at'] else None
+                    }
                     return data
         except Exception as e:
             print(f"DEBUG: Error reading profile: {e}")
         finally:
             conn.close()
         
-        return {"personal": {}, "languages": {}, "preferences": {}}
+        return {"personal": {}, "languages": {}, "preferences": {}, "_metadata": {"updated_at": None, "last_audit_at": None}}
 
     @staticmethod
     def save_profile(profile: dict):
         conn = get_db_connection()
         try:
+            # Remove metadata before saving if present
+            save_data = {k: v for k, v in profile.items() if k != "_metadata"}
             with conn.cursor() as cur:
                 cur.execute("""
                     INSERT INTO public.user_profiles (id, full_data, updated_at) 
                     VALUES (1, %s, NOW()) 
                     ON CONFLICT (id) DO UPDATE SET full_data = EXCLUDED.full_data, updated_at = NOW()
-                """, (json.dumps(profile),))
+                """, (json.dumps(save_data),))
             conn.commit()
             
             # Optionally write back to YAML for local backup
             settings.CONFIG_DIR.mkdir(parents=True, exist_ok=True)
             with open(settings.PROFILE_FILE, "w", encoding="utf-8") as f:
-                yaml.dump(profile, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+                yaml.dump(save_data, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
         except Exception as e:
             print(f"DEBUG: Error saving profile to DB: {e}")
         finally:
