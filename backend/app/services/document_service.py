@@ -51,10 +51,12 @@ class DocumentService:
         if not doc_id:
             return None
 
-        # 2. Trigger initial parsing in background
-        # Note: In a real production app, use a proper task queue like Celery/Redis
-        # For this local app, we'll run it as an async task
-        asyncio.create_task(DocumentService.process_document(doc_id, content))
+        # 2. Save file to disk for later processing
+        upload_dir = os.path.join(settings.PROJECT_DIR, "backend/app/uploads")
+        os.makedirs(upload_dir, exist_ok=True)
+        file_path = os.path.join(upload_dir, f"{doc_id}")
+        with open(file_path, "wb") as f:
+            f.write(content)
         
         return doc_id
 
@@ -63,14 +65,15 @@ class DocumentService:
         """Converts file to Markdown and triggers AI extraction."""
         conn = get_db_connection()
         try:
-            # 1. Get document info if content not provided
+            # 1. Get content from disk if not provided
             if content is None:
-                # This would happen if we are reprocessing. 
-                # For now, we assume we need the content. 
-                # In a real app, we'd save the bytes in a volume or DB blob.
-                # Since we don't have a storage volume for files yet, let's assume content is provided.
-                # TODO: Implement local file storage if needed.
-                return
+                upload_dir = os.path.join(settings.PROJECT_DIR, "backend/app/uploads")
+                file_path = os.path.join(upload_dir, f"{doc_id}")
+                if not os.path.exists(file_path):
+                    print(f"File not found for doc {doc_id}")
+                    return
+                with open(file_path, "rb") as f:
+                    content = f.read()
 
             with conn.cursor() as cur:
                 cur.execute("UPDATE public.user_documents SET processing_status = 'processing' WHERE id = %s", (doc_id,))
@@ -91,9 +94,13 @@ class DocumentService:
                     os.remove(temp_path)
 
             # 3. Trigger AI extraction
+            current_profile = ProfileService.get_profile()
             extraction = await SkillService.run_skill(
                 "onboarding/process_document.md",
-                {"raw_text": raw_text}
+                {
+                    "raw_text": raw_text,
+                    "current_profile": current_profile
+                }
             )
 
             # 4. Update DB with extracted data and 'awaiting_validation' status
@@ -148,8 +155,44 @@ class DocumentService:
             # Trigger aggregation
             await DocumentService.aggregate_knowledge()
             return True
+        finally:
+            conn.close()
+
+    @staticmethod
+    async def validate_bulk(doc_ids: List[int], merged_data: dict) -> bool:
+        """Validates multiple documents at once and updates the knowledge base."""
+        conn = get_db_connection()
+        try:
+            # Mark all documents as validated
+            with conn.cursor() as cur:
+                cur.execute("""
+                    UPDATE public.user_documents 
+                    SET processing_status = 'validated', validated_data = %s
+                    WHERE id = ANY(%s)
+                """, (json.dumps(merged_data), doc_ids))
+            conn.commit()
+
+            # Save STAR cases
+            if "star_cases" in merged_data:
+                for case in merged_data["star_cases"]:
+                    with conn.cursor() as cur:
+                        cur.execute("""
+                            INSERT INTO public.interview_stories (title, situation, task, action, result, is_raw, source_doc_id, updated_at)
+                            VALUES (%s, %s, %s, %s, %s, TRUE, %s, NOW())
+                        """, (
+                            case.get("title", "Bulk Experience"),
+                            case.get("situation", ""),
+                            case.get("task", ""),
+                            case.get("action", ""),
+                            case.get("result", ""),
+                            doc_ids[0]
+                        ))
+                conn.commit()
+
+            await DocumentService.aggregate_knowledge()
+            return True
         except Exception as e:
-            print(f"Error validating document {doc_id}: {e}")
+            print(f"Error in bulk validation: {e}")
             return False
         finally:
             conn.close()
@@ -226,3 +269,11 @@ class DocumentService:
             }
         )
         return result
+
+    @staticmethod
+    async def process_bulk(doc_ids: List[int]):
+        """Triggers processing for multiple documents."""
+        for doc_id in doc_ids:
+            # Trigger each as a separate task
+            asyncio.create_task(DocumentService.process_document(doc_id))
+        return True

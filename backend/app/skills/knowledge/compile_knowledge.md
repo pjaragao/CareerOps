@@ -9,9 +9,11 @@ Input Data (Validated):
 
 # Instructions:
 - Organize the information by category (Summary, Core Competencies, Key Achievements, STAR Cases).
-- Ensure there is no redundancy.
+- **CRITICAL: De-duplicate and Merge**: If multiple documents describe the same work experience (same company and role) or education (same institution), MERGE them into a single entry. 
+- Keep the MOST DETAILED bullet points and metrics from all sources.
+- Do not repeat the same achievement multiple times.
+- For STAR cases, if two cases describe the same event, combine them into the most complete version.
 - Use professional, high-impact language.
-- For STAR cases, keep the structure clear.
 - Format the output as clean Markdown.
 
 Output should start with "# USER KNOWLEDGE BASE"

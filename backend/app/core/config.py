@@ -15,6 +15,7 @@ PROJECT_DIR = BACKEND_DIR
 load_dotenv(PROJECT_DIR / ".env")
 
 class Settings(BaseSettings):
+    PROJECT_DIR: Path = PROJECT_DIR
     # --- Supabase / PostgreSQL ---
     DB_HOST: str = os.getenv("SUPABASE_DB_HOST", "localhost")
     DB_PORT: int = int(os.getenv("SUPABASE_DB_PORT", "5432"))

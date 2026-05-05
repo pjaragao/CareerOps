@@ -8,6 +8,15 @@ Focus on identifying:
 {% include 'common/critical_rules.md' %}
 {% include 'common/output_format.md' %}
 
+Current Profile Information (LinkedIn):
+{{ current_profile | tojson }}
+
+# Instructions:
+- Analyze the document text below.
+- Extract information that is NEW, MORE DETAILED, or provides DIFFERENT PERSPECTIVES compared to the current profile.
+- If a work experience or education is already present with the same level of detail, do not duplicate it.
+- Focus heavily on extracting "STAR Cases" (Situation, Task, Action, Result) from the experiences.
+
 Document Text:
 {{ raw_text }}
 

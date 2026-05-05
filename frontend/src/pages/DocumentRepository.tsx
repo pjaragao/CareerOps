@@ -14,20 +14,31 @@ import {
   Plus,
   Sparkles,
   Zap,
-  ChevronRight
+  ChevronRight,
+  ArrowRight,
+  ClipboardList
 } from 'lucide-react';
+
+type Step = 'upload' | 'analyze' | 'review' | 'finalize';
 
 const DocumentRepository = () => {
   const [documents, setDocuments] = useState<UserDocument[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [currentStep, setCurrentStep] = useState<Step>('upload');
+  
+  // Review state
   const [selectedDoc, setSelectedDoc] = useState<UserDocument | null>(null);
   const [validationData, setValidationData] = useState<any>(null);
-  const [activeTab, setActiveTab] = useState<'all' | 'pending'>('all');
+  const [isBulkReview, setIsBulkReview] = useState(false);
+  const [pendingDocIds, setPendingDocIds] = useState<number[]>([]);
 
   useEffect(() => {
     loadDocuments();
-    const interval = setInterval(loadDocuments, 5000); // Poll for status updates
+    const interval = setInterval(() => {
+      // Only poll if we are in analysis step or have pending docs
+      loadDocuments();
+    }, 3000);
     return () => clearInterval(interval);
   }, []);
 
@@ -35,6 +46,14 @@ const DocumentRepository = () => {
     try {
       const docs = await documentService.listDocuments();
       setDocuments(docs);
+      
+      // Auto-determine step based on data if not manually set
+      const pendingAnalysis = docs.filter(d => d.processing_status === 'pending');
+      const awaitingReview = docs.filter(d => d.processing_status === 'awaiting_validation');
+      
+      if (currentStep === 'upload' && docs.length > 0 && pendingAnalysis.length > 0) {
+        // Stay in upload or move to analyze? Let's let user click.
+      }
     } catch (error) {
       console.error("Failed to load documents", error);
     } finally {
@@ -43,49 +62,76 @@ const DocumentRepository = () => {
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
 
     setUploading(true);
     try {
-      await documentService.uploadDocument(file);
-      loadDocuments();
+      const uploadPromises = Array.from(files).map(file => documentService.uploadDocument(file));
+      await Promise.all(uploadPromises);
+      await loadDocuments();
     } catch (error) {
-      alert("Failed to upload document");
+      console.error("Upload error", error);
+      alert("Failed to upload one or more documents");
     } finally {
       setUploading(false);
     }
   };
 
-  const handleDelete = async (id: number) => {
-    if (!confirm("Are you sure you want to delete this document?")) return;
+  const handleAnalyze = async () => {
+    const pending = documents.filter(d => d.processing_status === 'pending');
+    if (pending.length === 0) return;
+    
     try {
-      await documentService.deleteDocument(id);
-      loadDocuments();
+      await documentService.processBulk(pending.map(p => p.id));
+      setCurrentStep('analyze');
     } catch (error) {
-      alert("Failed to delete document");
+      alert("Failed to start analysis");
     }
   };
 
-  const startValidation = async (doc: UserDocument) => {
-    try {
-      const fullDoc = await documentService.getDocument(doc.id);
-      setSelectedDoc(fullDoc);
-      setValidationData(fullDoc.extracted_data || {});
-    } catch (error) {
-      alert("Failed to load document details");
-    }
+  const startBulkReview = () => {
+    const pending = documents.filter(d => d.processing_status === 'awaiting_validation');
+    if (pending.length === 0) return;
+
+    const merged = {
+      summary: "",
+      personal: {},
+      education: [] as any[],
+      skills: [] as string[],
+      experiences: [] as any[],
+      star_cases: [] as any[]
+    };
+
+    pending.forEach(d => {
+      const data = d.extracted_data || {};
+      if (data.skills) merged.skills = Array.from(new Set([...merged.skills, ...data.skills]));
+      if (data.education) merged.education = [...merged.education, ...data.education];
+      if (data.experiences) merged.experiences = [...merged.experiences, ...data.experiences];
+      if (data.star_cases) merged.star_cases = [...merged.star_cases, ...data.star_cases];
+      if (data.summary && !merged.summary) merged.summary = data.summary;
+    });
+
+    setValidationData(merged);
+    setIsBulkReview(true);
+    setPendingDocIds(pending.map(p => p.id));
+    setSelectedDoc({ filename: 'Consolidated Knowledge', processing_status: 'awaiting_validation' } as any);
+    setCurrentStep('review');
   };
 
   const handleValidate = async () => {
-    if (!selectedDoc) return;
+    if (pendingDocIds.length === 0) return;
     try {
-      await documentService.validateDocument(selectedDoc.id, validationData);
+      if (isBulkReview) {
+        await documentService.validateBulk(pendingDocIds, validationData);
+      } else {
+        await documentService.validateDocument(pendingDocIds[0], validationData);
+      }
       setSelectedDoc(null);
-      loadDocuments();
-      alert("Document validated and added to Knowledge Base!");
+      await loadDocuments();
+      setCurrentStep('finalize');
     } catch (error) {
-      alert("Failed to validate document");
+      alert("Failed to validate");
     }
   };
 
@@ -97,7 +143,6 @@ const DocumentRepository = () => {
         alert(result.error);
       } else {
         alert("Resume optimization suggestions generated! Check the Profile page.");
-        // In a real app, we might redirect to a comparison view
       }
     } catch (error) {
       alert("Failed to optimize resume");
@@ -106,250 +151,358 @@ const DocumentRepository = () => {
     }
   };
 
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case 'validated':
-        return <span className="badge" style={{ backgroundColor: 'rgba(34, 197, 94, 0.2)', color: '#4ade80', display: 'flex', alignItems: 'center', gap: '4px' }}><CheckCircle2 size={14} /> Validated</span>;
-      case 'awaiting_validation':
-        return <span className="badge" style={{ backgroundColor: 'rgba(234, 179, 8, 0.2)', color: '#facc15', display: 'flex', alignItems: 'center', gap: '4px' }}><Clock size={14} /> Review Needed</span>;
-      case 'processing':
-        return <span className="badge" style={{ backgroundColor: 'rgba(59, 130, 246, 0.2)', color: '#60a5fa', display: 'flex', alignItems: 'center', gap: '4px' }}><RefreshCw size={14} className="animate-spin" /> Processing</span>;
-      case 'failed':
-        return <span className="badge" style={{ backgroundColor: 'rgba(239, 68, 68, 0.2)', color: '#f87171', display: 'flex', alignItems: 'center', gap: '4px' }}><AlertCircle size={14} /> Failed</span>;
-      default:
-        return <span className="badge">{status}</span>;
+  const handleDelete = async (id: number) => {
+    if (!confirm("Remove this document?")) return;
+    try {
+      await documentService.deleteDocument(id);
+      loadDocuments();
+    } catch (error) {
+      alert("Failed to delete");
     }
   };
 
+  // Helper to get status counts
+  const counts = {
+    pending: documents.filter(d => d.processing_status === 'pending').length,
+    processing: documents.filter(d => d.processing_status === 'processing').length,
+    review: documents.filter(d => d.processing_status === 'awaiting_validation').length,
+    done: documents.filter(d => d.processing_status === 'validated').length,
+    failed: documents.filter(d => d.processing_status === 'failed').length
+  };
+
   return (
-    <div className="animate-fade-in">
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
-        <div>
-          <h1 style={{ fontSize: '2rem', fontWeight: 700, marginBottom: '0.5rem' }}>Document Repository</h1>
-          <p style={{ color: 'var(--text-muted)' }}>Manage your professional documents and build your Knowledge Base.</p>
-        </div>
-        <div style={{ display: 'flex', gap: '1rem' }}>
-          <button className="btn btn-secondary" onClick={handleOptimizeResume}>
-            <Sparkles size={18} /> Optimize Base Resume
-          </button>
-          <label className="btn btn-primary" style={{ cursor: 'pointer' }}>
-            <Upload size={18} /> {uploading ? 'Uploading...' : 'Upload Document'}
-            <input type="file" hidden onChange={handleFileUpload} accept=".pdf,.doc,.docx,.txt" disabled={uploading} />
-          </label>
-        </div>
+    <div className="animate-fade-in" style={{ maxWidth: '1000px', margin: '0 auto' }}>
+      {/* Header */}
+      <div style={{ textAlign: 'center', marginBottom: '3rem' }}>
+        <h1 style={{ fontSize: '2.5rem', fontWeight: 800, marginBottom: '1rem', background: 'linear-gradient(to right, #60a5fa, #a855f7)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+          AI Onboarding Wizard
+        </h1>
+        <p style={{ color: 'var(--text-muted)', fontSize: '1.1rem' }}>
+          Follow the steps to build your professional knowledge base from your documents.
+        </p>
       </div>
 
-      <div className="panel" style={{ padding: '0', overflow: 'hidden' }}>
-        <div style={{ padding: '1rem 1.5rem', borderBottom: '1px solid rgba(255,255,255,0.1)', display: 'flex', gap: '2rem' }}>
-          <button 
-            onClick={() => setActiveTab('all')}
-            style={{ background: 'none', border: 'none', color: activeTab === 'all' ? 'var(--primary-color)' : 'var(--text-muted)', fontWeight: 600, cursor: 'pointer', borderBottom: activeTab === 'all' ? '2px solid var(--primary-color)' : 'none', paddingBottom: '0.5rem' }}
-          >
-            All Documents ({documents.length})
-          </button>
-          <button 
-            onClick={() => setActiveTab('pending')}
-            style={{ background: 'none', border: 'none', color: activeTab === 'pending' ? 'var(--primary-color)' : 'var(--text-muted)', fontWeight: 600, cursor: 'pointer', borderBottom: activeTab === 'pending' ? '2px solid var(--primary-color)' : 'none', paddingBottom: '0.5rem' }}
-          >
-            Awaiting Review ({documents.filter(d => d.processing_status === 'awaiting_validation').length})
-          </button>
-        </div>
-
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-          <thead>
-            <tr style={{ textAlign: 'left', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-              <th style={{ padding: '1.2rem 1.5rem' }}>Document</th>
-              <th style={{ padding: '1.2rem 1.5rem' }}>Status</th>
-              <th style={{ padding: '1.2rem 1.5rem' }}>Added At</th>
-              <th style={{ padding: '1.2rem 1.5rem', textAlign: 'right' }}>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {documents
-              .filter(d => activeTab === 'all' || d.processing_status === 'awaiting_validation')
-              .map(doc => (
-              <tr key={doc.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)', transition: 'background 0.2s' }} className="hover-row">
-                <td style={{ padding: '1.2rem 1.5rem' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <div style={{ backgroundColor: 'rgba(255,255,255,0.05)', padding: '8px', borderRadius: '8px' }}>
-                      <FileText size={20} color="var(--primary-color)" />
-                    </div>
-                    <div>
-                      <div style={{ fontWeight: 600 }}>{doc.filename}</div>
-                      <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{doc.content_type}</div>
-                    </div>
-                  </div>
-                </td>
-                <td style={{ padding: '1.2rem 1.5rem' }}>
-                  {getStatusBadge(doc.processing_status)}
-                </td>
-                <td style={{ padding: '1.2rem 1.5rem', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-                  {new Date(doc.created_at).toLocaleDateString()}
-                </td>
-                <td style={{ padding: '1.2rem 1.5rem', textAlign: 'right' }}>
-                  <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
-                    {doc.processing_status === 'awaiting_validation' && (
-                      <button className="btn btn-primary btn-sm" onClick={() => startValidation(doc)}>
-                        Review
-                      </button>
-                    )}
-                    {doc.processing_status === 'validated' && (
-                      <button className="btn btn-secondary btn-sm" onClick={() => startValidation(doc)}>
-                        <Eye size={14} />
-                      </button>
-                    )}
-                    <button className="btn btn-secondary btn-sm" style={{ color: '#f87171' }} onClick={() => handleDelete(doc.id)}>
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-            {documents.length === 0 && (
-              <tr>
-                <td colSpan={4} style={{ padding: '4rem', textAlign: 'center', color: 'var(--text-muted)' }}>
-                  <div style={{ marginBottom: '1rem' }}><Upload size={48} opacity={0.2} /></div>
-                  No documents found. Upload your first document to get started.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Validation Modal */}
-      {selectedDoc && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.8)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000, padding: '2rem' }}>
-          <div className="panel" style={{ width: '100%', maxWidth: '1200px', maxHeight: '90vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-            <div style={{ padding: '1.5rem', borderBottom: '1px solid rgba(255,255,255,0.1)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h2 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><Zap color="var(--primary-color)" /> Review Extracted Info</h2>
-              <button onClick={() => setSelectedDoc(null)} style={{ background: 'none', border: 'none', color: 'white', cursor: 'pointer' }}><X /></button>
-            </div>
-            
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', overflow: 'hidden', flex: 1 }}>
-              {/* Raw Text (MarkItDown) */}
-              <div style={{ padding: '1.5rem', overflowY: 'auto', borderRight: '1px solid rgba(255,255,255,0.1)', backgroundColor: 'rgba(0,0,0,0.2)' }}>
-                <h3 style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginBottom: '1rem', textTransform: 'uppercase', letterSpacing: '1px' }}>Raw Document (Markdown)</h3>
-                <pre style={{ whiteSpace: 'pre-wrap', fontSize: '0.85rem', lineHeight: '1.6', color: '#e2e8f0', fontFamily: 'monospace' }}>
-                  {selectedDoc.raw_text}
-                </pre>
+      {/* Stepper */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3rem', position: 'relative' }}>
+        <div style={{ position: 'absolute', top: '24px', left: '10%', right: '10%', height: '2px', background: 'rgba(255,255,255,0.1)', zIndex: 0 }}></div>
+        
+        {[
+          { id: 'upload', label: 'Upload Files', icon: <Upload size={20} /> },
+          { id: 'analyze', label: 'AI Analysis', icon: <Zap size={20} /> },
+          { id: 'review', label: 'Review Info', icon: <ClipboardList size={20} /> },
+          { id: 'finalize', label: 'Finish', icon: <CheckCircle2 size={20} /> }
+        ].map((s, i) => {
+          const isActive = currentStep === s.id;
+          const isDone = ['upload', 'analyze', 'review', 'finalize'].indexOf(currentStep) > i;
+          
+          return (
+            <div key={s.id} style={{ zIndex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', width: '20%' }}>
+              <div style={{ 
+                width: '48px', 
+                height: '48px', 
+                borderRadius: '50%', 
+                display: 'flex', 
+                alignItems: 'center', 
+                justifyContent: 'center',
+                backgroundColor: isActive ? 'var(--primary-color)' : (isDone ? '#22c55e' : '#1e293b'),
+                color: 'white',
+                marginBottom: '0.8rem',
+                boxShadow: isActive ? '0 0 20px rgba(59, 130, 246, 0.5)' : 'none',
+                transition: 'all 0.3s ease'
+              }}>
+                {isDone ? <Check size={24} /> : s.icon}
               </div>
+              <span style={{ 
+                fontWeight: 600, 
+                fontSize: '0.9rem', 
+                color: isActive ? 'white' : 'var(--text-muted)',
+                textAlign: 'center'
+              }}>
+                {s.label}
+              </span>
+            </div>
+          );
+        })}
+      </div>
 
-              {/* Extracted Data */}
-              <div style={{ padding: '1.5rem', overflowY: 'auto' }}>
-                <h3 style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginBottom: '1rem', textTransform: 'uppercase', letterSpacing: '1px' }}>AI Findings (Edit to Correct)</h3>
-                
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
-                  {/* Summary */}
-                  <section>
-                    <label className="field-label">Professional Summary</label>
-                    <textarea 
-                      value={validationData.summary || ''} 
-                      onChange={e => setValidationData({...validationData, summary: e.target.value})}
-                      style={{ height: '100px' }}
-                    />
-                  </section>
+      {/* Content Area */}
+      <div className="panel" style={{ minHeight: '400px', padding: '2.5rem', display: 'flex', flexDirection: 'column' }}>
+        
+        {/* Step 1: Upload */}
+        {currentStep === 'upload' && (
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ 
+              border: '2px dashed rgba(255,255,255,0.1)', 
+              borderRadius: '16px', 
+              padding: '4rem 2rem', 
+              backgroundColor: 'rgba(255,255,255,0.02)',
+              marginBottom: '2rem',
+              transition: 'all 0.3s ease',
+              cursor: 'pointer'
+            }} onMouseOver={e => e.currentTarget.style.borderColor = 'var(--primary-color)'} onMouseOut={e => e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)'}>
+              <label style={{ cursor: 'pointer' }}>
+                <div style={{ backgroundColor: 'rgba(59, 130, 246, 0.1)', width: '80px', height: '80px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.5rem' }}>
+                  <Plus size={40} color="var(--primary-color)" />
+                </div>
+                <h3 style={{ fontSize: '1.5rem', marginBottom: '0.5rem' }}>Drop your files here</h3>
+                <p style={{ color: 'var(--text-muted)' }}>PDF, Word or Text documents (Resumes, Cover Letters, Portfolios)</p>
+                <input type="file" multiple hidden onChange={handleFileUpload} accept=".pdf,.doc,.docx,.txt" />
+              </label>
+            </div>
 
-                  {/* Skills */}
-                  <section>
-                    <label className="field-label">Extracted Skills</label>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                      {(validationData.skills || []).map((skill: string, i: number) => (
-                        <span key={i} className="badge" style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 12px' }}>
-                          {skill}
-                          <button onClick={() => {
-                            const next = validationData.skills.filter((_:any, idx:number) => idx !== i);
-                            setValidationData({...validationData, skills: next});
-                          }} style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', display: 'flex' }}><X size={12} /></button>
-                        </span>
-                      ))}
-                      <button className="btn btn-secondary btn-sm" onClick={() => {
-                        const s = prompt("New skill:");
-                        if (s) setValidationData({...validationData, skills: [...(validationData.skills || []), s]});
-                      }}><Plus size={14} /></button>
+            {documents.length > 0 && (
+              <div style={{ marginBottom: '2rem', textAlign: 'left' }}>
+                <h4 style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '8px' }}><FileText size={18} /> Uploaded Files ({documents.length})</h4>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                  {documents.map(doc => (
+                    <div key={doc.id} className="panel" style={{ padding: '0.8rem 1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.03)' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', overflow: 'hidden' }}>
+                        <FileText size={16} color="var(--primary-color)" />
+                        <span style={{ fontSize: '0.9rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{doc.filename}</span>
+                      </div>
+                      <button onClick={() => handleDelete(doc.id)} style={{ background: 'none', border: 'none', color: '#f87171', cursor: 'pointer', padding: '4px' }}>
+                        <Trash2 size={16} />
+                      </button>
                     </div>
-                  </section>
-
-                  {/* Experiences */}
-                  <section>
-                    <label className="field-label">Experiences</label>
-                    {(validationData.experiences || []).map((exp: any, i: number) => (
-                      <div key={i} className="panel" style={{ background: 'rgba(255,255,255,0.02)', padding: '1rem', marginBottom: '1rem' }}>
-                        <div style={{ fontWeight: 600 }}>{exp.role} @ {exp.company}</div>
-                        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>{exp.period}</div>
-                        <textarea 
-                          value={exp.description} 
-                          onChange={e => {
-                            const next = [...validationData.experiences];
-                            next[i].description = e.target.value;
-                            setValidationData({...validationData, experiences: next});
-                          }}
-                          style={{ height: '80px', fontSize: '0.9rem' }}
-                        />
-                      </div>
-                    ))}
-                  </section>
-
-                  {/* STAR Cases */}
-                  <section>
-                    <label className="field-label">Raw STAR Cases (Key Achievements)</label>
-                    {(validationData.star_cases || []).map((case_data: any, i: number) => (
-                      <div key={i} className="panel" style={{ border: '1px solid var(--primary-color)', padding: '1rem', marginBottom: '1rem' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-                          <input 
-                            value={case_data.title} 
-                            onChange={e => {
-                              const next = [...validationData.star_cases];
-                              next[i].title = e.target.value;
-                              setValidationData({...validationData, star_cases: next});
-                            }}
-                            style={{ fontWeight: 'bold', background: 'transparent', border: 'none', width: '100%' }}
-                          />
-                        </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '0.9rem' }}>
-                          <div><strong>S:</strong> <textarea value={case_data.situation} onChange={e => {
-                            const next = [...validationData.star_cases]; next[i].situation = e.target.value; setValidationData({...validationData, star_cases: next});
-                          }} style={{ height: '50px' }} /></div>
-                          <div><strong>T:</strong> <textarea value={case_data.task} onChange={e => {
-                            const next = [...validationData.star_cases]; next[i].task = e.target.value; setValidationData({...validationData, star_cases: next});
-                          }} style={{ height: '50px' }} /></div>
-                          <div><strong>A:</strong> <textarea value={case_data.action} onChange={e => {
-                            const next = [...validationData.star_cases]; next[i].action = e.target.value; setValidationData({...validationData, star_cases: next});
-                          }} style={{ height: '50px' }} /></div>
-                          <div><strong>R:</strong> <textarea value={case_data.result} onChange={e => {
-                            const next = [...validationData.star_cases]; next[i].result = e.target.value; setValidationData({...validationData, star_cases: next});
-                          }} style={{ height: '50px' }} /></div>
-                        </div>
-                      </div>
-                    ))}
-                  </section>
+                  ))}
                 </div>
               </div>
-            </div>
+            )}
 
-            <div style={{ padding: '1.5rem', borderTop: '1px solid rgba(255,255,255,0.1)', display: 'flex', justifyContent: 'flex-end', gap: '1rem' }}>
-              <button className="btn btn-secondary" onClick={() => setSelectedDoc(null)}>Cancel</button>
-              {selectedDoc.processing_status !== 'validated' && (
-                <button className="btn btn-primary" onClick={handleValidate}>
-                  <Check size={18} /> Approve & Add to Knowledge Base
-                </button>
-              )}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 'auto' }}>
+              <button 
+                className="btn btn-primary btn-lg" 
+                disabled={documents.length === 0 || uploading} 
+                onClick={handleAnalyze}
+                style={{ paddingLeft: '2rem', paddingRight: '2rem' }}
+              >
+                {uploading ? 'Uploading...' : 'Start AI Analysis'} <ArrowRight size={20} style={{ marginLeft: '10px' }} />
+              </button>
             </div>
           </div>
-        </div>
-      )}
+        )}
+
+        {/* Step 2: Analyze */}
+        {currentStep === 'analyze' && (
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ marginBottom: '3rem' }}>
+              <div style={{ position: 'relative', width: '120px', height: '120px', margin: '0 auto 2rem' }}>
+                <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', borderRadius: '50%', border: '4px solid rgba(59, 130, 246, 0.1)', borderTopColor: 'var(--primary-color)' }} className="animate-spin"></div>
+                <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }}>
+                  <Zap size={40} color="var(--primary-color)" />
+                </div>
+              </div>
+              <h2 style={{ fontSize: '1.8rem', marginBottom: '0.5rem' }}>AI is extracting your experience...</h2>
+              <p style={{ color: 'var(--text-muted)' }}>This takes about 30-60 seconds depending on the number of files.</p>
+            </div>
+
+            <div className="panel" style={{ background: 'rgba(0,0,0,0.2)', padding: '1.5rem', textAlign: 'left' }}>
+              <h4 style={{ marginBottom: '1rem' }}>Processing Queue</h4>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {documents.map(doc => (
+                  <div key={doc.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.5rem 0' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <FileText size={16} color="var(--text-muted)" />
+                      <span>{doc.filename}</span>
+                    </div>
+                    <div>
+                      {doc.processing_status === 'processing' ? (
+                        <span style={{ color: 'var(--primary-color)', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '6px' }}><RefreshCw size={14} className="animate-spin" /> Analyzing...</span>
+                      ) : doc.processing_status === 'awaiting_validation' ? (
+                        <span style={{ color: '#22c55e', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '6px' }}><CheckCircle2 size={14} /> Ready</span>
+                      ) : doc.processing_status === 'failed' ? (
+                        <span style={{ color: '#f87171', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '6px' }}><AlertCircle size={14} /> Error</span>
+                      ) : (
+                        <span style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>Waiting...</span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '3rem' }}>
+              <button 
+                className="btn btn-primary btn-lg" 
+                disabled={counts.review === 0 || counts.processing > 0} 
+                onClick={startBulkReview}
+              >
+                Review Results <ChevronRight size={20} />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Step 3: Review */}
+        {currentStep === 'review' && validationData && (
+          <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+            <div style={{ marginBottom: '2rem' }}>
+              <h2 style={{ fontSize: '1.8rem', marginBottom: '0.5rem' }}>Review & Approve</h2>
+              <p style={{ color: 'var(--text-muted)' }}>The AI consolidated info from all your files. Please check and correct if necessary.</p>
+            </div>
+
+            <div style={{ flex: 1, overflowY: 'auto', paddingRight: '1rem', marginBottom: '2rem' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+                {/* Summary */}
+                <section>
+                  <label className="field-label">Professional Summary</label>
+                  <textarea 
+                    value={validationData.summary || ''} 
+                    onChange={e => setValidationData({...validationData, summary: e.target.value})}
+                    style={{ height: '100px' }}
+                  />
+                </section>
+
+                {/* Skills */}
+                <section>
+                  <label className="field-label">Skills</label>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                    {(validationData.skills || []).map((skill: string, i: number) => (
+                      <span key={i} className="badge" style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 12px' }}>
+                        {skill}
+                        <button onClick={() => {
+                          const next = validationData.skills.filter((_:any, idx:number) => idx !== i);
+                          setValidationData({...validationData, skills: next});
+                        }} style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', display: 'flex' }}><X size={12} /></button>
+                      </span>
+                    ))}
+                    <button className="btn btn-secondary btn-sm" onClick={() => {
+                      const s = prompt("New skill:");
+                      if (s) setValidationData({...validationData, skills: [...(validationData.skills || []), s]});
+                    }}><Plus size={14} /></button>
+                  </div>
+                </section>
+
+                {/* Experiences */}
+                <section>
+                  <label className="field-label">Work Experience</label>
+                  {(validationData.experiences || []).map((exp: any, i: number) => (
+                    <div key={i} className="panel" style={{ background: 'rgba(255,255,255,0.02)', padding: '1.5rem', marginBottom: '1.5rem' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
+                        <div>
+                          <div style={{ fontWeight: 700, fontSize: '1.1rem' }}>{exp.role}</div>
+                          <div style={{ color: 'var(--primary-color)', fontWeight: 600 }}>{exp.company}</div>
+                        </div>
+                        <div style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>{exp.period}</div>
+                      </div>
+                      <textarea 
+                        value={exp.description} 
+                        onChange={e => {
+                          const next = [...validationData.experiences];
+                          next[i].description = e.target.value;
+                          setValidationData({...validationData, experiences: next});
+                        }}
+                        style={{ height: '120px', fontSize: '0.95rem', lineHeight: '1.6' }}
+                      />
+                    </div>
+                  ))}
+                </section>
+
+                {/* STAR Cases */}
+                <section>
+                  <label className="field-label">Key Achievements (STAR Cases)</label>
+                  {(validationData.star_cases || []).map((case_data: any, i: number) => (
+                    <div key={i} className="panel" style={{ border: '1px solid rgba(59, 130, 246, 0.3)', padding: '1.5rem', marginBottom: '1.5rem' }}>
+                      <input 
+                        value={case_data.title} 
+                        onChange={e => {
+                          const next = [...validationData.star_cases];
+                          next[i].title = e.target.value;
+                          setValidationData({...validationData, star_cases: next});
+                        }}
+                        style={{ fontWeight: 800, fontSize: '1.1rem', background: 'transparent', border: 'none', width: '100%', marginBottom: '1rem', color: 'white' }}
+                      />
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '30px 1fr', gap: '10px' }}>
+                          <span style={{ color: 'var(--primary-color)', fontWeight: 800 }}>S</span>
+                          <textarea value={case_data.situation} onChange={e => {
+                            const next = [...validationData.star_cases]; next[i].situation = e.target.value; setValidationData({...validationData, star_cases: next});
+                          }} style={{ height: '60px', fontSize: '0.9rem' }} />
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '30px 1fr', gap: '10px' }}>
+                          <span style={{ color: 'var(--primary-color)', fontWeight: 800 }}>T</span>
+                          <textarea value={case_data.task} onChange={e => {
+                            const next = [...validationData.star_cases]; next[i].task = e.target.value; setValidationData({...validationData, star_cases: next});
+                          }} style={{ height: '60px', fontSize: '0.9rem' }} />
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '30px 1fr', gap: '10px' }}>
+                          <span style={{ color: 'var(--primary-color)', fontWeight: 800 }}>A</span>
+                          <textarea value={case_data.action} onChange={e => {
+                            const next = [...validationData.star_cases]; next[i].action = e.target.value; setValidationData({...validationData, star_cases: next});
+                          }} style={{ height: '80px', fontSize: '0.9rem' }} />
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '30px 1fr', gap: '10px' }}>
+                          <span style={{ color: 'var(--primary-color)', fontWeight: 800 }}>R</span>
+                          <textarea value={case_data.result} onChange={e => {
+                            const next = [...validationData.star_cases]; next[i].result = e.target.value; setValidationData({...validationData, star_cases: next});
+                          }} style={{ height: '60px', fontSize: '0.9rem' }} />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </section>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '2rem' }}>
+              <button className="btn btn-secondary" onClick={() => setCurrentStep('analyze')}>Back</button>
+              <button className="btn btn-primary btn-lg" onClick={handleValidate}>
+                <CheckCircle2 size={20} /> Approve & Build Knowledge Base
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Step 4: Finalize */}
+        {currentStep === 'finalize' && (
+          <div style={{ textAlign: 'center', padding: '2rem 0' }}>
+            <div style={{ backgroundColor: 'rgba(34, 197, 94, 0.1)', width: '100px', height: '100px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 2rem' }}>
+              <CheckCircle2 size={60} color="#22c55e" />
+            </div>
+            <h2 style={{ fontSize: '2.5rem', marginBottom: '1rem' }}>System Ready!</h2>
+            <p style={{ color: 'var(--text-muted)', fontSize: '1.2rem', marginBottom: '3rem', maxWidth: '600px', margin: '0 auto 3rem' }}>
+              Your professional knowledge base has been built. The AI now knows your story in detail and can help you optimize your resume and LinkedIn.
+            </p>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
+              <div className="panel" style={{ padding: '2rem', border: '1px solid rgba(255,255,255,0.1)' }}>
+                <Sparkles size={32} color="var(--primary-color)" style={{ marginBottom: '1rem' }} />
+                <h4 style={{ fontSize: '1.2rem', marginBottom: '0.8rem' }}>Update Base Resume</h4>
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '1.5rem' }}>Inject your new achievements and STAR cases into your master resume file.</p>
+                <button className="btn btn-primary w-full" onClick={handleOptimizeResume}>Improve Resume Now</button>
+              </div>
+              <div className="panel" style={{ padding: '2rem', border: '1px solid rgba(255,255,255,0.1)' }}>
+                <ChevronRight size={32} color="var(--primary-color)" style={{ marginBottom: '1rem' }} />
+                <h4 style={{ fontSize: '1.2rem', marginBottom: '0.8rem' }}>Go to Dashboard</h4>
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '1.5rem' }}>Start applying for jobs or optimize your LinkedIn profile with your new data.</p>
+                <button className="btn btn-secondary w-full" onClick={() => window.location.href = '/'}>View Dashboard</button>
+              </div>
+            </div>
+
+            <button 
+              className="btn btn-text" 
+              style={{ marginTop: '3rem', color: 'var(--text-muted)' }} 
+              onClick={() => {
+                setDocuments([]);
+                setCurrentStep('upload');
+              }}
+            >
+              Start over with new files
+            </button>
+          </div>
+        )}
+
+      </div>
 
       <style>{`
-        .hover-row:hover {
-          background-color: rgba(255,255,255,0.02);
-        }
-        .animate-spin {
-          animation: spin 1s linear infinite;
-        }
-        @keyframes spin {
-          from { transform: rotate(0deg); }
-          to { transform: rotate(360deg); }
-        }
+        .animate-fade-in { animation: fadeIn 0.5s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .animate-spin { animation: spin 1s linear infinite; }
+        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        .btn-lg { padding: 1rem 2.5rem; font-size: 1.1rem; border-radius: 12px; }
+        .field-label { font-weight: 700; color: #94a3b8; text-transform: uppercase; font-size: 0.8rem; letter-spacing: 1px; margin-bottom: 0.8rem; display: block; }
+        .w-full { width: 100%; }
+        .btn-text:hover { text-decoration: underline; }
       `}</style>
     </div>
   );

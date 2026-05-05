@@ -3,10 +3,26 @@ from typing import List, Optional, Dict, Any
 from app.services.document_service import DocumentService
 from pydantic import BaseModel
 
-router = APIRouter(prefix="/documents", tags=["documents"])
+router = APIRouter(tags=["documents"])
 
 class ValidationRequest(BaseModel):
     validated_data: Dict[str, Any]
+
+class BulkValidationRequest(BaseModel):
+    doc_ids: List[int]
+    merged_data: Dict[str, Any]
+
+@router.post("/bulk-validate")
+async def validate_bulk(req: BulkValidationRequest):
+    success = await DocumentService.validate_bulk(req.doc_ids, req.merged_data)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to validate documents in bulk")
+    return {"ok": True}
+
+@router.post("/process-bulk")
+async def process_bulk(doc_ids: List[int] = Body(...)):
+    await DocumentService.process_bulk(doc_ids)
+    return {"ok": True}
 
 @router.get("")
 async def list_documents():

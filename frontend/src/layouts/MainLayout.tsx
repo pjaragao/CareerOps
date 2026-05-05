@@ -11,7 +11,8 @@ import {
   Rocket,
   Shield,
   Layout,
-  Building2
+  Building2,
+  FileText
 } from 'lucide-react';
 
 const Sidebar = () => {

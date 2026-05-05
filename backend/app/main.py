@@ -28,7 +28,7 @@ app.include_router(dashboard.router, prefix="/api")
 app.include_router(auth.router, prefix="/api/auth")
 app.include_router(companies.router, prefix="/api/companies")
 app.include_router(settings_api.router, prefix="/api")
-app.include_router(documents.router, prefix="/api")
+app.include_router(documents.router, prefix="/api/documents")
 
 @app.get("/")
 async def root():
