@@ -37,7 +37,7 @@
 - **Base Resume Optimization**: AI-suggested improvements to your `resume_base.md` based on new achievements.
 
 ### 📊 LinkedIn Profile Optimizer
-- **PostgreSQL JSONB storage** — definitive source of truth for all profile data (legacy YAML deprecated)
+- **PostgreSQL JSONB storage** — definitive source of truth for all profile data
 - **Profile Sync Alerts** — detect when your LinkedIn data has changed and needs a fresh AI audit
 - **One-click Full Audit** — comprehensive AI analysis of Score, SSI, Headlines, Bio, Experiences, and Skills in one step
 - **Profile audit** with strength score (0-100)
@@ -99,13 +99,7 @@ cp .env.example .env
 
 ```bash
 # Start the full stack
-docker compose -f docker-compose.v2.yml up --build -d
-```
-
-### 3. Data Migration (Optional)
-If you have legacy `profile.yml` data, migrate it to the database:
-```bash
-docker exec careerops-backend python app/scripts/migrate_yaml_to_db.py
+docker compose up --build -d
 ```
 
 ---
@@ -142,7 +136,7 @@ Configure different AI models for each domain in the Settings page. The `SkillSe
 └── docker-compose.yml
 ```
 
-> 📖 See [docs/SYSTEM.md](docs/SYSTEM.md) for the complete system architecture, feature parity tables, and development guidelines.
+> 📖 See [docs/SYSTEM.md](docs/SYSTEM.md) for the complete system architecture and development guidelines.
 
 ---
 
@@ -170,7 +164,7 @@ Load the `extension/` folder as an unpacked extension in Chrome.
 ## 📝 Contributing
 
 1. Read `docs/SYSTEM.md` before making changes
-2. When adding/removing features, update `docs/SYSTEM.md` (Section 9 — Feature Parity)
+2. When adding/removing features, update `docs/SYSTEM.md`
 3. Follow the AI prompt guidelines in the system docs
 4. Test extension changes on both profile and job pages
 
