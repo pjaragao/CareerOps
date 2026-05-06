@@ -29,6 +29,12 @@ def get_tone_instruction(tone: str) -> str:
         return "Tone: Very formal, strictly professional and polished."
     return "Tone: Semi-formal, balanced, professional but accessible."
 
+def get_job_lang(job: dict) -> str:
+    lang = job.get('language')
+    if not lang:
+        return "the same language as the job description"
+    return "Portuguese" if "pt" in lang.lower() else "English"
+
 @router.post("/{job_id}/generate-resume")
 async def generate_resume(job_id: int, options: ActionOptions):
     job = JobService.get_job_by_id(job_id)
@@ -44,7 +50,7 @@ async def generate_resume(job_id: int, options: ActionOptions):
         {
             "job_title": job['job_title'],
             "company": job['company'],
-            "lang_name": "Portuguese" if "pt" in (job.get('language') or 'pt') else "English",
+            "lang_name": get_job_lang(job),
             "job_description": job['description'][:10000],
             "resume_base": resume_base,
             "orientation": options.orientation
@@ -69,7 +75,7 @@ async def generate_cover_letter(job_id: int, options: ActionOptions):
     result = await SkillService.run_skill(
         "jobs/cover_letter.md",
         {
-            "lang_name": "Portuguese" if "pt" in (job.get('language') or 'pt') else "English",
+            "lang_name": get_job_lang(job),
             "tone_instruction": tone_instr,
             "job_title": job['job_title'],
             "company": job['company'],
@@ -102,7 +108,7 @@ async def chat_with_job(job_id: int, options: ActionOptions):
         "common/chat.md",
         {
             "tone_instruction": tone_instr,
-            "lang_name": "Portuguese" if "pt" in (job.get('language') or 'pt') else "English",
+            "lang_name": get_job_lang(job),
             "profile_summary": profile_summary,
             "job_title": job['job_title'],
             "company": job['company'],
@@ -127,7 +133,7 @@ async def generate_outreach(job_id: int, type: str = "dm", options: ActionOption
             "type": type,
             "job_title": job['job_title'],
             "company": job['company'],
-            "lang_name": "Portuguese" if "pt" in (job.get('language') or 'pt') else "English",
+            "lang_name": get_job_lang(job),
             "tone_instruction": tone_instr,
             "orientation": options.orientation if options else "",
             "job_description": job['description'][:3000]
