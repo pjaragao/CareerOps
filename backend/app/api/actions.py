@@ -31,9 +31,21 @@ def get_tone_instruction(tone: str) -> str:
 
 def get_job_lang(job: dict) -> str:
     lang = job.get('language')
-    if not lang:
-        return "the same language as the job description"
-    return "Portuguese" if "pt" in lang.lower() else "English"
+    if lang:
+        return "Portuguese" if "pt" in lang.lower() else "English"
+    
+    desc = job.get('description', '').lower()
+    if not desc:
+        return "Portuguese"
+        
+    # Heurística simples de detecção
+    pt_indicators = [' requisitos ', ' experiência ', ' sobre a vaga ', ' benefícios ', ' currículo ']
+    en_indicators = [' requirements ', ' experience ', ' about the role ', ' benefits ', ' resume ', ' description ']
+    
+    pt_score = sum(1 for word in pt_indicators if word in desc)
+    en_score = sum(1 for word in en_indicators if word in desc)
+    
+    return "Portuguese" if pt_score >= en_score else "English"
 
 @router.post("/{job_id}/generate-resume")
 async def generate_resume(job_id: int, options: ActionOptions):
