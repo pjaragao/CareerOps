@@ -131,6 +131,26 @@ class JobService:
             return False
         finally:
             conn.close()
+
+    @staticmethod
+    def update_job_status(job_id: int, new_status: str) -> bool:
+        VALID = {'scraped', 'new', 'applied', 'interviewing', 'offer', 'rejected', 'done', 'error'}
+        if new_status not in VALID:
+            return False
+        conn = get_db_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE public.job_listings SET status = %s, updated_at = %s WHERE id = %s",
+                    (new_status, datetime.now(timezone.utc), job_id)
+                )
+            conn.commit()
+            return True
+        except Exception as e:
+            print(f"Error updating job status: {e}")
+            return False
+        finally:
+            conn.close()
     @staticmethod
     def update_job_ai_content(job_id: int, content_type: str, content: str) -> bool:
         conn = get_db_connection()

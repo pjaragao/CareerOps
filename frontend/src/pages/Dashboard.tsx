@@ -62,9 +62,6 @@ const Dashboard = () => {
 
   return (
     <div className="animate-fade-in">
-      <div style={{ background: 'var(--accent)', color: 'white', padding: '0.8rem', borderRadius: '10px', marginBottom: '1.5rem', textAlign: 'center', fontWeight: 'bold', border: '2px solid white' }}>
-        🚀 CONEXÃO RESTAURADA - VERSÃO 2.0.1
-      </div>
       <div style={{ marginBottom: '2.5rem' }}>
         <h1 style={{ fontSize: '2.2rem', fontWeight: 800, marginBottom: '0.5rem' }}>Welcome back, Paulo</h1>
         <p style={{ color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '8px' }}>

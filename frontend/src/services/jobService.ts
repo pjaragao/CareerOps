@@ -32,11 +32,23 @@ export const jobService = {
     return response.data.jobs;
   },
   addManualJob: async (job: any) => {
-    const response = await api.post('/jobs/', job);
+    // Correct mapping for ManualJobCreate (expects 'title', not 'job_title')
+    const payload = {
+      title: job.job_title || job.title,
+      company: job.company,
+      location: job.location,
+      url: job.url,
+      description: job.description
+    };
+    const response = await api.post('/jobs/manual', payload);
     return response.data;
   },
   deleteJob: async (id: number) => {
     const response = await api.delete(`/jobs/${id}`);
+    return response.data;
+  },
+  updateStatus: async (id: number, status: string) => {
+    const response = await api.patch(`/jobs/${id}/status`, { status });
     return response.data;
   },
   generateResume: async (id: number, options?: AIOptions) => {

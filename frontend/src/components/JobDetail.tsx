@@ -126,8 +126,33 @@ const JobDetail: React.FC<JobDetailProps> = ({ job: initialJob, onClose }) => {
   };
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(5, 5, 10, 0.9)', zIndex: 9999, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '2vh 1rem', backdropFilter: 'blur(10px)' }}>
-      <div className="panel animate-fade-in" style={{ width: '100%', maxWidth: '900px', maxHeight: '95vh', display: 'flex', flexDirection: 'column', border: '1px solid rgba(108, 99, 255, 0.3)', padding: 0, overflow: 'hidden', boxShadow: '0 0 60px rgba(0,0,0,0.9)' }}>
+    <div style={{ 
+      position: 'fixed', 
+      top: 0, 
+      left: 0, 
+      width: '100vw', 
+      height: '100vh', 
+      background: 'rgba(5, 5, 10, 0.8)', 
+      zIndex: 9999, 
+      display: 'flex', 
+      alignItems: 'center', 
+      justifyContent: 'center', 
+      backdropFilter: 'blur(10px)',
+      padding: '20px'
+    }}>
+      <div className="panel animate-fade-in" style={{ 
+        width: '100%', 
+        maxWidth: '1000px', 
+        maxHeight: '90vh', 
+        display: 'flex', 
+        flexDirection: 'column', 
+        border: '1px solid rgba(108, 99, 255, 0.3)', 
+        padding: 0, 
+        overflow: 'hidden', 
+        boxShadow: '0 20px 50px rgba(0,0,0,0.5)',
+        position: 'relative',
+        background: 'var(--bg-card)'
+      }}>
         
         {/* Compact Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.8rem 1.5rem', borderBottom: '1px solid var(--border)', background: 'rgba(255,255,255,0.02)' }}>

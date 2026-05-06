@@ -10,9 +10,9 @@ import {
   Settings,
   Rocket,
   Shield,
-  Layout,
   Building2,
-  FileText
+  FileText,
+  Layout
 } from 'lucide-react';
 
 const Sidebar = () => {
@@ -21,9 +21,8 @@ const Sidebar = () => {
     { icon: <UserCircle size={20} />, label: 'User Profile', path: '/profile' },
     { icon: <FileText size={20} />, label: 'Document Repository', path: '/onboarding' },
     { icon: <Target size={20} />, label: 'Search Strategies', path: '/strategies' },
-    { icon: <Briefcase size={20} />, label: 'Job Board', path: '/jobs' },
+    { icon: <Layout size={20} />, label: 'Job Board', path: '/jobs' },
     { icon: <Building2 size={20} />, label: 'Empresas', path: '/companies' },
-    { icon: <LayoutDashboard size={20} />, label: 'Kanban Board', path: '/kanban' },
     { icon: <GitPullRequest size={20} />, label: 'Pipeline', path: '/pipeline' },
     { icon: <MessageSquare size={20} />, label: 'Interview Prep', path: '/interview' },
     { icon: <Shield size={20} />, label: 'LinkedIn Optimizer', path: '/linkedin-optimizer' },
@@ -57,7 +56,6 @@ const TopBar = () => {
   const [status, setStatus] = React.useState({ linkedin: false, ai: true });
 
   React.useEffect(() => {
-    // Poll status
     const checkStatus = async () => {
        try {
          const res = await fetch('/api/auth/status');
@@ -92,7 +90,7 @@ const MainLayout = () => {
       <Sidebar />
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
         <TopBar />
-        <main className="main-content" style={{ flex: 1 }}>
+        <main className="main-content" style={{ flex: 1, minWidth: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
           <Outlet />
         </main>
       </div>

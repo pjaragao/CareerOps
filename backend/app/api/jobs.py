@@ -41,6 +41,16 @@ async def add_manual_job(job: ManualJobCreate):
         raise HTTPException(status_code=500, detail="Failed to add manual job")
     return {"ok": True}
 
+class StatusUpdate(BaseModel):
+    status: str
+
+@router.patch("/{job_id}/status")
+async def update_job_status(job_id: int, body: StatusUpdate):
+    success = JobService.update_job_status(job_id, body.status)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to update status")
+    return {"ok": True}
+
 @router.delete("/{job_id}")
 async def delete_job(job_id: int):
     success = JobService.delete_job(job_id)
