@@ -4,7 +4,7 @@ import {
   FileText, 
   Upload, 
   Trash2, 
-  CheckCircle2, 
+  CheckCircle, 
   Clock, 
   AlertCircle, 
   RefreshCw, 
@@ -180,7 +180,7 @@ const DocumentRepository = () => {
           { id: 'upload', label: 'Upload Files', icon: <Upload size={20} /> },
           { id: 'analyze', label: 'AI Analysis', icon: <Zap size={20} /> },
           { id: 'review', label: 'Review Info', icon: <ClipboardList size={20} /> },
-          { id: 'finalize', label: 'Finish', icon: <CheckCircle2 size={20} /> }
+          { id: 'finalize', label: 'Finish', icon: <CheckCircle size={20} /> }
         ].map((s, i) => {
           const isActive = currentStep === s.id;
           const isDone = ['upload', 'analyze', 'review', 'finalize'].indexOf(currentStep) > i;
@@ -313,7 +313,7 @@ const DocumentRepository = () => {
                       {doc.processing_status === 'processing' ? (
                         <span style={{ color: 'var(--primary-color)', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '6px' }}><RefreshCw size={14} className="animate-spin" /> Analyzing...</span>
                       ) : doc.processing_status === 'awaiting_validation' ? (
-                        <span style={{ color: '#22c55e', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '6px' }}><CheckCircle2 size={14} /> Ready</span>
+                        <span style={{ color: '#22c55e', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '6px' }}><CheckCircle size={14} /> Ready</span>
                       ) : doc.processing_status === 'failed' ? (
                         <span style={{ color: '#f87171', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '6px' }}><AlertCircle size={14} /> Error</span>
                       ) : (
@@ -451,7 +451,7 @@ const DocumentRepository = () => {
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '2rem' }}>
               <button className="btn btn-secondary" onClick={() => setCurrentStep('analyze')}>Back</button>
               <button className="btn btn-primary btn-lg" onClick={handleValidate}>
-                <CheckCircle2 size={20} /> Approve & Build Knowledge Base
+                <CheckCircle size={20} /> Approve & Build Knowledge Base
               </button>
             </div>
           </div>
@@ -461,7 +461,7 @@ const DocumentRepository = () => {
         {currentStep === 'finalize' && (
           <div style={{ textAlign: 'center', padding: '2rem 0' }}>
             <div style={{ backgroundColor: 'rgba(34, 197, 94, 0.1)', width: '100px', height: '100px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 2rem' }}>
-              <CheckCircle2 size={60} color="#22c55e" />
+              <CheckCircle size={60} color="#22c55e" />
             </div>
             <h2 style={{ fontSize: '2.5rem', marginBottom: '1rem' }}>System Ready!</h2>
             <p style={{ color: 'var(--text-muted)', fontSize: '1.2rem', marginBottom: '3rem', maxWidth: '600px', margin: '0 auto 3rem' }}>

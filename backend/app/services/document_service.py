@@ -246,7 +246,7 @@ class DocumentService:
 
             # Use AI to compile a clean knowledge base
             result = await SkillService.run_skill(
-                "onboarding/compile_knowledge.md",
+                "knowledge/compile_knowledge.md",
                 {"all_validated_data": all_data},
                 response_format="text"
             )
