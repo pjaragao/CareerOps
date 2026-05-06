@@ -90,33 +90,23 @@ const DocumentRepository = () => {
     }
   };
 
-  const startBulkReview = () => {
+  const startBulkReview = async () => {
     const pending = documents.filter(d => d.processing_status === 'awaiting_validation');
     if (pending.length === 0) return;
 
-    const merged = {
-      summary: "",
-      personal: {},
-      education: [] as any[],
-      skills: [] as string[],
-      experiences: [] as any[],
-      star_cases: [] as any[]
-    };
-
-    pending.forEach(d => {
-      const data = d.extracted_data || {};
-      if (data.skills) merged.skills = Array.from(new Set([...merged.skills, ...data.skills]));
-      if (data.education) merged.education = [...merged.education, ...data.education];
-      if (data.experiences) merged.experiences = [...merged.experiences, ...data.experiences];
-      if (data.star_cases) merged.star_cases = [...merged.star_cases, ...data.star_cases];
-      if (data.summary && !merged.summary) merged.summary = data.summary;
-    });
-
-    setValidationData(merged);
-    setIsBulkReview(true);
-    setPendingDocIds(pending.map(p => p.id));
-    setSelectedDoc({ filename: 'Consolidated Knowledge', processing_status: 'awaiting_validation' } as any);
-    setCurrentStep('review');
+    setLoading(true);
+    try {
+      const consolidated = await documentService.consolidate(pending.map(p => p.id));
+      setValidationData(consolidated);
+      setIsBulkReview(true);
+      setPendingDocIds(pending.map(p => p.id));
+      setSelectedDoc({ filename: 'Consolidated Knowledge', processing_status: 'awaiting_validation' } as any);
+      setCurrentStep('review');
+    } catch (error) {
+      alert("Failed to consolidate knowledge");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleValidate = async () => {
@@ -287,13 +277,27 @@ const DocumentRepository = () => {
           <div style={{ textAlign: 'center' }}>
             <div style={{ marginBottom: '3rem' }}>
               <div style={{ position: 'relative', width: '120px', height: '120px', margin: '0 auto 2rem' }}>
-                <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', borderRadius: '50%', border: '4px solid rgba(59, 130, 246, 0.1)', borderTopColor: 'var(--primary-color)' }} className="animate-spin"></div>
+                {counts.processing > 0 || counts.pending > 0 ? (
+                  <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', borderRadius: '50%', border: '4px solid rgba(59, 130, 246, 0.1)', borderTopColor: 'var(--primary-color)' }} className="animate-spin"></div>
+                ) : (
+                  <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', borderRadius: '50%', border: '4px solid rgba(34, 197, 94, 0.2)', backgroundColor: 'rgba(34, 197, 94, 0.05)' }}></div>
+                )}
                 <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }}>
-                  <Zap size={40} color="var(--primary-color)" />
+                  {counts.processing > 0 || counts.pending > 0 ? (
+                    <Zap size={40} color="var(--primary-color)" />
+                  ) : (
+                    <Check size={40} color="#22c55e" />
+                  )}
                 </div>
               </div>
-              <h2 style={{ fontSize: '1.8rem', marginBottom: '0.5rem' }}>AI is extracting your experience...</h2>
-              <p style={{ color: 'var(--text-muted)' }}>This takes about 30-60 seconds depending on the number of files.</p>
+              <h2 style={{ fontSize: '1.8rem', marginBottom: '0.5rem' }}>
+                {counts.processing > 0 || counts.pending > 0 ? 'AI is extracting your experience...' : 'Analysis Complete!'}
+              </h2>
+              <p style={{ color: 'var(--text-muted)' }}>
+                {counts.processing > 0 || counts.pending > 0
+                  ? `Processing your files...` 
+                  : 'Ready to review and consolidated your knowledge base.'}
+              </p>
             </div>
 
             <div className="panel" style={{ background: 'rgba(0,0,0,0.2)', padding: '1.5rem', textAlign: 'left' }}>

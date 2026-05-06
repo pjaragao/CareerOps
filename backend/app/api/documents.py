@@ -19,6 +19,10 @@ async def validate_bulk(req: BulkValidationRequest):
         raise HTTPException(status_code=500, detail="Failed to validate documents in bulk")
     return {"ok": True}
 
+@router.post("/consolidate")
+async def consolidate(doc_ids: List[int] = Body(...)):
+    return await DocumentService.consolidate_documents(doc_ids)
+
 @router.post("/process-bulk")
 async def process_bulk(doc_ids: List[int] = Body(...)):
     await DocumentService.process_bulk(doc_ids)

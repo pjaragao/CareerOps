@@ -15,7 +15,7 @@ class DocumentService:
         conn = get_db_connection()
         try:
             with get_db_cursor(conn) as cur:
-                cur.execute("SELECT id, filename, content_type, processing_status, created_at, last_processed_at FROM public.user_documents ORDER BY created_at DESC")
+                cur.execute("SELECT id, filename, content_type, processing_status, extracted_data, created_at, last_processed_at FROM public.user_documents ORDER BY created_at DESC")
                 return [dict(row) for row in cur.fetchall()]
         finally:
             conn.close()
@@ -155,6 +155,36 @@ class DocumentService:
             # Trigger aggregation
             await DocumentService.aggregate_knowledge()
             return True
+        finally:
+            conn.close()
+
+    @staticmethod
+    async def consolidate_documents(doc_ids: List[int]) -> dict:
+        """Consolidates multiple documents into a single knowledge base using AI."""
+        conn = get_db_connection()
+        try:
+            with get_db_cursor(conn) as cur:
+                cur.execute("SELECT extracted_data FROM public.user_documents WHERE id = ANY(%s)", (doc_ids,))
+                rows = cur.fetchall()
+                all_data = [row['extracted_data'] for row in rows if row['extracted_data']]
+
+            if not all_data:
+                return {}
+
+            # Get current profile for context
+            from app.services.profile_service import ProfileService
+            profile = ProfileService.get_profile()
+            
+            # Use consolidate_review skill to merge intelligently
+            from app.services.skill_service import SkillService
+            result = await SkillService.run_skill(
+                "knowledge/consolidate_review.md",
+                {
+                    "current_profile": profile,
+                    "new_data": all_data
+                }
+            )
+            return result
         finally:
             conn.close()
 

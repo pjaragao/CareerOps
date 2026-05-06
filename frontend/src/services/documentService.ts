@@ -37,6 +37,11 @@ export const documentService = {
     return response.data;
   },
 
+  consolidate: async (docIds: number[]): Promise<any> => {
+    const response = await api.post('/documents/consolidate', docIds);
+    return response.data;
+  },
+
   validateDocument: async (id: number, validatedData: any): Promise<{ ok: boolean }> => {
     const response = await api.post(`/documents/${id}/validate`, {
       validated_data: validatedData
