@@ -29,12 +29,12 @@
 - **Common rule inheritance** — centralized anti-hallucination and output format rules
 - Multi-provider support: **Gemini**, **NVIDIA NIM**, **Alibaba Cloud**, **Ollama**
 
-### 🧠 AI Onboarding & Knowledge Base
-- **Document Repository**: Upload resumes, cover letters, and project descriptions.
-- **MarkItDown Integration**: High-fidelity conversion of PDF, DOCX, and XLSX to Markdown for AI processing.
-- **Validation Wizard**: Review and approve AI-extracted facts before they join the Knowledge Base.
-- **Prompt Injection**: Automatically enriches LinkedIn optimization, interview prep, and resume tailoring with validated knowledge.
-- **Base Resume Optimization**: AI-suggested improvements to your `resume_base.md` based on new achievements.
+### 🧠 Knowledge Base Stack & Workflow
+- **High-Fidelity Parsing**: Uses **MarkItDown** to convert PDF, DOCX, and XLSX into clean Markdown, preserving document structure for better AI comprehension.
+- **AI-Powered Extraction**: Modular skills analyze raw text to extract professional facts, skills, and structured **STAR Cases** (Situation, Task, Action, Result).
+- **Human-in-the-Loop Validation**: A dedicated Validation Wizard allows users to review, edit, and approve AI-extracted data before it enters the knowledge base.
+- **Intelligent Consolidation**: Automatically merges and de-duplicates information from multiple sources into a single, persistent `user_data.md` "source of truth".
+- **Dynamic Context Injection**: Grounded AI responses via Jinja2 `{% include %}` — your validated history is automatically injected into interview prep, job matching, and LinkedIn optimization prompts.
 
 ### 📊 LinkedIn Profile Optimizer
 - **PostgreSQL JSONB storage** — definitive source of truth for all profile data
@@ -72,6 +72,7 @@ Chrome Extension ──▶ FastAPI Backend (Skills + Jinja2) ──▶ PostgreSQ
 | Backend | FastAPI + Python 3.12 + Jinja2 | 8005 |
 | Database | PostgreSQL 15 (Supabase/Local) | 5432 |
 | AI Engine | SkillService (Modular Templates) | — |
+| Parsing Engine | MarkItDown (Markdown) | — |
 | PDF Engine | Gotenberg 8 | 3002 |
 
 ---
