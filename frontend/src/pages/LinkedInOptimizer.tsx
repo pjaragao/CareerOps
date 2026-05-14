@@ -52,13 +52,14 @@ const LinkedInOptimizer = () => {
 
   const loadData = async () => {
     try {
-      const [profileData, strats, jobs, latestAnalysis, latestExp, latestSkills] = await Promise.all([
+      const [profileData, strats, jobs, latestAnalysis, latestExp, latestSkills, latestRestructure] = await Promise.all([
         profileService.getProfile(),
         strategyService.getStrategies(),
         jobService.getJobs(),
         profileService.getLatestAnalysis('full_audit').catch(() => null),
         profileService.getLatestAnalysis('experience').catch(() => null),
-        profileService.getLatestAnalysis('skills').catch(() => null)
+        profileService.getLatestAnalysis('skills').catch(() => null),
+        profileService.getLatestAnalysis('restructure_experience').catch(() => null)
       ]);
       setProfile(profileData);
       setStrategies(strats || []);
@@ -74,6 +75,9 @@ const LinkedInOptimizer = () => {
       }
       if (latestSkills) {
         setSkillsResult(latestSkills.results);
+      }
+      if (latestRestructure) {
+        setRestructuredExp(latestRestructure.results);
       }
     } catch (error) {
       console.error("Failed to load data", error);
@@ -171,34 +175,6 @@ const LinkedInOptimizer = () => {
       setRestructuredExp(res);
     } catch (error) {
       alert("Experience restructuring failed.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const applyRestructuring = async () => {
-    if (!restructuredExp) return;
-    setLoading(true);
-    try {
-      const currentProfile = { ...profile };
-      if (!currentProfile.languages) currentProfile.languages = {};
-      if (!currentProfile.languages[lang]) currentProfile.languages[lang] = {};
-      
-      currentProfile.languages[lang].experience = restructuredExp.restructured_experience.map((exp: any) => ({
-        company: exp.company,
-        role: exp.role,
-        period: exp.period,
-        description: exp.description
-      }));
-      
-      await profileService.saveProfile(currentProfile);
-      setProfile(currentProfile);
-      setRestructuredExp(null);
-      setExpResult(null); // Force reload or clear
-      alert("✅ Experience structure updated successfully!");
-      loadData();
-    } catch (error) {
-      alert("Failed to save restructured experience.");
     } finally {
       setLoading(false);
     }
@@ -402,8 +378,7 @@ const LinkedInOptimizer = () => {
                 <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginTop: '4px' }}>{restructuredExp.improvement_summary}</p>
               </div>
               <div style={{ display: 'flex', gap: '1rem' }}>
-                <button className="btn btn-secondary" onClick={() => setRestructuredExp(null)}>Discard</button>
-                <button className="btn btn-primary" onClick={applyRestructuring}>Apply to Profile</button>
+                <button className="btn btn-secondary" onClick={() => setRestructuredExp(null)}>Clear Suggestion</button>
               </div>
             </div>
 

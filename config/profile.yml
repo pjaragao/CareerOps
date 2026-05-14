@@ -6,9 +6,9 @@ personal:
   name: Paulo José Aragão Júnior
   email: pjaragaojr@gmail.com
   phone: ''
-  location: ''
-  linkedin: ''
   github: ''
+  linkedin: ''
+  location: ''
 languages:
   en:
     about: 'Strategic Engineer and MBA with a proven track record of delivering complex,
@@ -42,43 +42,58 @@ languages:
       institution: Universidade Paulista
     experience:
     - company: MPB Engineering
-      role: CFO
-      period: fev de 2023 - jan de 2026
-      description: '• Architected data-driven financial applications leveraging AI
-        and machine learning to automate budget forecasting, reducing data processing
-        time by 45%.
+      role: Chief Financial Officer & AI Strategy Lead
+      period: Feb 2023 – Jan 2026
+      description: '- Architected data-driven financial applications leveraging AI
+        and machine learning, reducing budget forecasting and data processing time
+        by 45%.
 
-        • Led a cross-functional team to develop and deploy internal analytics tools,
-        successfully bridging the gap between corporate finance and software development.
+        - Spearheaded the integration of predictive AI models into enterprise workflows,
+        increasing revenue forecasting accuracy by 30%.
 
-        • Built automated data pipelines and scripts to optimize financial reporting,
-        saving 120+ manual hours per month and enhancing core data analytics capabilities.
-
-        • Spearheaded the integration of predictive AI models into enterprise workflows,
-        increasing revenue forecasting accuracy by 30% and evaluating modern, decentralized
-        infrastructure solutions.'
+        - Built automated data pipelines utilizing n8n and PowerApps, saving 120+
+        manual hours per month in financial reporting.'
     - company: MPB Engineering
-      role: CTI
-      period: jan de 2014 - jan de 2026
-      description: ''
+      role: Senior Manager - Commercial Strategy & Digital Transformation
+      period: Jan 2015 – Jan 2023
+      description: '- Designed and implemented a proprietary, data-driven pricing
+        methodology, increasing bid win rates by 18% across 90 annual financial proposals.
+
+        - Led company-wide digital transformation and ERP implementation, modernizing
+        legacy systems and reducing bid preparation time by 30%.
+
+        - Directed the full-scale transition to BIM-based workflows across a portfolio
+        of 15+ concurrent projects ($2M-$50M), reducing project delivery times by
+        25%.
+
+        - Ensured 100% compliance with ISO9001 standards while overseeing technology
+        solutions that supported $10M+ in project financial proposals.'
     - company: MPB Engineering
-      role: Engineer
-      period: jun de 2008 - jan de 2026
-      description: '• Architected and developed custom project management applications
-        and technological solutions, streamlining operational workflows and reducing
-        project delivery times by 25%.
+      role: Project Engineer & Data Analyst
+      period: Aug 2011 – Dec 2014
+      description: '- Engineered automated data analytics pipelines using VBA, accelerating
+        economic feasibility studies (DCF) and proposal generation by 40%.
 
-        • Engineered automated data analytics pipelines using VBA and advanced data
-        processing techniques, accelerating economic feasibility studies and financial
-        proposal generation by 40%.
+        - Managed the end-to-end delivery of strategic infrastructure projects, streamlining
+        operational workflows to enhance overall efficiency.
 
-        • Led IT strategy and software integration initiatives as IT Manager, overseeing
-        a portfolio of tech solutions that supported data-driven decisions for $10M+
-        in project financial proposals.
+        - Supported the commercial team in securing public infrastructure contracts
+        through rigorous cost estimation and data analysis.'
+    - company: MPB Engineering
+      role: Business & Technical Analyst (Intern)
+      period: May 2008 – Aug 2011
+      description: '- Streamlined proposal development by automating technical report
+        templates, significantly reducing manual documentation efforts.
 
-        • Modernized legacy data infrastructure and established robust analytical
-        frameworks, laying the groundwork for scalable application development and
-        future AI-driven predictive modeling.'
+        - Assisted senior commercial teams in project cost estimations and feasibility
+        assessments for municipal concessions.'
+    - company: International Business Operations (J-1 Program)
+      role: Operations Assistant
+      period: Dec 2008 – Mar 2009
+      description: '- Executed high-volume operational tasks in a fast-paced international
+        business environment.
+
+        - Cultivated advanced English fluency and cross-cultural communication skills.'
   pt:
     about: 'Líder estratégico com formação em Engenharia e MBA, com sólida trajetória
       como Diretor na condução de projetos de infraestrutura de larga escala. Ao longo
@@ -107,16 +122,16 @@ languages:
     - Dashboards
     - Analítica de dados
     education:
-    - institution: Fundação Getulio Vargas
+    - year: 2013 – 2025
       degree: Pós-graduação Lato Sensu - MBA Executivo, Business/Commerce, General
-      year: 2013 – 2025
-    - institution: Universidade Federal de Santa Catarina
+      institution: Fundação Getulio Vargas
+    - year: 2005 – 2011
       degree: Bacharelado em Engenharia, Environmental/Environmental Health Engineering
-      year: 2005 – 2011
-    - institution: Universidade Paulista
+      institution: Universidade Federal de Santa Catarina
+    - year: 2019 – 2021
       degree: Pós-graduação Lato Sensu - MBA Executivo, MBA EM PLATAFORMA BIM - MODELAGEM
         3D, PLANEJAMENTO 4D E ORÇAMENTO 5D / 6D / 7D
-      year: 2019 – 2021
+      institution: Universidade Paulista
     experience:
     - role: Diretor financeiro
       period: fev de 2023 - jan de 2026

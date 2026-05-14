@@ -358,7 +358,7 @@ class ProfileService:
         experience_list = json.dumps(p.get("experience", []), ensure_ascii=False)
         resume_base = ProfileService.get_resume_base()
         
-        return await SkillService.run_skill(
+        results = await SkillService.run_skill(
             "profile/restructure_experience.md",
             {
                 "experience_list": experience_list,
@@ -366,6 +366,17 @@ class ProfileService:
                 "lang_name": lang_name
             }
         )
+        
+        # Persist the results for later viewing
+        ProfileService.save_analysis(
+            "restructure_experience",
+            lang,
+            strategy_context,
+            results,
+            profile
+        )
+        
+        return results
 
     @staticmethod
     async def generate_headline_variants(profile: dict, lang: str = "pt", count: int = 3, strategy_context: Optional[dict] = None) -> Dict[str, Any]:

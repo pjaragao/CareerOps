@@ -30,7 +30,19 @@ class SkillService:
         """
         # Determine model domain from skill_path (e.g., 'profile/optimize.md' -> 'profile')
         domain = skill_path.split('/')[0] if '/' in skill_path else "chat"
-        model_key = f"ai_model_{domain}"
+        
+        # Map directory domains to settings keys
+        domain_mapping = {
+            "profile": "optimizer",
+            "onboarding": "import",
+            "knowledge": "import",
+            "jobs": "optimizer",
+            "interview": "interview",
+            "analytics": "optimizer"
+        }
+        
+        target_domain = domain_mapping.get(domain, domain)
+        model_key = f"ai_model_{target_domain}"
         
         provider = AIService.get_provider(model_key)
         prompt = await cls.render_prompt(skill_path, context)
