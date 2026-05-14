@@ -349,6 +349,25 @@ class ProfileService:
         return results
 
     @staticmethod
+    async def restructure_experience_profile(lang: str = "pt", strategy_context: Optional[dict] = None) -> Dict[str, Any]:
+        """Restructures the entire experience section by competency using Resume Base and STAR cases."""
+        lang_name = "Portuguese" if lang == "pt" else "English"
+        profile = ProfileService.get_profile()
+        p = ProfileService._get_flattened_profile(profile, lang)
+        
+        experience_list = json.dumps(p.get("experience", []), ensure_ascii=False)
+        resume_base = ProfileService.get_resume_base()
+        
+        return await SkillService.run_skill(
+            "profile/restructure_experience.md",
+            {
+                "experience_list": experience_list,
+                "resume_base": resume_base,
+                "lang_name": lang_name
+            }
+        )
+
+    @staticmethod
     async def generate_headline_variants(profile: dict, lang: str = "pt", count: int = 3, strategy_context: Optional[dict] = None) -> Dict[str, Any]:
         """Generates N optimized headline variants with character counts."""
         lang_name = "Portuguese" if lang == "pt" else "English"

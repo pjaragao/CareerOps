@@ -5,6 +5,7 @@ Generate high-level career insights and growth opportunities for this candidate 
 
 Profile Summary:
 {{ profile_summary }}
+{% include 'common/user_context.md' %}
 
 Return JSON:
 {

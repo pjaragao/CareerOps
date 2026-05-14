@@ -7,6 +7,10 @@ Type: {{ type | upper }} (LinkedIn DM or Email)
 Tone: {{ tone_instruction }}
 Orientation: {{ orientation }}
 
+Candidate Profile:
+{{ profile_summary }}
+{% include 'common/user_context.md' %}
+
 Job Description: {{ job_description }}
 
 Return ONLY the message text.

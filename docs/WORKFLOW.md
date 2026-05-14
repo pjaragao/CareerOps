@@ -5,7 +5,8 @@ To maintain high architectural standards and documentation integrity, every impr
 ## 1. Research & Analysis
 - **Understand the Goal**: Define what needs to be changed and why.
 - **Trace the Data**: Identify which services, API endpoints, and database tables are involved.
-- **Identify AI Skills**: If AI is involved, check `backend/app/skills/` for existing templates that can be reused or modified.
+- **Identify AI Skills**: If AI is involved, check `backend/app/skills/` for existing templates. Ensure the **Deep Context** (`user_context.md`) is included where results-based depth is needed.
+- **Extensive Investigation**: For bug fixes, follow the [Debugging Guide](DEBUGGING_GUIDE.md) methodology.
 
 ## 2. Implementation Planning
 - **Create a Plan**: Draft an `implementation_plan.md` artifact.

@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { jobService, Job } from '../services/jobService';
 import { 
   Plus, MapPin, Calendar, Trash2, Building2, 
-  LayoutDashboard, List as ListIcon, MoreHorizontal
+  LayoutDashboard, List as ListIcon, MoreHorizontal, ExternalLink
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import JobDetail from '../components/JobDetail';
@@ -11,7 +11,13 @@ const JobBoard = () => {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
-  const [viewMode, setViewMode] = useState<'table' | 'kanban'>('kanban');
+  const [viewMode, setViewMode] = useState<'table' | 'kanban'>(() => {
+    return (localStorage.getItem('jobBoardViewMode') as 'table' | 'kanban') || 'table';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('jobBoardViewMode', viewMode);
+  }, [viewMode]);
   const [showAddModal, setShowAddModal] = useState(false);
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   const [newJob, setNewJob] = useState({ job_title: '', company: '', location: '', url: '', description: '' });
@@ -128,7 +134,14 @@ const JobBoard = () => {
                             <span style={{ padding: '3px 10px', borderRadius: '15px', fontSize: '0.7rem', fontWeight: 700, background: 'rgba(255,255,255,0.05)', color: 'var(--text-muted)' }}>{job.status}</span>
                           </td>
                           <td style={{ padding: '1rem', textAlign: 'right' }}>
-                            <button onClick={(e) => { e.stopPropagation(); jobService.deleteJob(job.id).then(() => loadJobs()); }} className="btn btn-secondary" style={{ padding: '6px' }}><Trash2 size={16} /></button>
+                            <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+                              {job.url && (
+                                <a href={job.url.startsWith('http') ? job.url : `https://${job.url}`} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="btn btn-secondary" style={{ padding: '6px', display: 'flex', alignItems: 'center' }} title="Acessar Vaga">
+                                  <ExternalLink size={16} />
+                                </a>
+                              )}
+                              <button onClick={(e) => { e.stopPropagation(); jobService.deleteJob(job.id).then(() => loadJobs()); }} className="btn btn-secondary" style={{ padding: '6px' }} title="Deletar"><Trash2 size={16} /></button>
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -170,7 +183,14 @@ const JobBoard = () => {
                           >
                             <div style={{ fontWeight: 700, fontSize: '0.9rem', color: '#fff', marginBottom: '4px' }}>{job.job_title}</div>
                             <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '8px' }}>{job.company}</div>
-                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '6px' }}><MapPin size={12} /> {job.location || 'Remote'}</div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '6px' }}><MapPin size={12} /> {job.location || 'Remote'}</div>
+                              {job.url && (
+                                <a href={job.url.startsWith('http') ? job.url : `https://${job.url}`} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} style={{ color: 'var(--text-muted)', display: 'flex', alignItems: 'center' }} title="Acessar Vaga" className="card-hover-link">
+                                  <ExternalLink size={14} />
+                                </a>
+                              )}
+                            </div>
                           </div>
                         ))}
                       </div>
@@ -190,6 +210,7 @@ const JobBoard = () => {
             <form onSubmit={async (e) => { e.preventDefault(); try { await jobService.addManualJob(newJob); setShowAddModal(false); loadJobs(true); } catch(err) { alert(err); } }} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               <input required value={newJob.job_title} onChange={e => setNewJob({...newJob, job_title: e.target.value})} placeholder="Título" />
               <input required value={newJob.company} onChange={e => setNewJob({...newJob, company: e.target.value})} placeholder="Empresa" />
+              <input value={newJob.url} onChange={e => setNewJob({...newJob, url: e.target.value})} placeholder="Link da Vaga (URL)" />
               <textarea required value={newJob.description} onChange={e => setNewJob({...newJob, description: e.target.value})} placeholder="Descrição" style={{ height: '100px' }} />
               <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end' }}>
                 <button type="button" className="btn btn-secondary" onClick={() => setShowAddModal(false)}>Cancelar</button>

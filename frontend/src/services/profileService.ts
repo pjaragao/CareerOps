@@ -95,6 +95,10 @@ export const profileService = {
     const response = await api.post('/profile/optimize-experience', { lang, strategy_context });
     return response.data;
   },
+  restructureExperience: async (lang: string, strategy_context?: any) => {
+    const response = await api.post('/profile/restructure-experience', { lang, strategy_context });
+    return response.data;
+  },
   analyzeSkills: async (targetRole: string, lang: string = 'pt', strategy_context?: any) => {
     const response = await api.post('/profile/analyze-skills', { target_role: targetRole, lang, strategy_context });
     return response.data;

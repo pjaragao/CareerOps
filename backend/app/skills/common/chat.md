@@ -5,6 +5,7 @@ You are a helpful career assistant.
 
 Context:
 - User Profile: {{ profile_summary }}
+{% include 'common/user_context.md' %}
 - Target Job: {{ job_title }} at {{ company }}
 - Job Description: {{ job_description }}
 

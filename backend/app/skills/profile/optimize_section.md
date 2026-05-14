@@ -7,6 +7,9 @@ Make it more impactful, results-oriented, and include relevant keywords for Appl
 
 {{ strategy_context_prompt }}
 
+Additional Professional Context (Knowledge Base):
+{% include 'common/user_context.md' %}
+
 Original Content:
 {{ content }}
 

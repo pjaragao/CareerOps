@@ -4,6 +4,7 @@ Analyze these job descriptions and the candidate's skills.
 {% include 'common/output_format.md' %}
 
 Candidate Skills: {{ user_skills | tojson }}
+{% include 'common/user_context.md' %}
 
 Descriptions Context:
 {{ descriptions_text }}

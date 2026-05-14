@@ -238,7 +238,7 @@ class DocumentService:
             
             if not all_data:
                 # Create empty file
-                knowledge_path = os.path.join(settings.PROJECT_DIR, "backend/app/skills/knowledge/user_data.md")
+                knowledge_path = os.path.join(settings.PROJECT_DIR, "app/skills/knowledge/user_data.md")
                 os.makedirs(os.path.dirname(knowledge_path), exist_ok=True)
                 with open(knowledge_path, "w") as f:
                     f.write("<!-- No validated knowledge available -->")
@@ -252,7 +252,7 @@ class DocumentService:
             )
 
             # Save to skills directory for Jinja2 inclusion
-            knowledge_path = os.path.join(settings.PROJECT_DIR, "backend/app/skills/knowledge/user_data.md")
+            knowledge_path = os.path.join(settings.PROJECT_DIR, "app/skills/knowledge/user_data.md")
             os.makedirs(os.path.dirname(knowledge_path), exist_ok=True)
             with open(knowledge_path, "w", encoding="utf-8") as f:
                 f.write(result)
@@ -282,7 +282,7 @@ class DocumentService:
         resume_content = ProfileService.get_resume_base()
         
         # Load Knowledge Base content
-        knowledge_path = os.path.join(settings.PROJECT_DIR, "backend/app/skills/knowledge/user_data.md")
+        knowledge_path = os.path.join(settings.PROJECT_DIR, "app/skills/knowledge/user_data.md")
         knowledge = ""
         if os.path.exists(knowledge_path):
             with open(knowledge_path, "r", encoding="utf-8") as f:

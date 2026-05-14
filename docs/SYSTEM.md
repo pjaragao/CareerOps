@@ -14,6 +14,7 @@ CareerOps is an AI-powered career automation platform that helps users:
 - Evaluate and score jobs against the user's career goals
 - Prepare for interviews with STAR+R story generation
 - **Build a Knowledge Base** from uploaded documents (PDF, DOCX) via **MarkItDown**
+- **Deep Context Engine**: Injects validated results/STAR cases into all AI flows ([docs/AI_CONTEXT_ENGINE.md](AI_CONTEXT_ENGINE.md))
 - Optimize their LinkedIn profile with AI-powered suggestions
 - Track applications through a Kanban pipeline
 
@@ -118,7 +119,7 @@ linkedin_resume/
 2. **Extract**: `onboarding/process_document.md` skill extracts structured facts.
 3. **Validate**: User reviews and approves findings in the UI.
 4. **Aggregate**: `knowledge/compile_knowledge.md` builds `user_data.md` (Knowledge Base).
-5. **Inject**: Other skills (`interview`, `jobs`, `profile`) include `common/user_context.md` which pulls from the Knowledge Base.
+5. **Inject**: Other skills (`interview`, `jobs`, `profile`) include `common/user_context.md` which pulls from the Knowledge Base via the **Deep Context Engine**.
 
 ---
 
@@ -146,6 +147,7 @@ linkedin_resume/
 > 1. This file (`docs/SYSTEM.md`)
 > 2. `README.md`
 > 3. Task status in `task.md`
+> 4. **Extensive Investigation**: Always use the methodology in [docs/DEBUGGING_GUIDE.md](DEBUGGING_GUIDE.md) for troubleshooting.
 
 ### 5.2 Profile Sync & Extension-First Policy
 

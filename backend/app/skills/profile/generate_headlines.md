@@ -21,6 +21,9 @@ Candidate info:
 - Top skills: {{ top_skills | join(', ') }}
 - Target role: {{ target_role }}
 
+Additional Professional Context (Knowledge Base):
+{% include 'common/user_context.md' %}
+
 Return JSON:
 {
     "variants": [

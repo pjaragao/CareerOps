@@ -8,6 +8,7 @@ from app.services.job_service import JobService
 from app.services.profile_service import ProfileService
 from app.services.pdf_service import PDFService
 from app.services.skill_service import SkillService
+from app.services.ai_service import AIService
 from app.core.config import settings
 
 router = APIRouter(tags=["job-actions"])
@@ -139,10 +140,15 @@ async def generate_outreach(job_id: int, type: str = "dm", options: ActionOption
     
     tone_instr = get_tone_instruction(options.tone if options else "semi-formal")
     
+    profile = ProfileService.get_profile()
+    p = ProfileService._get_flattened_profile(profile, "pt")
+    profile_summary = f"Summary: {p.get('about','')}\nSkills: {', '.join(p.get('skills',[]))}"
+    
     result = await SkillService.run_skill(
         "jobs/outreach.md",
         {
             "type": type,
+            "profile_summary": profile_summary,
             "job_title": job['job_title'],
             "company": job['company'],
             "lang_name": get_job_lang(job),

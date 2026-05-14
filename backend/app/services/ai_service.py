@@ -136,11 +136,10 @@ class OpenAICompatibleProvider(AIProvider):
         except Exception as e:
             return {"error": str(e)}
 
-from app.services.settings_service import SettingsService
-
 class AIService:
     @staticmethod
     def get_provider(model_key: Optional[str] = None) -> AIProvider:
+        from app.services.settings_service import SettingsService
         # Load dynamic settings
         live_settings = SettingsService.get_settings()
         

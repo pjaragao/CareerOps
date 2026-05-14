@@ -7,7 +7,9 @@ The SSI has 4 pillars, each scored 0-25 (total 0-100).
 Profile Summary:
 {{ profile_summary }}
 
-Return JSON:
+{% include 'common/user_context.md' %}
+
+Respond with JSON:
 {
     "total": 0-100,
     "brand": {"score": 0-25, "label": "Establish Your Brand", "tip": "specific tip"},

@@ -5,6 +5,7 @@ Evaluate the following job against the candidate's profile.
 
 Candidate Profile:
 {{ profile_summary }}
+{% include 'common/user_context.md' %}
 
 Job Title: {{ job_title }}
 Job Description: {{ job_description }}

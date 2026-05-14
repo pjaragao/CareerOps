@@ -166,6 +166,11 @@ async def optimize_experience(req: ExperienceOptimizeRequest):
     ProfileService.save_analysis("experience", req.lang, req.strategy_context, {"results": results}, profile)
     return {"results": results}
 
+@router.post("/restructure-experience")
+async def restructure_experience(req: ExperienceOptimizeRequest):
+    results = await ProfileService.restructure_experience_profile(req.lang, req.strategy_context)
+    return results
+
 class HeadlineVariantsRequest(StrategyContextRequest):
     count: int = 3
 

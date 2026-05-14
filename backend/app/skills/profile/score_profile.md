@@ -6,6 +6,8 @@ Score the following candidate profile from 0 to 100 based on its completeness, i
 Profile Text:
 {{ profile_text }}
 
+{% include 'common/user_context.md' %}
+
 Respond with JSON:
 {
     "score": 0-100,

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Job, jobService } from '../services/jobService';
-import { X, FileText, MessageSquare, Wand2, Zap, RefreshCw, Copy, Download, Send, CheckCircle2, Circle } from 'lucide-react';
+import { X, FileText, MessageSquare, Wand2, Zap, RefreshCw, Copy, Download, Send, CheckCircle2, Circle, ExternalLink } from 'lucide-react';
 import api from '../services/api';
 
 interface JobDetailProps {
@@ -157,8 +157,15 @@ const JobDetail: React.FC<JobDetailProps> = ({ job: initialJob, onClose }) => {
         {/* Compact Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.8rem 1.5rem', borderBottom: '1px solid var(--border)', background: 'rgba(255,255,255,0.02)' }}>
           <div>
-            <h2 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#fff', marginBottom: '1px' }}>{job.job_title}</h2>
-            <p style={{ color: 'var(--accent)', fontSize: '0.8rem', fontWeight: 600 }}>{job.company} <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>• {job.location}</span></p>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1px' }}>
+              <h2 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#fff', margin: 0 }}>{job.job_title}</h2>
+              {job.url && (
+                <a href={job.url.startsWith('http') ? job.url : `https://${job.url}`} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)', display: 'flex', alignItems: 'center' }} title="Acessar Vaga">
+                  <ExternalLink size={16} />
+                </a>
+              )}
+            </div>
+            <p style={{ color: 'var(--accent)', fontSize: '0.8rem', fontWeight: 600, margin: 0 }}>{job.company} <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>• {job.location}</span></p>
           </div>
           <button onClick={onClose} className="btn btn-secondary" style={{ padding: '5px', borderRadius: '50%' }}><X size={18} /></button>
         </div>

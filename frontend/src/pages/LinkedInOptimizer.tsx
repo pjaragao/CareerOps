@@ -162,6 +162,48 @@ const LinkedInOptimizer = () => {
     }
   };
 
+  const [restructuredExp, setRestructuredExp] = useState<any>(null);
+
+  const handleExpRestructuring = async () => {
+    setLoading(true);
+    try {
+      const res = await profileService.restructureExperience(lang, strategyContext);
+      setRestructuredExp(res);
+    } catch (error) {
+      alert("Experience restructuring failed.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const applyRestructuring = async () => {
+    if (!restructuredExp) return;
+    setLoading(true);
+    try {
+      const currentProfile = { ...profile };
+      if (!currentProfile.languages) currentProfile.languages = {};
+      if (!currentProfile.languages[lang]) currentProfile.languages[lang] = {};
+      
+      currentProfile.languages[lang].experience = restructuredExp.restructured_experience.map((exp: any) => ({
+        company: exp.company,
+        role: exp.role,
+        period: exp.period,
+        description: exp.description
+      }));
+      
+      await profileService.saveProfile(currentProfile);
+      setProfile(currentProfile);
+      setRestructuredExp(null);
+      setExpResult(null); // Force reload or clear
+      alert("✅ Experience structure updated successfully!");
+      loadData();
+    } catch (error) {
+      alert("Failed to save restructured experience.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const renderOverview = () => {
     if (!results) return null;
     return (
@@ -341,11 +383,54 @@ const LinkedInOptimizer = () => {
       <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <h3 style={{ fontSize: '1.5rem', fontWeight: 800, margin: 0 }}><Award color="var(--accent)" /> Professional Impact</h3>
-          <button className="btn btn-primary" onClick={handleExpOptimization} disabled={loading}>
-            {loading ? <RefreshCw className="animate-spin" size={16} /> : <Zap size={16} />} 
-            Optimize All
-          </button>
+          <div style={{ display: 'flex', gap: '1rem' }}>
+            <button className="btn btn-secondary" onClick={handleExpRestructuring} disabled={loading} style={{ border: '1px solid var(--accent)', color: 'var(--accent)' }}>
+              <Layout size={16} /> Restructure by Competency
+            </button>
+            <button className="btn btn-primary" onClick={handleExpOptimization} disabled={loading}>
+              {loading ? <RefreshCw className="animate-spin" size={16} /> : <Zap size={16} />} 
+              Optimize All
+            </button>
+          </div>
         </div>
+
+        {restructuredExp && (
+          <div className="panel animate-fade-in" style={{ background: 'rgba(108, 99, 255, 0.05)', border: '2px solid var(--accent)', padding: '2rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
+              <div>
+                <h4 style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--accent)', margin: 0 }}>Proposed Competency-Based Structure</h4>
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginTop: '4px' }}>{restructuredExp.improvement_summary}</p>
+              </div>
+              <div style={{ display: 'flex', gap: '1rem' }}>
+                <button className="btn btn-secondary" onClick={() => setRestructuredExp(null)}>Discard</button>
+                <button className="btn btn-primary" onClick={applyRestructuring}>Apply to Profile</button>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+              {restructuredExp.restructured_experience.map((exp: any, i: number) => (
+                <div key={i} style={{ padding: '1.5rem', background: 'rgba(0,0,0,0.2)', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                    <div style={{ fontWeight: 700, fontSize: '1.1rem' }}>
+                      <span style={{ color: '#fff' }}>{exp.role}</span>
+                      <span style={{ color: 'var(--text-muted)', margin: '0 8px' }}>@</span>
+                      <span style={{ color: 'var(--accent)' }}>{exp.company}</span>
+                    </div>
+                    <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{exp.period}</span>
+                  </div>
+                  <div style={{ whiteSpace: 'pre-wrap', fontSize: '0.9rem', color: 'rgba(255,255,255,0.8)', lineHeight: 1.6 }}>
+                    {exp.description}
+                  </div>
+                  {exp.sector_justification && (
+                    <div style={{ marginTop: '1rem', padding: '0.8rem', background: 'rgba(255,255,255,0.03)', borderRadius: '8px', fontSize: '0.75rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                      <strong>Why this sector:</strong> {exp.sector_justification}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {expResult ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>

@@ -33,7 +33,7 @@ class InterviewService:
     @staticmethod
     async def generate_star_case(experience_description: str) -> Dict[str, str]:
         """Uses AI to generate a STAR case from a raw experience description."""
-        return await SkillService.run_skill(
+        result = await SkillService.run_skill(
             "interview/stories.md",
             {
                 "count": 1,
@@ -41,6 +41,9 @@ class InterviewService:
                 "job_title": "N/A"
             }
         )
+        # Extract the single story from the list
+        stories = result if isinstance(result, list) else result.get("stories", [])
+        return stories[0] if stories else {}
 
     @staticmethod
     async def generate_interview_stories(job_id: int) -> List[int]:

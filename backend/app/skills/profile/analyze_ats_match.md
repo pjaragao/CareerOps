@@ -4,8 +4,10 @@ Analyze how well this LinkedIn/Resume profile matches the job description.
 {% include 'common/critical_rules.md' %}
 {% include 'common/output_format.md' %}
 
-Profile Text:
+Profile Data:
 {{ profile_text }}
+
+{% include 'common/user_context.md' %}
 
 Job Description:
 {{ job_description }}
