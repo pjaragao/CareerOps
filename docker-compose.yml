@@ -20,6 +20,17 @@ services:
       - gotenberg
     networks:
       - supabase_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    labels:
+      paulojr.stack: "careerops"
+      paulojr.type: "application"
+      paulojr.origin: "github"
+      paulojr.ssl_port: "5174"
 
   # ── CareerOps Frontend (React + Vite) ───────────────────────
   frontend:
@@ -37,6 +48,16 @@ services:
       - backend
     networks:
       - supabase_network
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:5173/', (res) => res.statusCode === 200 ? process.exit(0) : process.exit(1)).on('error', () => process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    labels:
+      paulojr.stack: "careerops"
+      paulojr.type: "application"
+      paulojr.origin: "github"
 
   # ── Gotenberg (HTML → PDF) ─────────────────────────────────
   gotenberg:
@@ -49,6 +70,10 @@ services:
       supabase_network:
         aliases:
           - gotenberg-jobs
+    labels:
+      paulojr.stack: "careerops"
+      paulojr.type: "application"
+      paulojr.origin: "dockerhub"
 
 volumes:
   linkedin_jobs_auth:

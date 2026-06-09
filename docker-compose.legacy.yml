@@ -18,6 +18,19 @@ services:
       - gotenberg
     networks:
       - supabase_network
+    environment:
+      - TZ=America/Sao_Paulo
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5050/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    labels:
+      paulojr.stack: "careerops"
+      paulojr.type: "application"
+      paulojr.origin: "github"
+      paulojr.ssl_port: "5051"
 
   # ── Gotenberg (HTML → PDF) ─────────────────────────────────
   gotenberg:
@@ -25,9 +38,13 @@ services:
     container_name: gotenberg-jobs
     restart: unless-stopped
     ports:
-      - "3001:3000"
+      - "3006:3000"
     networks:
       - supabase_network
+    labels:
+      paulojr.stack: "careerops"
+      paulojr.type: "infrastructure"
+      paulojr.origin: "dockerhub"
 
   # ── n8n (workflow automation) ───────────────────────────────
   n8n:
@@ -52,11 +69,23 @@ services:
       - NODE_ENV=production
       - WEBHOOK_URL=http://100.126.174.177:5678/
       - N8N_SECURE_COOKIE=false
+      - TZ=America/Sao_Paulo
     volumes:
       - n8n_data:/home/node/.n8n
       - n8n_files:/home/node/.n8n-files
     networks:
       - supabase_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5678/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    labels:
+      paulojr.stack: "careerops"
+      paulojr.type: "infrastructure"
+      paulojr.origin: "dockerhub"
+      paulojr.ssl_port: "5679"
 
   # ── Portainer (Docker management UI) ────────────────────────
   portainer:
@@ -71,6 +100,13 @@ services:
       - portainer_data:/data
     networks:
       - supabase_network
+    environment:
+      - TZ=America/Sao_Paulo
+    labels:
+      paulojr.stack: "careerops"
+      paulojr.type: "infrastructure"
+      paulojr.origin: "dockerhub"
+      paulojr.ssl_port: "9001"
 
 volumes:
   linkedin_jobs_auth:
