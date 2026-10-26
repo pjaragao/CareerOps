@@ -190,6 +190,12 @@ body {
   gap: 8px;
 }
 
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  filter: grayscale(0.4);
+}
+
 .btn-primary {
   background: linear-gradient(135deg, var(--accent), var(--accent-light));
   color: white;
