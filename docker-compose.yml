@@ -11,8 +11,11 @@ services:
     restart: unless-stopped
     ports:
       - "${CAREEROPS_BACKEND_PORT:-8005}:8000"
-    # Local secrets file (git-ignored). On Coolify, set the same variables in the app's Environment Variables.
+    # .env = variables written by Coolify from the app's Environment Variables (deploy);
+    # linkedin-jobs/.env = local secrets file (git-ignored), wins when both exist.
     env_file:
+      - path: .env
+        required: false
       - path: ./linkedin-jobs/.env
         required: false
     volumes:
