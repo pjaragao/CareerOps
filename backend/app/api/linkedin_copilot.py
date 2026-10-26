@@ -190,6 +190,7 @@ class EngagementIn(BaseModel):
     post_url: Optional[str] = None
     author_name: Optional[str] = None
     author_headline: Optional[str] = None
+    other_comments: Optional[str] = None
 
 
 class EngagementUpdate(BaseModel):
@@ -205,7 +206,7 @@ async def engagement_queue():
 @router.post("/engagement")
 async def add_engagement(req: EngagementIn):
     try:
-        return await Copilot.add_engagement(req.post_text, req.post_url, req.author_name, req.author_headline)
+        return await Copilot.add_engagement(req.post_text, req.post_url, req.author_name, req.author_headline, req.other_comments)
     except RuntimeError as e:
         raise HTTPException(status_code=502, detail=str(e))
 

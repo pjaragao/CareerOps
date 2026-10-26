@@ -10,4 +10,6 @@ Candidate Profile:
 {{ profile_summary }}
 {% include 'common/user_context.md' %}
 
+{{ writing_style("application") }}
+
 Return ONLY the cover letter text in markdown format. No explanations.

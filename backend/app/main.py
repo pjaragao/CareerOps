@@ -3,7 +3,7 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
-from app.api import jobs, interview, profile, actions, settings as settings_api, documents, linkedin_copilot
+from app.api import jobs, interview, profile, actions, settings as settings_api, documents, linkedin_copilot, ai_settings
 from app.services.linkedin_copilot_service import LinkedInCopilotService
 
 app = FastAPI(
@@ -28,6 +28,7 @@ app.include_router(profile.router, prefix="/api")
 app.include_router(settings_api.router, prefix="/api")
 app.include_router(documents.router, prefix="/api/documents")
 app.include_router(linkedin_copilot.router, prefix="/api")
+app.include_router(ai_settings.router, prefix="/api")
 
 
 async def _publish_scheduled_posts():

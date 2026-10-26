@@ -1,3 +1,4 @@
+import logging
 import os
 import json
 import re
@@ -157,10 +158,25 @@ class AgyShimProvider(OpenAICompatibleProvider):
         return cache["ids"]
 
     def _model(self, model: Optional[str]) -> str:
-        return model if model and model in self._available() else self.default_model
+        available = self._available()
+        if model and model in available:
+            return model
+        if not available or self.default_model in available:
+            return self.default_model
+        return "gemini-flash-latest"
+
+    # When the chosen model fails (quota used up, upstream error), the next one is tried
+    FALLBACKS = ("gemini-3.8-flash-high", "gemini-flash-latest")
 
     def generate_text(self, prompt: str, model: Optional[str] = None, temperature: float = 0.7) -> str:
-        return super().generate_text(prompt, model=self._model(model), temperature=temperature)
+        chain = [self._model(model)] + [m for m in self.FALLBACKS if m != self._model(model)]
+        text = ""
+        for name in chain:
+            text = super().generate_text(prompt, model=name, temperature=temperature)
+            if not text.startswith("Error:"):
+                return text
+            logging.getLogger("ai").warning("AGY model %s failed, trying the next one: %s", name, text[:160])
+        return text
 
     def generate_json(self, prompt: str, model: Optional[str] = None, temperature: float = 0.7) -> Dict[str, Any]:
         raw = self.generate_text(prompt + "\n\nReturn ONLY the JSON object, with no text before or after it.",
@@ -201,10 +217,14 @@ class AIService:
             fallback = live_settings.get("ai_model_fallback") or "gemini-1.5-pro"
             return GeminiProvider(api_key, model, fallback_model=fallback)
         elif provider_type == "agy":
+            # model per task (Configurações → Estilo e modelos): posts, style adjust, writing, default
+            from app.services.ai_settings_service import AISettingsService
+            task = AISettingsService.task_for_model_key(model_key)
+            model = AISettingsService.get_models().get(task) or os.getenv("AGY_MODEL", "gemini-flash-latest")
             return AgyShimProvider(
                 os.getenv("AGY_SHIM_TOKEN", ""),
                 os.getenv("AGY_BASE_URL", "http://172.26.0.1:8787/v1"),
-                os.getenv("AGY_MODEL", "gemini-flash-latest"),
+                model,
             )
         elif provider_type in ["nvidia", "alibaba", "ollama", "openai"]:
             base_url = live_settings.get("openai_base_url") or settings.AI_BASE_URL

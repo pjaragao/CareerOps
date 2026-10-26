@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { FileText, BookOpen, Globe, Briefcase, MessageSquare, Key, Puzzle } from 'lucide-react';
+import { FileText, BookOpen, Globe, Briefcase, MessageSquare, Key, Puzzle, PenLine } from 'lucide-react';
 import MainLayout from './layouts/MainLayout';
 import TabbedPage from './components/TabbedPage';
 import Home from './pages/Home';
@@ -11,6 +11,7 @@ import Interview from './pages/Interview';
 import LinkedInCopilot from './pages/LinkedInCopilot';
 import Settings from './pages/Settings';
 import InstallExtension from './pages/InstallExtension';
+import AISettings from './pages/AISettings';
 
 // Five screens: Início · Meu Perfil · Vagas · LinkedIn Copilot · Configurações
 const MyProfile = () => (
@@ -30,7 +31,8 @@ const Jobs = () => (
 
 const SettingsHub = () => (
   <TabbedPage tabs={[
-    { id: 'ia', label: 'IA', icon: <Key size={16} />, render: () => <Settings /> },
+    { id: 'estilo', label: 'Estilo e modelos', icon: <PenLine size={16} />, render: () => <AISettings /> },
+    { id: 'ia', label: 'Chaves de IA', icon: <Key size={16} />, render: () => <Settings /> },
     { id: 'extensao', label: 'Instalar extensão', icon: <Puzzle size={16} />, render: () => <InstallExtension /> },
   ]} />
 );

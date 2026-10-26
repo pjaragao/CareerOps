@@ -50,11 +50,14 @@ ALREADY WRITTEN — do not repeat these angles:
 
 WRITING RULES:
 - First line is the hook: a concrete claim, number or situation. No "I'm excited to share" / "Tenho o prazer de compartilhar".
-- 900–1,400 characters. Short paragraphs, line breaks, arrows (→) or numbered lists allowed.
+- Short paragraphs and line breaks; arrows (→) or numbered lists only when they help.
 - One idea per post, one real project as proof, a specific detail a practitioner can verify.
 - Only facts present in the knowledge base or the fresh material. Never invent or "complete" names of projects, systems, programs, places or clients: use them exactly as written in the knowledge base (e.g. "the integrated water system of Xanxerê, Xaxim, Cordilheira Alta and Chapecó", not a made-up system name). Never use numbers marked "(estimate)". Never name consulting clients under NDA.
-- End with a genuine question or a clear, low-pressure invitation. 3–5 hashtags on the last line, in the post's language.
+- End with a genuine question or a clear, low-pressure invitation. Hashtags in the post's language.
 - Plain text only (no markdown bold, no headings) — LinkedIn does not render markdown.
+- Each draft must differ from the others and from the recent posts: different hook, structure and example.
+
+{{ writing_style("post") }}
 
 CANDIDATE KNOWLEDGE BASE:
 {% include 'common/user_context.md' %}

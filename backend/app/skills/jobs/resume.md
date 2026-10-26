@@ -16,6 +16,9 @@ Additional Professional Context (Knowledge Base):
 
 {{ orientation }}
 
+{{ writing_style("application") }}
+(For the resume, the length rule does not apply: keep it to two pages.)
+
 Return JSON:
 {
     "resume_markdown": "the full tailored resume in markdown format",

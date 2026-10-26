@@ -35,6 +35,7 @@ document.addEventListener('DOMContentLoaded', () => {
         $('pub-text').textContent = 'Publicação no LinkedIn: ' + (s.connected ? `API conectada (${s.member_name || ''})` : 'manual — copiar e colar');
         // the app (frontend) lives behind the same HTTPS host; on the server itself it is :5173
         const app = st.appUrl.replace(':8005', ':5173');
+        if (st.appUrl.startsWith('https://')) appBase = st.appUrl;
         $('link-app').href = app + '/';
         $('link-copilot').href = app + '/linkedin-copilot';
         $('link-install').href = app + '/configuracoes?tab=extensao';
@@ -67,7 +68,7 @@ document.addEventListener('DOMContentLoaded', () => {
         let kind = 'other', title = 'Fora do LinkedIn', actions = ['Em páginas de vagas de outros sites: “Importar vaga (modo universal)”.'], btn = 'Importar vaga (modo universal)';
         if (li && (/^\/jobs\/view\//.test(path) || /[?&]currentJobId=/.test(url))) {
             kind = 'job'; title = 'Vaga do LinkedIn';
-            actions = ['Importar a vaga para o CareerOps (CV e carta adaptados no app).', 'No Easy Apply: ✨ Preencher com IA no topo da janela.'];
+            actions = ['📥 CareerOps ao lado do botão Save — e clicar em Save já importa.', 'No Easy Apply: ✨ Preencher com IA no topo da janela.'];
             btn = 'Importar esta vaga';
         } else if (li && /^\/in\/[^/]+\/?$/.test(path)) {
             kind = 'profile'; title = 'Perfil de pessoa';
@@ -77,7 +78,7 @@ document.addEventListener('DOMContentLoaded', () => {
             kind = 'profile-edit'; title = 'Edição do seu perfil';
             actions = ['CareerOps · Perfil (canto inferior esquerdo): clique no campo do LinkedIn e em “Inserir”.'];
             btn = 'Importar meu perfil';
-        } else if (li && /^\/my-items\/saved-jobs/.test(path)) {
+        } else if (li && /^\/(my-items\/saved-jobs|jobs-tracker)/.test(path)) {
             kind = 'saved'; title = 'Suas vagas salvas';
             actions = ['📥 Importa as vagas da lista para o CareerOps (Vagas, status “new”), com a descrição de cada uma.', 'Até 25 por clique, uma a uma, sem clicar em nada da página. Role a lista para pegar mais.'];
             btn = 'Importar vagas salvas';
@@ -156,6 +157,20 @@ document.addEventListener('DOMContentLoaded', () => {
         await chrome.storage.local.remove(['careerops_import_active', 'careerops_status', 'careerops_import_data']);
         updateUI();
     });
+
+    // ── Update: one PowerShell command (download + extract over the folder) and a reload button ─────
+    // An unpacked extension cannot rewrite its own files; automatic updates need the Chrome Web Store.
+    let appBase = 'https://mpbflndsk201-wsl.tabby-broadnose.ts.net:5174';
+    const folderInput = $('ext-folder');
+    chrome.storage.local.get('careerops_folder', (v) => { folderInput.value = v.careerops_folder || '$HOME\\Documents\\CareerOps'; });
+    folderInput.addEventListener('change', () => chrome.storage.local.set({ careerops_folder: folderInput.value }));
+    $('copy-update').addEventListener('click', async () => {
+        const cmd = `$z="$env:TEMP\\careerops-extension.zip"; Invoke-WebRequest "${appBase}/api/linkedin-copilot/extension/download" -OutFile $z; Expand-Archive $z "${folderInput.value}" -Force; Write-Host "CareerOps: extensão atualizada — clique em Recarregar"`;
+        await navigator.clipboard.writeText(cmd);
+        $('copy-update').textContent = 'Copiado ✓';
+        setTimeout(() => { $('copy-update').textContent = 'Copiar comando'; }, 2000);
+    });
+    $('reload-ext').addEventListener('click', () => chrome.runtime.reload());
 
     updateUI();
     setInterval(updateUI, 1000);

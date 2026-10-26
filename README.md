@@ -54,6 +54,8 @@
 - **LinkedIn assist (extension)** — `✨ Comentário IA` on every post (drafts and fills the comment box; clicking Publicar marks it done), `🤝 Convite IA` on profiles (scores fit and fills the invite note; clicking Enviar marks it invited), `⭐ Avaliar pessoas da página` on search and My Network (scores everyone visible in one AI call and saves good fits with a ready note)
 - **Easy Apply assistant (extension)** — `✨ Preencher com IA` inside LinkedIn's Easy Apply: fills each step from `config/easy_apply.yml` (contact, work authorization, years of experience, salary) and the CV in the job's language; demographic questions and anything unknown are left for you (orange). You review, click Next and Submit; the job is marked applied on submit
 - **Saved topics** — `📌 Salvar tema` on any post stores it as a topic of interest; the Copilot's Posts tab turns it into a post of yours on the same theme (never copying it)
+- **AI writing style and models** — Configurações → Estilo e modelos: per kind of text (posts, comments, invites, Easy Apply, CV/cover letter, messages) a preset plus tone, formality, length, emojis, hashtags and extra instructions, or "Ajustar com IA" from a plain-language request; the language always follows the content; comments avoid repeating the post's other comments and your own recent ones. With AGY: posts on Argon High, style adjust on Argon Medium, writing on Flash Medium, routine tasks on Flash Low, with automatic fallback when a model's quota runs out
+- **Job pages** — `📥 CareerOps` next to LinkedIn's Save (and Save imports automatically); `📥 Importar vagas salvas` on the Job tracker
 - **No bots**: nothing likes, comments, follows or connects on your behalf — that violates LinkedIn's User Agreement and gets accounts restricted
 
 ---

@@ -17,7 +17,9 @@ For each person:
 - market: "br" or "intl" (from where they work and what they do).
 - segment: hiring_manager | recruiter | practitioner | leader | other.
 - reason: one short sentence.
-- note: only if fit ≥ 40 — at most 280 characters, first name, one specific thing from their headline and one relevant line about the professional; no job request, no links, no flattery. Empty string otherwise.
+- note: only if fit ≥ 40 — at most 280 characters, first name, one specific thing from their headline and one relevant line about the professional; no job request, no links, no flattery. Empty string otherwise. Notes must not all start the same way.
+
+{{ writing_style("invite") }}
 
 {% include 'common/output_format.md' %}
 Return JSON:

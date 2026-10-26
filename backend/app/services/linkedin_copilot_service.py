@@ -14,6 +14,7 @@ from zoneinfo import ZoneInfo
 from app.core.config import settings
 from app.db.session import get_db_connection, get_db_cursor
 from app.services.ai_service import AIService
+from app.services.ai_settings_service import detect_language
 from app.services.linkedin_api_service import LinkedInApiError, LinkedInApiService
 from app.services.skill_service import SkillService
 
@@ -58,7 +59,7 @@ def _one(sql: str, params: tuple = ()) -> Optional[dict]:
         conn.close()
 
 
-async def _skill(path: str, context: Dict[str, Any], model_key: str = "ai_model_outreach") -> dict:
+async def _skill(path: str, context: Dict[str, Any], model_key: str = "ai_model_writing") -> dict:
     prompt = await SkillService.render_prompt(path, context)
     provider = AIService.get_provider(model_key)
     result = await asyncio.to_thread(provider.generate_json, prompt)
@@ -95,7 +96,7 @@ class LinkedInCopilotService:
             "market": market, "count": max(1, min(count, 5)), "pillar": pillar, "topic": topic, "source_notes": source_notes,
             "inspiration": inspiration,
             "recent_posts": [r["topic"] for r in recent],
-        }, model_key="ai_model_optimizer")  # public text: use the stronger model
+        }, model_key="ai_model_posts")  # public text: the strongest model
         created = []
         for p in result.get("posts", []):
             body = (p.get("body") or "").strip()
@@ -219,13 +220,18 @@ class LinkedInCopilotService:
     # ── Engagement queue ─────────────────────────────────────────────────
     @staticmethod
     async def add_engagement(post_text: str, post_url: Optional[str] = None, author_name: Optional[str] = None,
-                             author_headline: Optional[str] = None) -> dict:
+                             author_headline: Optional[str] = None, other_comments: Optional[str] = None) -> dict:
         if post_url:
             existing = _one("SELECT * FROM public.linkedin_engagement WHERE post_url = %s", (post_url,))
             if existing:
                 return existing
+        own_recent = [r["comment_draft"][:220] for r in _rows("""
+            SELECT comment_draft FROM public.linkedin_engagement
+             WHERE comment_draft IS NOT NULL AND status IN ('done', 'pending') ORDER BY created_at DESC LIMIT 8
+        """)]
         ai = await _skill("linkedin/engagement_comment.md", {
             "post_text": post_text[:6000], "post_url": post_url, "author_name": author_name, "author_headline": author_headline,
+            "lang_name": detect_language(post_text), "other_comments": (other_comments or "")[:3000], "own_recent": own_recent,
         })
         relevance = _score(ai.get("relevance"))
         return _one("""
@@ -402,7 +408,7 @@ class LinkedInCopilotService:
             "job_description": desc, "lang_name": lang, "facts": LinkedInCopilotService._facts_text(),
             "resume_base": ProfileService.get_resume_base("pt" if lang == "Portuguese" else "en"),
             "fields": usable,
-        }, model_key="ai_model_optimizer")
+        }, model_key="ai_model_writing")
         raw = ai.get("answers") or {}
         raw_sugg = ai.get("salary_suggestions") or {}
         suggestions: Dict[str, dict] = {}

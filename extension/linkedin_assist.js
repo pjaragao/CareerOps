@@ -140,6 +140,9 @@
             || post.querySelector('a[href*="/in/"] span[aria-hidden="true"], a[href*="/in/"], a[href*="/company/"]');
         const headlineEl = post.querySelector('.update-components-actor__description span[aria-hidden="true"], .update-components-actor__description');
         let text;
+        let comments = '';
+        const listEl = post.querySelector('.comments-comments-list, .comments-comment-list, [class*="comments-list"]');
+        if (listEl) comments = listEl.innerText;
         if (textEl) {
             text = textEl.innerText;
         } else {
@@ -151,7 +154,7 @@
             text = copy.innerText || '';
             copy.remove();
             const m = text.match(CUT);
-            if (m) text = text.slice(0, m.index);
+            if (m) { if (!comments) comments = text.slice(m.index); text = text.slice(0, m.index); }
             const HEADER = /^(\d+\s*(s|m|min|h|d|w|sem|mo|y|a)\b.*|(following|seguindo|follow|seguir)\b.*|…|\.\.\.|•.*|.*•\s*(1st|2nd|3rd\+?|1º|2º|3º\+?)|promoted|promovido|edited|editado)$/i;
             let lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
             let last = -1;
@@ -166,6 +169,7 @@
             post_text: clean(text).slice(0, 6000),
             author_name: author,
             author_headline: headlineEl ? clean(headlineEl.innerText).slice(0, 300) : null,
+            other_comments: clean(comments).slice(0, 3000) || null,
         };
     }
 
@@ -509,7 +513,7 @@
             chrome.runtime.sendMessage({ action: 'backendApi', method, path, body }, (res) => resolve(res || { ok: false, data: { detail: (chrome.runtime.lastError || {}).message || 'Sem resposta' } }));
         } catch (e) { resolve({ ok: false, data: { detail: 'A extensão foi atualizada — recarregue esta página (F5)' } }); }
     });
-    const isSavedJobsPage = () => /\/my-items\/saved-jobs/.test(location.pathname);
+    const isSavedJobsPage = () => /\/my-items\/saved-jobs|\/jobs-tracker/.test(location.pathname);
 
     function savedJobsOnScreen() {
         const jobs = new Map();
@@ -561,6 +565,56 @@
         return { ok: true, imported, total: jobs.length };
     }
 
+    // ── 6. Job pages: "📥 CareerOps" next to LinkedIn's Save, and Save imports automatically ─────────
+    const SAVE = /^(save|salvar)$/i;
+    const SAVED = /^(saved|salva|salvo|unsave|remover dos salvos)$/i;
+    const currentJobId = () => new URLSearchParams(location.search).get('currentJobId') || (location.pathname.match(/\/jobs\/view\/(\d+)/) || [])[1];
+
+    function jobFromPage(id) {
+        const q = (sel) => clean((document.querySelector(sel) || {}).innerText || '');
+        return {
+            title: q('.job-details-jobs-unified-top-card__job-title, .jobs-unified-top-card__job-title, .jobs-details h1, main h1'),
+            company: q('.job-details-jobs-unified-top-card__company-name, .jobs-unified-top-card__company-name'),
+            location: q('.job-details-jobs-unified-top-card__primary-description-container, .jobs-unified-top-card__bullet'),
+            description: q('#job-details, .jobs-description__content, .jobs-description-content__text, .jobs-box__html-content'),
+            id,
+        };
+    }
+
+    async function importCurrentJob(btn, auto = false) {
+        const id = currentJobId();
+        if (!id) { toast('Não encontrei a vaga aberta', false); return; }
+        if (btn) btn.textContent = 'Importando…';
+        let job = jobFromPage(id);
+        if (!job.description || !job.title) {
+            const extra = await jobPosting(id);
+            job = { ...job, title: job.title || extra.title, company: job.company || extra.company,
+                    location: job.location || extra.location, description: job.description || extra.description || '' };
+        }
+        const res = await backend('POST', '/jobs/import-extension', {
+            title: job.title, company: job.company, location: job.location, description: job.description,
+            url: `https://www.linkedin.com/jobs/view/${id}/`, linkedin_job_id: id, status: 'new',
+        });
+        if (btn) btn.textContent = res.ok ? '✓ No CareerOps' : '📥 CareerOps';
+        toast(res.ok ? (auto ? 'Vaga salva também no CareerOps' : 'Vaga importada para o CareerOps (Vagas)') : errText(res), res.ok);
+    }
+
+    function decorateJobSave() {
+        if (!currentJobId()) return;
+        const saveBtn = [...document.querySelectorAll('main button')]
+            .find((b) => !b.closest('.careerops-card, .careerops-bar') && (SAVE.test(label(b)) || SAVED.test(label(b)))
+                && b.offsetParent !== null && !b.closest('li'));
+        if (!saveBtn || saveBtn.parentElement.querySelector('.careerops-jobbtn')) return;
+        const mine = button('📥 CareerOps', () => importCurrentJob(mine));
+        mine.classList.add('careerops-jobbtn');
+        mine.title = 'Importar esta vaga para o CareerOps';
+        mine.style.marginLeft = '8px';
+        mine.dataset.job = currentJobId();
+        saveBtn.insertAdjacentElement('afterend', mine);
+        // clicking LinkedIn's Save (not Unsave) also imports the job
+        saveBtn.addEventListener('click', () => { if (SAVE.test(label(saveBtn))) importCurrentJob(mine, true); }, true);
+    }
+
     chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         if (request.action !== 'importSavedJobs') return;
         importSavedJobs(savedBtn).then(sendResponse);
@@ -579,6 +633,9 @@
     function refresh() {
         decoratePosts();
         decorateEasyApply();
+        decorateJobSave();
+        // the job pane is reused when another job is opened: reset our button for the new job
+        document.querySelectorAll('.careerops-jobbtn').forEach((b) => { if (b.dataset.job !== String(currentJobId())) b.remove(); });
         inviteBtn.style.display = isProfilePage() ? '' : 'none';
         const listPage = /\/search\/results\/people|\/mynetwork/.test(location.pathname);
         scoreBtn.style.display = listPage ? '' : 'none';

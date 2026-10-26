@@ -16,6 +16,20 @@ class SkillService:
         lstrip_blocks=True
     )
 
+    # Every template can call {{ writing_style("comment") }} etc. (Configurações → Estilo e modelos)
+    @staticmethod
+    def _writing_style(kind: str) -> str:
+        from app.services.ai_settings_service import AISettingsService
+        try:
+            return AISettingsService.render(kind)
+        except Exception:
+            return ""
+
+    _env.globals["writing_style"] = _writing_style.__func__
+
+    # Skills that write text people will read use the "writing" model; the rest use the default one
+    WRITING_SKILLS = {"jobs/resume.md", "jobs/cover_letter.md", "jobs/outreach.md", "interview/stories.md", "interview/simulate.md"}
+
     @classmethod
     async def render_prompt(cls, skill_path: str, context: Dict[str, Any]) -> str:
         """Renders a Jinja2 template with the given context."""
@@ -43,7 +57,7 @@ class SkillService:
         }
         
         target_domain = domain_mapping.get(domain, domain)
-        model_key = f"ai_model_{target_domain}"
+        model_key = "ai_model_writing" if skill_path in cls.WRITING_SKILLS else f"ai_model_{target_domain}"
         
         provider = AIService.get_provider(model_key)
         prompt = await cls.render_prompt(skill_path, context)

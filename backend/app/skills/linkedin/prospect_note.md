@@ -24,6 +24,9 @@ FIT (0–100): how well this person matches the target segments and how plausibl
 NOTE RULES (only if fit ≥ 40):
 - At most 280 characters (LinkedIn's limit is 300). Address them by first name.
 - Mention one specific thing from their profile, and one relevant line about the professional. No job request, no links, no flattery.
+- Language: Portuguese for the Brazilian market, English abroad. Hard limit 280 characters even if the style says longer.
+
+{{ writing_style("invite") }}
 
 {% include 'common/output_format.md' %}
 Return JSON:

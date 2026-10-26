@@ -13,4 +13,6 @@ Candidate Profile:
 
 Job Description: {{ job_description }}
 
+{{ writing_style("message") }}
+
 Return ONLY the message text.

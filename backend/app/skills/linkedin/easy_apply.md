@@ -30,10 +30,12 @@ FIELDS ON THIS STEP (key, type, label, options, current value):
 
 RULES:
 - select / radio: answer with one of the given options, copied exactly. checkbox: "true" or "false".
-- number: digits only. text: short (one line). textarea: 2–5 sentences, specific, from real experience.
+- number: digits only. text: short (one line). textarea: specific, from real experience, in the job's language, following the style below.
 - Notice details you don't know, references, and anything you are not sure about: leave the answer empty and list the key in "needs_user".
 - Never invent certifications, degrees, licenses, clearances or employers. Never use numbers marked "(estimate)".
 - Demographic or voluntary self-identification questions are not sent to you; if one appears anyway, leave it empty.
+
+{{ writing_style("easy_apply") }}
 
 {% include 'common/output_format.md' %}
 Return JSON:
