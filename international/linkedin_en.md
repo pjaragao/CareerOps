@@ -3,7 +3,7 @@
 Target: recruiters in the US and Europe. Positioning: **Applied AI Engineer with deep finance and infrastructure-engineering domain.**
 Target roles: Applied AI Engineer · AI Solutions Engineer · Forward Deployed Engineer · AI Engineer (fintech / ERP / finance automation / infrastructure & climate tech).
 
-Items marked ⟦CONFIRM⟧ need your input before publishing. Master CV (also used by the app for tailoring): [resume_base.md](../resume_base.md).
+Field-by-field texts in **English and Portuguese** for the extension's profile filler live in `international/build_linkedin_profile.py` → `config/linkedin_profile.json` (edit there and re-run the script). Items marked ⟦CONFIRM⟧ need your input before publishing. Master CV (also used by the app for tailoring): [resume_base.md](../resume_base.md).
 
 ---
 

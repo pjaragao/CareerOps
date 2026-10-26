@@ -197,3 +197,26 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     const skipped = result.item && (result.item.status === 'skipped');
     setBadge(result.kind === 'prospect' ? (skipped ? 'P-' : 'P+') : (skipped ? 'E-' : 'E+'), skipped ? '#888888' : '#00d4aa');
 });
+
+// ── Profile filler: field texts (EN + PT) from the CareerOps backend ──
+const PROFILE_COPY_ENDPOINTS = [
+    'http://127.0.0.1:8005/api/linkedin-copilot/profile-copy',
+    'http://localhost:8005/api/linkedin-copilot/profile-copy',
+    'http://100.109.242.35:8005/api/linkedin-copilot/profile-copy'
+];
+
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    if (request.action !== 'getProfileCopy') return;
+    (async () => {
+        for (const url of PROFILE_COPY_ENDPOINTS) {
+            try {
+                const res = await fetch(url);
+                if (res.ok) { sendResponse({ ok: true, data: await res.json() }); return; }
+            } catch (e) {
+                console.warn('Profile copy: failed to reach', url, e);
+            }
+        }
+        sendResponse({ ok: false });
+    })();
+    return true; // keep the channel open for the async response
+});

@@ -1,3 +1,4 @@
+import json
 from datetime import date, datetime
 from typing import Literal, Optional
 
@@ -51,6 +52,15 @@ async def oauth_callback(code: Optional[str] = None, state: Optional[str] = None
 async def disconnect():
     LinkedInApiService.disconnect()
     return {"ok": True}
+
+
+# ── Profile copy (field-by-field texts the extension fills into LinkedIn's edit forms) ──
+@router.get("/profile-copy")
+async def profile_copy():
+    path = settings.CONFIG_DIR / "linkedin_profile.json"
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="config/linkedin_profile.json not found — run international/build_linkedin_profile.py")
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 # ── Posts ────────────────────────────────────────────────────────────────

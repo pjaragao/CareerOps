@@ -136,6 +136,49 @@ class OpenAICompatibleProvider(AIProvider):
         except Exception as e:
             return {"error": str(e)}
 
+class AgyShimProvider(OpenAICompatibleProvider):
+    """Antigravity CLI (`agy`) behind the OpenAI-compatible shim (mr-irrelevant/ops/agy_shim.py).
+
+    The shim only knows agy model ids (e.g. `gemini-flash-latest`, `gemini-3.8-flash-low`); model names saved in
+    settings for the Gemini API (e.g. `gemini-3.1-pro-preview`) fall back to the default. It has no JSON mode, so
+    JSON is pulled out of the text answer.
+    """
+    _models_cache: Dict[str, Any] = {"ids": None, "at": 0.0}
+
+    def _available(self) -> List[str]:
+        import time
+        cache = AgyShimProvider._models_cache
+        if cache["ids"] is None or time.time() - cache["at"] > 3600:
+            try:
+                cache["ids"] = [m.id for m in self.client.models.list()]
+            except Exception:
+                cache["ids"] = []
+            cache["at"] = time.time()
+        return cache["ids"]
+
+    def _model(self, model: Optional[str]) -> str:
+        return model if model and model in self._available() else self.default_model
+
+    def generate_text(self, prompt: str, model: Optional[str] = None, temperature: float = 0.7) -> str:
+        return super().generate_text(prompt, model=self._model(model), temperature=temperature)
+
+    def generate_json(self, prompt: str, model: Optional[str] = None, temperature: float = 0.7) -> Dict[str, Any]:
+        raw = self.generate_text(prompt + "\n\nReturn ONLY the JSON object, with no text before or after it.",
+                                 model=model, temperature=temperature)
+        if raw.startswith("Error:"):
+            return {"error": raw}
+        cleaned = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw.strip())
+        try:
+            return json.loads(cleaned)
+        except json.JSONDecodeError:
+            match = re.search(r"\{.*\}", cleaned, re.DOTALL)
+            if match:
+                try:
+                    return json.loads(match.group(0))
+                except json.JSONDecodeError:
+                    pass
+        return {"error": "AGY answer was not valid JSON", "raw_text": raw[:500]}
+
 class AIService:
     @staticmethod
     def get_provider(model_key: Optional[str] = None) -> AIProvider:
@@ -157,6 +200,12 @@ class AIService:
                 
             fallback = live_settings.get("ai_model_fallback") or "gemini-1.5-pro"
             return GeminiProvider(api_key, model, fallback_model=fallback)
+        elif provider_type == "agy":
+            return AgyShimProvider(
+                os.getenv("AGY_SHIM_TOKEN", ""),
+                os.getenv("AGY_BASE_URL", "http://172.26.0.1:8787/v1"),
+                os.getenv("AGY_MODEL", "gemini-flash-latest"),
+            )
         elif provider_type in ["nvidia", "alibaba", "ollama", "openai"]:
             base_url = live_settings.get("openai_base_url") or settings.AI_BASE_URL
             api_key = live_settings.get("openai_api_key") or api_key

@@ -60,6 +60,7 @@
 - **Engagement queue** — capture posts while browsing (extension: right-click → *Enviar ao CareerOps Copilot*); AI scores relevance and drafts a specific comment; you comment on LinkedIn and tick it off
 - **Prospecting** — capture profiles; AI scores fit and drafts a ≤300-char connection note; track invited → accepted → replied against a weekly target
 - **Weekly metrics** — posts, comments and invites counted automatically, plus profile views / impressions / recruiter messages entered from LinkedIn analytics
+- **Profile filler (EN + PT)** — extension panel *CareerOps · Perfil* on linkedin.com with the approved headline, About, positions and projects in both languages (`config/linkedin_profile.json`, built by `international/build_linkedin_profile.py`); click a LinkedIn field, press *Inserir*, review and Save
 - **No bots**: nothing likes, comments, follows or connects on your behalf — that violates LinkedIn's User Agreement and gets accounts restricted
 
 ---

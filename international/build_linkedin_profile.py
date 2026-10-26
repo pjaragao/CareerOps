@@ -1,0 +1,201 @@
+"""Builds config/linkedin_profile.json — the field-by-field LinkedIn profile (English + Portuguese) that the
+CareerOps extension fills into LinkedIn's edit forms. Edit the texts here and run:  python3 international/build_linkedin_profile.py
+Fails if any text exceeds LinkedIn's field limits."""
+import json
+import pathlib
+
+LIMITS = {"headline": 220, "about": 2600, "position_title": 100, "position_description": 2000,
+          "project_title": 255, "project_description": 2000}
+
+EN_ABOUT = """I build AI systems that run real operations — and I know those operations from the inside, because I ran them for 15 years.
+
+I'm an engineer and former CFO who now works as an Applied AI Engineer. Recent work:
+• CentralOps — an AI-native retail ERP (~95k hand-written lines, 2,000+ automated database tests) with an LLM agent exposed through an MCP server, where every price, stock level and coupon the agent quotes is checked against the database before it reaches a customer.
+• Trading Copilot — a trading and tax assistant that sends orders to MetaTrader 5, reconciles broker statements, computes capital-gains tax and backtests strategies with time-series forecasting.
+• A multi-tenant WhatsApp AI agent running fantasy-football leagues, with per-league isolation, an LLM fallback chain and 300+ tests.
+
+Before that, I spent nearly 18 years at an engineering consultancy for water, wastewater, urban and solid-waste infrastructure in Brazil, from intern to Finance Director (CFO). I prepared the financial proposals for the firm's ~90 tenders a year, coordinated a World Bank–financed urban infrastructure program, managed consulting contracts for infrastructure investments of US$20–150M, built DCF feasibility and tariff models for municipal concessions, led a 5-person finance team, and drove the firm's ERP, SharePoint and BIM transformations. Today I also advise large Brazilian corporate groups on major infrastructure projects, including engineering-financial modeling for solid waste.
+
+What I bring:
+• LLM agents that are safe to put in front of customers and money — tool calling, MCP, guardrails, prompt-injection defenses, human-in-the-loop.
+• Production engineering — Python, TypeScript/Next.js, PostgreSQL (RLS, PL/pgSQL, pgTAP), Docker, CI/CD, architecture decision records.
+• Finance and domain depth — financial modeling, accounting and tax workflows, pricing, CAPEX/OPEX. I can talk to the CFO and to the codebase.
+
+I'm looking for Applied AI, AI Solutions and Forward Deployed Engineer roles, especially in fintech, finance/ERP automation and infrastructure or climate tech.
+
+Based in Florianópolis, Brazil (UTC−3: full overlap with US Eastern hours, ~5 hours with Central Europe). Open to remote work and to relocation to Europe or the US with visa sponsorship.
+
+Portuguese (native) · English (fluent, C1 — lived and worked in the US) · Spanish (intermediate)"""
+
+PT_ABOUT = """Construo sistemas de IA que operam processos reais — e conheço esses processos por dentro, porque passei 15 anos tocando cada um deles.
+
+Sou engenheiro sanitarista e ambiental, ex-diretor financeiro, e hoje trabalho como Engenheiro de IA Aplicada. Trabalhos recentes:
+• CentralOps — ERP de varejo nativo em IA (~95 mil linhas escritas, mais de 2.000 testes automatizados de banco de dados) com um agente de IA exposto por um servidor MCP, em que todo preço, estoque e cupom citado pelo agente é conferido no banco antes de chegar ao cliente.
+• Copiloto de Trades — assistente de operações e de imposto que envia ordens ao MetaTrader 5, concilia notas de corretagem, calcula o IR e faz backtest de estratégias com previsão de séries temporais.
+• Agente de IA no WhatsApp para várias ligas de fantasy football, com isolamento por liga, cadeia de modelos de reserva e mais de 300 testes.
+
+Antes disso, foram quase 18 anos numa consultoria de engenharia de saneamento, drenagem, urbanização e resíduos sólidos, de estagiário a diretor financeiro. Preparei as propostas financeiras das ~90 licitações por ano da empresa, coordenei um programa de infraestrutura urbana financiado pelo Banco Mundial, gerenciei contratos de consultoria para empreendimentos de R$ 100 a 800 milhões, fiz estudos de viabilidade (fluxo de caixa descontado) e modelagem tarifária de concessões, liderei uma equipe financeira de 5 pessoas e conduzi a transformação digital da empresa (ERP, SharePoint e BIM). Hoje também presto consultoria a grandes grupos empresariais em projetos de infraestrutura, incluindo modelagem técnico-financeira de resíduos sólidos.
+
+O que eu trago:
+• Agentes de IA seguros para lidar com clientes e com dinheiro — tool calling, MCP, guardrails, defesa contra prompt injection, humano no circuito.
+• Engenharia de software de produção — Python, TypeScript/Next.js, PostgreSQL (RLS, PL/pgSQL, pgTAP), Docker, CI/CD, registros de decisão de arquitetura.
+• Profundidade em finanças e infraestrutura — modelagem financeira, contabilidade e tributos, precificação, CAPEX/OPEX. Converso com o CFO e com o código.
+
+Busco posições de Engenheiro de IA Aplicada, AI Solutions e Forward Deployed Engineer, principalmente em fintech, automação financeira/ERP e infraestrutura ou climate tech. Aberto a trabalho remoto e a mudança para a Europa ou os EUA.
+
+Português (nativo) · Inglês (fluente, C1 — morei e trabalhei nos EUA) · Espanhol (intermediário)"""
+
+POSITIONS = [
+    {
+        "id": "ai-engineer", "company": "Self-employed / Autônomo", "start": "2026-02", "end": None,
+        "location": "Florianópolis, Santa Catarina, Brazil", "employment_type": "Self-employed", "workplace": "Remote",
+        "en": {"title": "Applied AI Engineer", "description": """I design, build and operate AI products end to end as the sole engineer, using an AI-assisted workflow (Claude Code) with automated tests and CI as the quality gate.
+
+• CentralOps — AI-native retail ERP and omnichannel platform: Next.js 16/TypeScript, async Python workers, PostgreSQL/Supabase. POS, inventory ledger, double-entry accounting with cost allocation, cash flow and P&L, payroll, Brazilian tax and e-invoicing. 133 SQL migrations, 2,000+ pgTAP tests, CI/CD with manually approved production migrations, 8 architecture decision records.
+• Customer-facing LLM agent behind an MCP server (16 tools): it can only act through database RPCs scoped by signed, short-lived context tokens and row-level security; a guardrail validator checks every number in a reply against that run's tool results; autopilot only for whitelisted intents above a confidence threshold, otherwise a human takes over.
+• Trading Copilot (B3): signal tracking, MetaTrader 5 execution with confirmation, broker-statement parsing to reconcile real costs and slippage, monthly capital-gains tax, strategy backtests with TimesFM forecasts.
+• Multi-tenant WhatsApp agent (Hermes Agent + Evolution API) for fantasy-football leagues: isolated persona, data and schedule per league; LLM fallback chain; 300+ unit and end-to-end tests. Includes an election-night projection model (Bayesian hierarchical shrinkage on official electoral data, backtested on three past runoffs).
+• Everything self-hosted on a Docker / Coolify / Traefik homelab."""},
+        "pt": {"title": "Engenheiro de IA Aplicada", "description": """Projeto, desenvolvo e opero produtos de IA de ponta a ponta como único engenheiro, com desenvolvimento assistido por IA (Claude Code) e testes automatizados e CI como controle de qualidade.
+
+• CentralOps — ERP de varejo nativo em IA e plataforma omnichannel: Next.js 16/TypeScript, workers Python assíncronos, PostgreSQL/Supabase. PDV, estoque em livro-razão, contabilidade de partidas dobradas com rateio, fluxo de caixa e DRE, folha, fiscal e nota fiscal eletrônica. 133 migrations SQL, mais de 2.000 testes pgTAP, CI/CD com migrations de produção aprovadas manualmente, 8 registros de decisão de arquitetura.
+• Agente de atendimento atrás de um servidor MCP (16 ferramentas): só age por funções do banco, com token de contexto assinado e de curta duração e segurança por linha (RLS); um validador confere cada número da resposta com o resultado das ferramentas daquela execução; piloto automático só para intenções pré-aprovadas acima de um nível de confiança, senão um humano assume.
+• Copiloto de Trades (B3): acompanhamento de sinais, envio de ordens ao MetaTrader 5 com confirmação, leitura de notas de corretagem para conciliar custos reais e slippage, IR mensal, backtest de estratégias com previsão TimesFM.
+• Agente de WhatsApp multi-liga (Hermes Agent + Evolution API) para fantasy football: persona, dados e agenda isolados por liga; cadeia de modelos de reserva; mais de 300 testes unitários e de ponta a ponta. Inclui um modelo de projeção da apuração eleitoral (encolhimento hierárquico bayesiano sobre dados oficiais do TSE, validado em três 2º turnos anteriores).
+• Tudo hospedado em infraestrutura própria com Docker / Coolify / Traefik."""},
+    },
+    {
+        "id": "consultant", "company": "Self-employed / Autônomo", "start": "2026-02", "end": None,
+        "location": "Florianópolis, Santa Catarina, Brazil", "employment_type": "Freelance", "workplace": "Hybrid",
+        "en": {"title": "Independent Consultant — Infrastructure Engineering & Project Finance", "description": """• Advise large Brazilian corporate groups (names under NDA) on major infrastructure projects.
+• General coordination of sanitation engineering projects: scope, schedule, multidisciplinary team and client deliverables.
+• Engineering-financial models for solid-waste infrastructure projects: CAPEX/OPEX, cash flow and economic feasibility."""},
+        "pt": {"title": "Consultor Independente — Engenharia e Finanças de Projetos de Infraestrutura", "description": """• Consultoria a grandes grupos empresariais brasileiros (sob NDA) em projetos de infraestrutura de grande porte.
+• Coordenação geral de projetos de engenharia de saneamento: escopo, cronograma, equipe multidisciplinar e entregas ao cliente.
+• Modelagem técnico-financeira de projetos de infraestrutura de resíduos sólidos: CAPEX/OPEX, fluxo de caixa e viabilidade econômica."""},
+    },
+    {
+        "id": "mpb-cfo", "company": "MPB Engenharia", "start": "2023-02", "end": "2026-01",
+        "location": "Florianópolis, Santa Catarina, Brazil", "employment_type": "Full-time", "workplace": "On-site",
+        "en": {"title": "Finance Director (CFO)", "description": """• Led a 5-person finance team.
+• Introduced the firm's annual budget with monthly variance tracking, and defined the KPIs used to monitor operational goals.
+• Built BI management reporting on department performance, project performance and major expense lines, focused on cost reduction.
+• Redesigned cost accounting in the new ERP: cost centers and labor-cost allocation from employee timesheets.
+• Automated reporting and document workflows with n8n and LLM APIs (Gemini, Claude, ChatGPT), plus Power Apps / Power Automate integrated with the ERP and SharePoint, eliminating manual data entry."""},
+        "pt": {"title": "Diretor Financeiro (CFO)", "description": """• Liderança de uma equipe financeira de 5 pessoas.
+• Implantação do orçamento anual com acompanhamento mensal e definição dos KPIs de acompanhamento das metas operacionais.
+• Relatórios gerenciais em BI de desempenho por setor, por projeto e das grandes despesas, com foco em redução de custos.
+• Nova contabilidade de custos no ERP: centros de custo e apropriação de mão de obra a partir do registro de horas.
+• Automação de relatórios e documentos com n8n e APIs de IA (Gemini, Claude, ChatGPT), além de Power Apps / Power Automate integrados ao ERP e ao SharePoint, eliminando digitação manual."""},
+    },
+    {
+        "id": "mpb-engineer", "company": "MPB Engenharia", "start": "2011-08", "end": "2023-01",
+        "location": "Florianópolis, Santa Catarina, Brazil", "employment_type": "Full-time", "workplace": "On-site",
+        "en": {"title": "Senior Engineer — Projects, Proposals & Digital Transformation", "description": """• Managed 5–7 concurrent consulting contracts (~US$4M a year) of US$0.2–0.4M each, supporting infrastructure investments of US$20–150M in water, wastewater, drainage and environment.
+• General coordinator and engineer of record for the World Bank–financed Lagoas do Norte Program in Teresina (2014–2019): proposal and integrated design of sewerage for 312,000 residents, 28 km of drainage, water supply, roads, a 1 MW biogas plant, BIM-modeled urban design and the social-environmental program across ~1,300 ha.
+• Engineer of record on 46 registered engagements, including the Mearim river-basin plan (99,000 km², 2.1M people), water systems for state utilities (up to 1,250 L/s; Criciúma, 311,000 people; 148 km of network on the Paraná coast) and a sanitary-landfill design and licensing.
+• Technical-economic analysis of water and wastewater concession processes for four municipalities; DCF feasibility and tariff models for municipal concessions.
+• Environmental management of highway programs: BR-470 duplication for DNIT (73 km), SC-477 (73 km) and the Arteris Autopista Litoral Sul concession (357 km).
+• Prepared the financial proposals for the firm's ~90 tenders a year (QCBS and LCS) and designed a metrics-based pricing method that significantly cut bid-preparation time.
+• Led the firm's ERP, SharePoint Online (in-house team only), Power Platform, ISO 9001 and BIM transformations."""},
+        "pt": {"title": "Engenheiro Sênior — Projetos, Propostas e Transformação Digital", "description": """• Gestão de 5 a 7 contratos de consultoria simultâneos (~R$ 20 milhões/ano), de R$ 1 a 2 milhões cada, para empreendimentos de R$ 100 a 800 milhões em saneamento, drenagem e meio ambiente.
+• Coordenador geral e responsável técnico do Programa Lagoas do Norte em Teresina, financiado pelo Banco Mundial (2014–2019): proposta e projeto integrado de esgotamento sanitário para 312 mil habitantes, 28 km de drenagem, abastecimento de água, sistema viário, usina de biogás de 1 MW, projeto urbanístico em BIM e programa socioambiental em ~1.300 ha.
+• Responsável técnico em 46 ARTs, incluindo o Plano Diretor de Drenagem da Bacia do Rio Mearim (99 mil km², 2,1 milhões de habitantes), sistemas de água para companhias estaduais (até 1.250 L/s; Criciúma, 311 mil habitantes; 148 km de rede no litoral do Paraná) e projeto e licenciamento de aterro sanitário.
+• Análise técnico-econômica de processos de concessão de água e esgoto em quatro municípios; estudos de viabilidade (fluxo de caixa descontado) e modelagem tarifária de concessões.
+• Gestão ambiental de programas rodoviários: duplicação da BR-470 para o DNIT (73 km), SC-477 (73 km) e concessão Arteris Autopista Litoral Sul (357 km).
+• Propostas financeiras das ~90 licitações por ano da empresa (técnica e preço e menor preço) e metodologia de precificação por métricas objetivas que reduziu muito o tempo de elaboração.
+• Condução do ERP, da migração para o SharePoint Online (só com equipe interna), Power Platform, ISO 9001 e da implantação do BIM."""},
+    },
+    {
+        "id": "mpb-intern", "company": "MPB Engenharia", "start": "2008-05", "end": "2011-08",
+        "location": "Florianópolis, Santa Catarina, Brazil", "employment_type": "Internship", "workplace": "On-site",
+        "en": {"title": "Engineering Intern", "description": "Financial proposals, sewage and wastewater-treatment design, alternatives analysis, cost estimates and technical reports."},
+        "pt": {"title": "Estagiário de Engenharia", "description": "Propostas financeiras, projetos de esgoto e de tratamento de esgoto, análise de alternativas, orçamentos e relatórios técnicos."},
+    },
+    {
+        "id": "pf-changs", "company": "P.F. Chang's", "start": "2007-12", "end": "2008-03", "optional": True,
+        "location": "Fort Lauderdale, Florida, United States", "employment_type": "Seasonal", "workplace": "On-site",
+        "en": {"title": "Back Waiter (J-1 Work & Travel)", "description": "Busser and food runner during a J-1 work-and-travel program in college; found the job on my own and built fluent English."},
+        "pt": {"title": "Back Waiter (intercâmbio J-1 Work & Travel)", "description": "Busser e food runner durante intercâmbio de trabalho nas férias da faculdade; consegui o emprego por conta própria e desenvolvi inglês fluente."},
+    },
+]
+
+PROJECTS = [
+    {"id": "centralops", "start": "2026-09", "end": None,
+     "en": {"title": "CentralOps — AI-native retail ERP & omnichannel platform", "description": "ERP + customer-service platform for fashion retail, built solo: POS, inventory, double-entry finance, tax, HR, and an omnichannel inbox (WhatsApp, Instagram, Telegram) with an LLM agent that is safe to touch money — MCP tools, signed context tokens, row-level security, numeric guardrails and human handoff. ~95k hand-written lines, 2,000+ database tests, CI/CD."},
+     "pt": {"title": "CentralOps — ERP de varejo nativo em IA e plataforma omnichannel", "description": "ERP + atendimento para varejo de moda, desenvolvido sozinho: PDV, estoque, financeiro com partidas dobradas, fiscal, RH e inbox omnichannel (WhatsApp, Instagram, Telegram) com um agente de IA seguro para lidar com dinheiro — ferramentas MCP, token de contexto assinado, segurança por linha, validação numérica e passagem para humano. ~95 mil linhas, mais de 2.000 testes de banco, CI/CD."}},
+    {"id": "trading-copilot", "start": "2026-10", "end": None,
+     "en": {"title": "Trading Copilot", "description": "Personal trading assistant for the Brazilian market (B3): analyst-signal monitoring, MetaTrader 5 execution, broker-statement reconciliation, capital-gains tax, backtesting and TimesFM forecasting."},
+     "pt": {"title": "Copiloto de Trades", "description": "Assistente pessoal de operações na B3: monitoramento de sinais de analistas, envio de ordens ao MetaTrader 5, conciliação de notas de corretagem, cálculo de IR, backtest e previsão com TimesFM."}},
+    {"id": "mr-irrelevant", "start": "2026-09", "end": None,
+     "en": {"title": "Mr Irrelevant — multi-tenant WhatsApp AI agent", "description": "Fantasy-football league agent on WhatsApp: one instance serves several leagues with isolated persona, data, secrets and schedule; 40-query league tool, LLM fallback chain ending in deterministic text, cron-driven reports, charts and live alerts; 300+ tests."},
+     "pt": {"title": "Mr Irrelevant — agente de IA multi-liga no WhatsApp", "description": "Agente de ligas de fantasy football no WhatsApp: uma instância atende várias ligas com persona, dados, segredos e agenda isolados; ferramenta com 40 consultas, cadeia de modelos de reserva com resposta determinística no fim, relatórios agendados, gráficos e alertas ao vivo; mais de 300 testes."}},
+    {"id": "election-model", "start": "2026-09", "end": "2026-10",
+     "en": {"title": "Election-Night Projection Model (Brazil 2026)", "description": "Real-time projection of Brazil's 2026 presidential runoff from official electoral-court (TSE) data: Bayesian hierarchical model of municipal deviations from a first-round + vote-transfer baseline (national → regional → state shrinkage), uncertainty calibrated by replaying the 2014, 2018 and 2022 runoffs in real vote-arrival order; verifies the TSE's signed feeds. No LLM — pure statistics; 56 tests."},
+     "pt": {"title": "Modelo de Projeção da Apuração (Eleições 2026)", "description": "Projeção em tempo real do 2º turno presidencial a partir dos dados oficiais do TSE: modelo bayesiano hierárquico dos desvios por município em relação ao 1º turno + migração de votos (encolhimento nacional → regional → estadual), incerteza calibrada reencenando os 2º turnos de 2014, 2018 e 2022 na ordem real de chegada das urnas; confere a assinatura dos arquivos do TSE. Sem LLM — estatística pura; 56 testes."}},
+    {"id": "jaobolao", "start": "2026-06", "end": None,
+     "en": {"title": "JãoBolão — sports-pool SaaS", "description": "Web and mobile app (Next.js, React Native/Expo, Supabase, Stripe, RevenueCat) with real-time rankings, subscriptions and a WhatsApp AI bot."},
+     "pt": {"title": "JãoBolão — SaaS de bolões esportivos", "description": "App web e mobile (Next.js, React Native/Expo, Supabase, Stripe, RevenueCat) com ranking em tempo real, assinaturas e bot de IA no WhatsApp."}},
+    {"id": "careerops", "start": "2026-02", "end": None,
+     "en": {"title": "CareerOps — AI career-automation platform", "description": "FastAPI + React + Chrome extension. Modular Jinja2 prompt skills across several LLM providers, human-validated knowledge base, ATS matching, PDF generation and a LinkedIn copilot with human approval."},
+     "pt": {"title": "CareerOps — plataforma de automação de carreira com IA", "description": "FastAPI + React + extensão Chrome. Skills de prompt em Jinja2 com vários provedores de IA, base de conhecimento validada por humano, aderência a vagas (ATS), geração de PDF e copiloto de LinkedIn com aprovação humana."}},
+    {"id": "tender-radar", "start": "2026-02", "end": "2026-03",
+     "en": {"title": "Public Tender Radar", "description": "Searches the Brazilian national procurement API (PNCP) across states and classifies tenders against a company profile with Gemini."},
+     "pt": {"title": "Radar de Licitações", "description": "Busca na API do Portal Nacional de Contratações Públicas (PNCP) em vários estados e classifica os editais conforme o perfil da empresa com Gemini."}},
+]
+
+PROFILE = {
+    "en": {
+        "headline": "Applied AI Engineer | LLM Agents, MCP & Financial Systems | Python · TypeScript · PostgreSQL | 15+ yrs Infrastructure Engineering & Finance (ex-CFO) | Open to relocation EU/US · Remote",
+        "about": EN_ABOUT,
+    },
+    "pt": {
+        "headline": "Engenheiro de IA Aplicada | Agentes de IA, MCP e Sistemas Financeiros | Python · TypeScript · PostgreSQL | 15+ anos em Engenharia de Infraestrutura e Finanças (ex-CFO) | Aberto a Europa/EUA e remoto",
+        "about": PT_ABOUT,
+    },
+    "positions": POSITIONS,
+    "projects": PROJECTS,
+    "skills_top": ["AI Agents", "Large Language Models (LLM)", "Python", "PostgreSQL", "Financial Modeling"],
+    "skills": ["Model Context Protocol (MCP)", "Prompt Engineering", "Generative AI", "LLMOps", "Human-in-the-loop",
+               "TypeScript", "Next.js", "React", "FastAPI", "Supabase", "Docker", "CI/CD", "GitHub Actions", "REST APIs",
+               "Linux", "n8n", "Time-Series Forecasting", "Bayesian Statistics", "Financial Analysis",
+               "Discounted Cash Flow (DCF)", "Feasibility Studies", "Budgeting", "Power BI", "SQL", "Project Management",
+               "Public Procurement", "Water & Wastewater", "Solid Waste Management", "ERP Implementation", "BIM"],
+    "remove": [
+        {"en": "Delete the old “International Business Operations (J-1 Program)” entry (replaced by the P.F. Chang's entry, or drop both).",
+         "pt": "Apague a experiência antiga “International Business Operations (J-1 Program)” (substituída pela do P.F. Chang's, ou apague as duas)."},
+        {"en": "Delete the “CTI — Engenheiro” position (MPB work already covered).",
+         "pt": "Apague a experiência “CTI — Engenheiro” (o trabalho já está na MPB)."},
+        {"en": "Remove “Managing Partner” and the unverified percentages from the old About and positions.",
+         "pt": "Tire “Managing Partner” e os percentuais não comprovados do Sobre e das experiências antigas."},
+    ],
+}
+
+
+def check() -> None:
+    errors = []
+    for lang in ("en", "pt"):
+        if len(PROFILE[lang]["headline"]) > LIMITS["headline"]:
+            errors.append(f"{lang} headline: {len(PROFILE[lang]['headline'])}")
+        if len(PROFILE[lang]["about"]) > LIMITS["about"]:
+            errors.append(f"{lang} about: {len(PROFILE[lang]['about'])}")
+        for p in POSITIONS:
+            if len(p[lang]["title"]) > LIMITS["position_title"]:
+                errors.append(f"{lang} {p['id']} title: {len(p[lang]['title'])}")
+            if len(p[lang]["description"]) > LIMITS["position_description"]:
+                errors.append(f"{lang} {p['id']} description: {len(p[lang]['description'])}")
+        for p in PROJECTS:
+            if len(p[lang]["description"]) > LIMITS["project_description"]:
+                errors.append(f"{lang} {p['id']} project description: {len(p[lang]['description'])}")
+    if errors:
+        raise SystemExit("Over LinkedIn limits:\n  " + "\n  ".join(errors))
+
+
+if __name__ == "__main__":
+    check()
+    out = pathlib.Path(__file__).resolve().parent.parent / "config" / "linkedin_profile.json"
+    out.write_text(json.dumps(PROFILE, ensure_ascii=False, indent=2), encoding="utf-8")
+    for lang in ("en", "pt"):
+        print(f"{lang}: headline {len(PROFILE[lang]['headline'])}/220 · about {len(PROFILE[lang]['about'])}/2600 · "
+              + " · ".join(f"{p['id']} {len(p[lang]['description'])}" for p in POSITIONS))
+    print("wrote", out)
