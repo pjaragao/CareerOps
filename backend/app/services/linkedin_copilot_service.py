@@ -308,8 +308,10 @@ class LinkedInCopilotService:
             if not url or url in seen:
                 continue
             seen.add(url)
-            clean.append({"profile_url": url, "name": (person.get("name") or "").strip()[:120],
-                          "headline": (person.get("headline") or "").strip()[:400]})
+            headline = (person.get("headline") or "").strip()[:400]
+            if len(headline) < 4:   # nothing to judge by: a score would be a guess, so leave them out (can be retried later)
+                continue
+            clean.append({"profile_url": url, "name": (person.get("name") or "").strip()[:120], "headline": headline})
         clean = clean[:25]
         known = {r["profile_url"]: r for r in _rows(
             "SELECT * FROM public.linkedin_prospects WHERE profile_url = ANY(%s)", ([c["profile_url"] for c in clean],))}

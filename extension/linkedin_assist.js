@@ -331,8 +331,9 @@
                 .filter((l) => !META.test(l) && !/^(like|gostei|reply|responder|curtir|author|autor|you|voc[eê])$/i.test(l));
             const name = clean(a.innerText).split('\n')[0].replace(/\s*•.*$/, '').trim();
             if (!name || name.length > 80) return;
-            const i = lines.indexOf(name);
-            const headline = i < 0 ? null : (lines[i + 1] || '').slice(0, 300) || null;
+            // LinkedIn repeats the name (visually hidden copy, degree badge): the headline is the first other line after it
+            const i = lines.findIndex((l) => l === name || l.startsWith(name));
+            const headline = (lines.slice(i < 0 ? 0 : i + 1).find((l) => l !== name && !l.startsWith(name) && l.length > 3) || '').slice(0, 300) || null;
             add(m[0], name, headline);
         });
         const mine = [...seen.values()].filter((p) => !/^(you|voc[eê])$/i.test(p.name)).slice(0, 25);
