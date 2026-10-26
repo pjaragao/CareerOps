@@ -59,6 +59,26 @@ const Modal = ({ title, onClose, children }: { title: string; onClose: () => voi
 // ── LinkedIn API status (header) and setup guide ──────────────────────────
 const code: React.CSSProperties = { background: 'rgba(255,255,255,0.08)', padding: '1px 6px', borderRadius: 5, fontSize: '0.82rem', overflowWrap: 'anywhere' };
 
+const CopyLine = ({ value }: { value: string }) => (
+  <div style={{ display: 'flex', gap: 6, alignItems: 'center', margin: '4px 0' }}>
+    <code style={{ ...code, flex: 1, padding: '4px 8px' }}>{value}</code>
+    <button className="btn btn-secondary" style={{ padding: 5 }} title="Copiar" onClick={() => copy(value)}><Copy size={13} /></button>
+  </div>
+);
+
+// One backend variable: what to set it to and whether the running backend already has it
+const EnvRow = ({ name, ok, value, current, hint }: { name: string; ok: boolean; value?: string; current?: string; hint?: string }) => (
+  <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: 8, padding: '6px 8px' }}>
+    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+      <span style={{ color: ok ? '#00d4aa' : '#ffb020' }}>{ok ? '✓' : '⚠'}</span>
+      <code style={code}>{name}</code>
+      {hint && <span style={muted}>{hint}</span>}
+    </div>
+    {value && !ok && <CopyLine value={value} />}
+    {value && !ok && current && <div style={{ ...muted, fontSize: '0.78rem' }}>hoje: <code style={code}>{current}</code></div>}
+  </div>
+);
+
 const ApiStatus = ({ status, reload }: { status: CopilotStatus | null; reload: () => void }) => {
   const [open, setOpen] = useState(false);
   if (!status) return null;
@@ -67,6 +87,11 @@ const ApiStatus = ({ status, reload }: { status: CopilotStatus | null; reload: (
   const connect = async () => {
     try { window.location.href = await svc.connectUrl(); } catch (e) { alert(errMsg(e)); }
   };
+  // The address this app is opened from (e.g. the Tailscale name): LinkedIn sends the browser back here after login
+  const origin = window.location.origin;
+  const redirect = `${origin}/api/linkedin-copilot/oauth/callback`;
+  const redirectOk = status.redirect_uri === redirect;
+  const frontendOk = (status.frontend_url || '').replace(/\/$/, '') === origin;
   return (
     <>
       <button className="btn btn-secondary" style={{ ...smallBtn, gap: 6 }} onClick={() => setOpen(true)} title="Publicação automática pela API do LinkedIn">
@@ -91,20 +116,32 @@ const ApiStatus = ({ status, reload }: { status: CopilotStatus | null; reload: (
                 <li style={status.configured ? { opacity: 0.55 } : undefined}>
                   Na aba <strong>Products</strong>, adicione <em>Sign In with LinkedIn using OpenID Connect</em> e <em>Share on LinkedIn</em> (aprovação imediata).
                 </li>
-                <li style={status.configured ? { opacity: 0.55 } : undefined}>
-                  Na aba <strong>Auth</strong>, em <em>Authorized redirect URLs</em>, adicione: <code style={code}>{status.redirect_uri || '…/api/linkedin-copilot/oauth/callback'}</code>
-                  <div style={muted}>Se o app roda em outro endereço, defina <code style={code}>LINKEDIN_REDIRECT_URI</code> com a URL pública do backend e use a mesma aqui.</div>
+                <li style={redirectOk ? { opacity: 0.55 } : undefined}>
+                  Na aba <strong>Auth</strong>, em <em>Authorized redirect URLs</em>, adicione o endereço de retorno deste app:
+                  <CopyLine value={redirect} />
+                  <div style={muted}>Depois do login, o LinkedIn manda o seu navegador para esse endereço. Por isso ele é o endereço pelo qual você abre o app, não <code style={code}>localhost</code>.</div>
                 </li>
-                <li style={status.configured ? { opacity: 0.55 } : undefined}>
-                  Copie <em>Client ID</em> e <em>Client Secret</em> para as variáveis <code style={code}>LINKEDIN_CLIENT_ID</code> e <code style={code}>LINKEDIN_CLIENT_SECRET</code> do backend (no Coolify: Environment Variables) e faça o redeploy.
+                <li>
+                  No backend (no Coolify: <em>Environment Variables</em>), defina as variáveis e faça o redeploy:
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 6 }}>
+                    <EnvRow name="LINKEDIN_CLIENT_ID" ok={status.configured} hint="Client ID da aba Auth" />
+                    <EnvRow name="LINKEDIN_CLIENT_SECRET" ok={status.configured} hint="Client Secret da aba Auth" />
+                    <EnvRow name="LINKEDIN_REDIRECT_URI" ok={redirectOk} value={redirect} current={status.redirect_uri} />
+                    <EnvRow name="FRONTEND_URL" ok={frontendOk} value={origin} current={status.frontend_url} />
+                  </div>
                 </li>
                 <li>
                   Volte aqui e clique em <strong>Conectar LinkedIn</strong>. O acesso vale 60 dias.
                 </li>
               </ol>
+              {status.configured && !redirectOk && (
+                <div style={{ color: '#ffb020', fontSize: '0.85rem' }}>
+                  O backend ainda usa <code style={code}>{status.redirect_uri}</code> como retorno: corrija <code style={code}>LINKEDIN_REDIRECT_URI</code> (passo 4) antes de conectar, senão o login do LinkedIn não volta para cá.
+                </div>
+              )}
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-                <button className="btn btn-primary" disabled={!status.configured} onClick={connect}
-                  title={status.configured ? '' : 'Configure as variáveis primeiro (passos 1 a 4)'}><Link2 size={16} /> Conectar LinkedIn</button>
+                <button className="btn btn-primary" disabled={!status.configured || !redirectOk} onClick={connect}
+                  title={!status.configured ? 'Configure as variáveis primeiro (passos 1 a 4)' : !redirectOk ? 'Corrija LINKEDIN_REDIRECT_URI primeiro' : ''}><Link2 size={16} /> Conectar LinkedIn</button>
               </div>
             </div>
           )}

@@ -66,6 +66,7 @@ export interface CopilotStatus {
   member_name: string | null;
   expires_at: string | null;
   redirect_uri?: string;
+  frontend_url?: string;
 }
 
 export interface WeekMetrics {
