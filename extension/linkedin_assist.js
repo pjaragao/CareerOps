@@ -238,7 +238,7 @@
             post.__careeropsBtn = true;
             const bar = document.createElement('div');
             bar.className = 'careerops-bar';
-            bar.style.cssText = 'padding:4px 12px 0';
+            bar.style.cssText = 'padding:8px 16px 0;display:flex;gap:4px;flex-wrap:wrap';
             bar.appendChild(button('✨ Comentário IA', () => draftComment(post, bar)));
             bar.appendChild(button('📌 Salvar tema', async () => {
                 const info = postInfo(post);
@@ -246,7 +246,14 @@
                 const res = await api('POST', '/inspirations', info);
                 toast(res.ok ? 'Tema salvo — gere um post seu sobre ele no Copilot' : errText(res), res.ok);
             }, false));
-            post.insertAdjacentElement('afterbegin', bar);
+            // LinkedIn wraps each card in zero-height containers: put the bar inside the visible card itself
+            let host = post;
+            for (let k = 0; k < 6; k++) {
+                const kids = [...host.children].filter((c) => !c.classList.contains('careerops-bar') && !c.classList.contains('careerops-card'));
+                const h = host.getBoundingClientRect().height;
+                if (kids.length === 1 && (h < 2 || kids[0].getBoundingClientRect().height >= h - 2)) host = kids[0]; else break;
+            }
+            host.insertAdjacentElement('afterbegin', bar);
         });
     }
 

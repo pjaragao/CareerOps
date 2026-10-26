@@ -217,6 +217,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action !== 'copilotApi') return;
     (async () => {
+        const errors = [];
         for (const base of API_BASES.map((b) => b + '/linkedin-copilot')) {
             try {
                 const res = await fetch(base + request.path, {
@@ -229,9 +230,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 return;
             } catch (e) {
                 console.warn('Copilot API: failed to reach', base, e);
+                errors.push(`${base.replace(/^https?:\/\//, '').split('/')[0]} → ${e.name}: ${e.message}`);
             }
         }
-        sendResponse({ ok: false, status: 0, data: { detail: 'Backend do CareerOps indisponível — confira se o computador está no Tailscale e se o app abre em https://mpbflndsk201-wsl.tabby-broadnose.ts.net:5174' } });
+        sendResponse({ ok: false, status: 0, data: { detail: 'Backend do CareerOps indisponível. Detalhes: ' + errors.join(' | ') } });
     })();
     return true;
 });
