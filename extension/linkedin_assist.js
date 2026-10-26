@@ -7,9 +7,15 @@
 
     const ACCENT = '#6c5ce7';
     const api = (method, path, body) => new Promise((resolve) => {
-        chrome.runtime.sendMessage({ action: 'copilotApi', method, path, body }, (res) => {
-            resolve(res || { ok: false, data: { detail: 'Sem resposta da extensão' } });
-        });
+        try {
+            chrome.runtime.sendMessage({ action: 'copilotApi', method, path, body }, (res) => {
+                const err = chrome.runtime.lastError;
+                resolve(res || { ok: false, data: { detail: err ? `Extensão: ${err.message} — recarregue a extensão e a página` : 'Sem resposta da extensão' } });
+            });
+        } catch (e) {
+            // the extension was reloaded/updated while this tab was open: the page needs a refresh
+            resolve({ ok: false, data: { detail: 'A extensão foi atualizada — recarregue esta página (F5)' } });
+        }
     });
     const errText = (res) => (res && res.data && (res.data.detail || res.data.error)) || 'Falha ao falar com o CareerOps';
     const clean = (t) => (t || '').replace(/\s+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();

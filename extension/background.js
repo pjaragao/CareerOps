@@ -1,15 +1,26 @@
-// CareerOps Background Service Worker — Stabilized Version 3.0
+// CareerOps Background Service Worker
+// Backend addresses, tried in order. The HTTPS one (nginx on the homelab, port 5174) works from any machine on
+// Tailscale; the HTTP ones only on the server itself. The first one that answers moves to the front.
+const API_BASES = [
+    'https://mpbflndsk201-wsl.tabby-broadnose.ts.net:5174/api',
+    'http://100.109.242.35:8005/api',
+    'http://127.0.0.1:8005/api',
+    'http://localhost:8005/api'
+];
+const preferBase = (url) => {
+    const i = API_BASES.findIndex((b) => url.startsWith(b));
+    if (i > 0) API_BASES.unshift(API_BASES.splice(i, 1)[0]);
+};
+// Never let an unreachable address hang the worker: every request gives up after 8 s and the next address is tried.
+const rawFetch = self.fetch.bind(self);
+self.fetch = (url, opts = {}) => rawFetch(url, { signal: AbortSignal.timeout(8000), ...opts }).then((res) => { preferBase(String(url)); return res; });
+
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === 'importProfile') {
         console.log('Background: Received profile data, attempting multi-IP sync...');
         
-        const endpoints = [
-            'http://127.0.0.1:8005/api/profile/import-extension',
-            'http://localhost:8005/api/profile/import-extension',
-            'http://100.109.242.35:8005/api/profile/import-extension',
-            'http://192.168.1.4:8005/api/profile/import-extension'
-        ];
+        const endpoints = API_BASES.map((b) => b + '/profile/import-extension');
 
         async function trySync() {
             for (const url of endpoints) {
@@ -45,11 +56,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         return true; 
     } else if (request.action === 'importJob') {
         console.log('Background: Received job data...');
-        const endpoints = [
-            'http://127.0.0.1:8005/api/jobs/import-extension',
-            'http://localhost:8005/api/jobs/import-extension',
-            'http://100.109.242.35:8005/api/jobs/import-extension'
-        ];
+        const endpoints = API_BASES.map((b) => b + '/jobs/import-extension');
 
         async function trySyncJob() {
             for (const url of endpoints) {
@@ -77,11 +84,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         return true;
     } else if (request.action === 'importUniversal') {
         console.log('Background: Received universal job data...');
-        const endpoints = [
-            'http://127.0.0.1:8005/api/jobs/import-universal',
-            'http://localhost:8005/api/jobs/import-universal',
-            'http://100.109.242.35:8005/api/jobs/import-universal'
-        ];
+        const endpoints = API_BASES.map((b) => b + '/jobs/import-universal');
 
         async function trySyncUniversal() {
             for (const url of endpoints) {
@@ -109,11 +112,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         return true;
     } else if (request.action === 'markAsApplied') {
         console.log('Background: Marking job as applied:', request.jobId);
-        const endpoints = [
-            'http://127.0.0.1:8005/api/jobs/mark-applied',
-            'http://localhost:8005/api/jobs/mark-applied',
-            'http://100.109.242.35:8005/api/jobs/mark-applied'
-        ];
+        const endpoints = API_BASES.map((b) => b + '/jobs/mark-applied');
 
         async function tryMarkApplied() {
             for (const url of endpoints) {
@@ -138,11 +137,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 // ── LinkedIn Copilot: user-triggered capture (right-click → "Enviar ao CareerOps Copilot") ──
 // Sends only what the user chose: the selected text (a post) or the current profile page.
 // Nothing is liked, commented, followed or sent on LinkedIn — the backend only drafts.
-const COPILOT_ENDPOINTS = [
-    'http://127.0.0.1:8005/api/linkedin-copilot/capture',
-    'http://localhost:8005/api/linkedin-copilot/capture',
-    'http://100.109.242.35:8005/api/linkedin-copilot/capture'
-];
+const COPILOT_ENDPOINTS = API_BASES.map((b) => b + '/linkedin-copilot/capture');
 
 chrome.runtime.onInstalled.addListener(() => {
     chrome.contextMenus.create({
@@ -199,11 +194,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 });
 
 // ── Profile filler: field texts (EN + PT) from the CareerOps backend ──
-const PROFILE_COPY_ENDPOINTS = [
-    'http://127.0.0.1:8005/api/linkedin-copilot/profile-copy',
-    'http://localhost:8005/api/linkedin-copilot/profile-copy',
-    'http://100.109.242.35:8005/api/linkedin-copilot/profile-copy'
-];
+const PROFILE_COPY_ENDPOINTS = API_BASES.map((b) => b + '/linkedin-copilot/profile-copy');
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action !== 'getProfileCopy') return;
@@ -222,16 +213,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 });
 
 // ── Copilot API proxy for linkedin_assist.js (HTTPS pages cannot call the HTTP backend directly) ──
-const COPILOT_API_BASES = [
-    'http://127.0.0.1:8005/api/linkedin-copilot',
-    'http://localhost:8005/api/linkedin-copilot',
-    'http://100.109.242.35:8005/api/linkedin-copilot'
-];
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action !== 'copilotApi') return;
     (async () => {
-        for (const base of COPILOT_API_BASES) {
+        for (const base of API_BASES.map((b) => b + '/linkedin-copilot')) {
             try {
                 const res = await fetch(base + request.path, {
                     method: request.method || 'GET',
@@ -245,7 +231,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 console.warn('Copilot API: failed to reach', base, e);
             }
         }
-        sendResponse({ ok: false, status: 0, data: { detail: 'Backend do CareerOps indisponível (porta 8005)' } });
+        sendResponse({ ok: false, status: 0, data: { detail: 'Backend do CareerOps indisponível — confira se o computador está no Tailscale e se o app abre em https://mpbflndsk201-wsl.tabby-broadnose.ts.net:5174' } });
     })();
     return true;
 });
