@@ -1,6 +1,7 @@
-// CareerOps — LinkedIn assist: AI comment drafts on posts, connect-without-note on profiles, and scoring of the people
-// listed on a page. Everything is drafted and filled in for you; the final click (Publicar / Enviar / Conectar) is
-// always yours. Nothing is posted, sent, liked or followed by this script.
+// CareerOps — LinkedIn assist: AI comment and reply drafts on posts, connect-without-note on profiles, and scoring of
+// the people listed on a page. Everything is drafted and filled in for you; the final click (Publicar / Responder /
+// Conectar) is always yours. The only things done for you follow from that click: liking the post or comment you just
+// answered (a pre-checked option you can turn off) and the invite you asked for with "Conectar".
 (() => {
     if (window.__careeropsAssist) return;
     window.__careeropsAssist = true;
@@ -77,9 +78,17 @@
     }
 
     // Puts text into LinkedIn's editors: contenteditable (comment box) or textarea (invite note)
-    function fill(el, text) {
+    function fill(el, text, append = false) {
         el.focus();
         if (el.isContentEditable) {
+            if (append && clean(el.innerText)) {
+                // reply boxes start with LinkedIn's @mention of the person: keep it and write after it
+                const sel = window.getSelection();
+                sel.selectAllChildren(el);
+                sel.collapseToEnd();
+                document.execCommand('insertText', false, ' ' + text);
+                return;
+            }
             document.execCommand('selectAll', false, null);
             document.execCommand('insertText', false, text);
         } else {
@@ -253,6 +262,7 @@
         actions.appendChild(button('Já comentei', () => api('PATCH', `/engagement/${item.id}`, { status: 'done', comment_draft: ta.value }).then(() => { toast('Registrado'); box.remove(); saveCommented(post, ta.value); }), false));
         actions.appendChild(button('Pular', () => api('PATCH', `/engagement/${item.id}`, { status: 'skipped' }).then(() => box.remove()), false));
         box.appendChild(actions);
+        likeToggle(box, 'Curtir o post ao comentar');
         promptRow(box, 'Refazer com um pedido (ex.: mais curto, discorde com educação)', again);
     }
 
@@ -384,17 +394,162 @@
     document.addEventListener('click', (e) => {
         const b = e.target.closest && e.target.closest('button');
         if (!b || own(b) || !(b.className.includes('comments-comment-box__submit-button') || SUBMIT.test(label(b)))) return;
+        if (isReplyAction(b)) return;   // a comment's "Responder" only opens the reply box
         let ed = null;
         let box = b.closest('form') || b.parentElement;
         for (let k = 0; k < 4 && box && !ed; k++, box = box.parentElement) ed = [...box.querySelectorAll(EDITOR)].find((el) => !own(el));
         const text = ed ? clean(ed.innerText) : '';
         if (text.length < 2) return;
         const post = findPosts().find((p) => p.contains(b));
-        if (post) saveCommented(post, text);
+        if (!post) return;
+        // a reply goes under the comment whose "Responder" you clicked last; anything else is a comment on the post
+        const target = lastReply && lastReply.post === post && lastReply.block.isConnected && ed
+            && (threadOf(lastReply.block, post).contains(ed) || lastReply.block.parentElement.contains(ed)) ? lastReply.block : null;
+        lastReply = null;
+        if (likeOnComment) setTimeout(() => likeAfterSend(post, target), 700);
+        if (!target) saveCommented(post, text);
     }, true);
 
+    // ── 👍 Like what you answer (pre-checked; remembered per browser) ────────────────────────────────────
+    let likeOnComment = true;
+    try { chrome.storage.local.get('likeOnComment', (v) => { if (v && v.likeOnComment === false) likeOnComment = false; }); } catch (e) { /* extension reloaded */ }
+    function likeToggle(box, text) {
+        const row = document.createElement('label');
+        row.style.cssText = 'display:flex;align-items:center;gap:6px;font-size:12px;color:#444;margin:4px 0;cursor:pointer';
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.checked = likeOnComment;
+        cb.addEventListener('change', () => { likeOnComment = cb.checked; chrome.storage.local.set({ likeOnComment: cb.checked }); });
+        row.append(cb, document.createTextNode(`👍 ${text}`));
+        box.appendChild(row);
+        return cb;
+    }
+    const LIKE_LABEL = /^(like|gostei|curtir)$/i;
+    const LIKE_ARIA = /^(react like|reagir com gostei|like |gostei |curtir )/i;
+    const LIKED = /unlike|remover|desfazer|liked|curtido/i;
+    const isLike = (b) => !own(b) && (LIKE_LABEL.test(label(b)) || LIKE_ARIA.test(b.getAttribute('aria-label') || ''));
+    function pressLike(btn) {
+        if (!btn) return false;
+        if (btn.getAttribute('aria-pressed') === 'true' || LIKED.test(btn.getAttribute('aria-label') || '')) return false;
+        btn.click();
+        return true;
+    }
+    function likeAfterSend(post, commentBlock) {
+        let btn = null;
+        if (commentBlock) {
+            btn = [...commentBlock.querySelectorAll('button, [role="button"]')].find(isLike);
+        } else {
+            const bar = actionBar(post);
+            btn = bar && [...bar.querySelectorAll('button, [role="button"]')].find(isLike);
+        }
+        if (pressLike(btn)) toast(commentBlock ? '👍 Comentário curtido' : '👍 Post curtido');
+    }
+
+    // ── ↩ Replies: "✨ Responder" on every comment; the AI continues the discussion or thanks and closes it ──
+    const REPLY = /^(reply|responder)$/i;
+    // the comment's own "Responder" (opens the reply box), not the send button of a reply box
+    const isReplyAction = (b) => !own(b) && REPLY.test(label(b)) && !b.closest('form')
+        && !(b.parentElement && b.parentElement.parentElement && b.parentElement.parentElement.querySelector(EDITOR));
+    let lastReply = null;   // { post, block }: the comment you are answering
+    document.addEventListener('click', (e) => {
+        const b = e.target.closest && e.target.closest('button, [role="button"]');
+        if (!b || !isReplyAction(b)) return;
+        const post = findPosts().find((p) => p.contains(b));
+        if (post) lastReply = { post, block: commentBlock(b, post) };
+    }, true);
+
+    // The comment around a "Responder" button: the largest block that holds only this one reply action
+    function commentBlock(replyBtn, post) {
+        let el = replyBtn;
+        while (el.parentElement && el.parentElement !== post
+            && [...el.parentElement.querySelectorAll('button, [role="button"]')].filter(isReplyAction).length === 1) el = el.parentElement;
+        return el;
+    }
+    // The thread: the smallest block above the comment that also holds other comments (parent + replies)
+    function threadOf(block, post) {
+        let el = block.parentElement;
+        while (el && el !== post && [...el.querySelectorAll('button, [role="button"]')].filter(isReplyAction).length < 2) el = el.parentElement;
+        return el && el !== post ? el : block;
+    }
+    const textOf = (el) => {
+        const copy = el.cloneNode(true);
+        copy.querySelectorAll('.careerops-card, .careerops-reply, button, ' + EDITOR).forEach((x) => x.remove());
+        return clean(copy.innerText);
+    };
+    function authorOf(block) {
+        const a = [...block.querySelectorAll('a[href*="/in/"]')].find((x) => personName(x.innerText || x.getAttribute('aria-label') || ''));
+        return a ? { name: personName(a.innerText || a.getAttribute('aria-label') || ''), self: isSelf(a.innerText || '') } : { name: null, self: false };
+    }
+
+    async function draftReply(replyBtn, post, opts = {}) {
+        const block = commentBlock(replyBtn, post);
+        const thread = threadOf(block, post);
+        block.parentElement.querySelectorAll(':scope > .careerops-card').forEach((c) => c.remove());
+        const box = card('CareerOps · resposta');
+        block.insertAdjacentElement('afterend', box);
+        const status = line(box, opts.instruction ? `Gerando com o seu pedido: “${opts.instruction}”…` : 'Lendo a conversa…');
+        const who = authorOf(block);
+        // your comment in this thread (the one being answered, usually)
+        const mineBtn = [...thread.querySelectorAll('button, [role="button"]')].filter(isReplyAction)
+            .map((b) => commentBlock(b, post)).find((bl) => bl !== block && authorOf(bl).self);
+        const me = mineBtn ? authorOf(mineBtn).name : null;
+        const info = postInfo(post);
+        const res = await api('POST', '/engagement/reply', {
+            post_text: info.post_text || '(post text not found)', author_name: info.author_name, post_url: undefined,
+            target_text: textOf(block).slice(0, 2000), target_author: who.name, thread: textOf(thread).slice(0, 4000),
+            my_comment: mineBtn ? textOf(mineBtn).slice(0, 2000) : null, my_name: me,
+            instruction: opts.instruction || null, previous_draft: opts.previous || null,
+        });
+        if (!res.ok) { status.textContent = errText(res); status.style.color = '#d63031'; return; }
+        const r = res.data;
+        status.textContent = r.kind === 'close' ? '🙏 Agradecer e encerrar' : '💬 Continuar a conversa';
+        status.style.fontWeight = '600';
+        if (r.reason) line(box, r.reason, '#777');
+        const ta = editor(box, r.reply);
+        const like = likeToggle(box, 'Curtir o comentário ao responder');
+        const again = (instruction) => draftReply(replyBtn, post, { instruction, previous: ta.value });
+        const actions = document.createElement('div');
+        actions.appendChild(button('Inserir na resposta', async () => {
+            replyBtn.click();
+            lastReply = { post, block };
+            const ed = await waitFor(() => [...thread.querySelectorAll(EDITOR)].find((el) => el.offsetParent !== null && !own(el))
+                || [...block.parentElement.querySelectorAll(EDITOR)].find((el) => el.offsetParent !== null && !own(el)));
+            if (!ed) { toast('Não achei a caixa de resposta — use Copiar', false); return; }
+            fill(ed, ta.value, true);
+            likeOnComment = like.checked;
+            toast('Inserido. Revise e clique em Responder.');
+            box.remove();
+        }));
+        actions.appendChild(button('Copiar', () => navigator.clipboard.writeText(ta.value).then(() => toast('Copiado')), false));
+        actions.appendChild(button(r.kind === 'close' ? '💬 Continuar em vez disso' : '🙏 Só agradecer', () =>
+            again(r.kind === 'close' ? 'Continue the discussion: answer their point with substance.' : 'Just thank them warmly and close the exchange.'), false));
+        actions.appendChild(button('🔄 Outra', () => again(opts.instruction), false));
+        box.appendChild(actions);
+        promptRow(box, 'Refazer com um pedido (ex.: discorde com educação, cite um exemplo)', again);
+    }
+
+    // Adds "✨ Responder" next to each comment's Responder; highlights replies to your own comments
+    function decorateReplies() {
+        findPosts().forEach((post) => {
+            [...post.querySelectorAll('button, [role="button"]')].filter(isReplyAction).forEach((rb) => {
+                if (rb.dataset.careeropsSeen && (rb.dataset.careeropsSeen === 'self' || (rb.nextElementSibling && rb.nextElementSibling.classList.contains('careerops-reply')))) return;
+                const block = commentBlock(rb, post);
+                const who = authorOf(block);
+                if (who.self) { rb.dataset.careeropsSeen = 'self'; return; }   // your own comment: nothing to answer
+                rb.dataset.careeropsSeen = '1';
+                const thread = threadOf(block, post);
+                const toMe = thread !== block && [...thread.querySelectorAll('a[href*="/in/"]')].some((a) => !block.contains(a) && isSelf(a.innerText || ''));
+                const b = button(toMe ? '✨ Responder (para você)' : '✨ Responder', () => draftReply(rb, post), toMe);
+                b.classList.add('careerops-reply');
+                b.title = 'Rascunho de resposta com IA: continua a conversa ou agradece e encerra';
+                b.style.cssText += ';font-size:11px;padding:2px 8px;margin-left:6px';
+                rb.insertAdjacentElement('afterend', b);
+            });
+        });
+    }
+
     const COMMENT_BTN = /^(comment|comentar)$/i;
-    const own = (el) => el.closest('.careerops-card, .careerops-bar, .careerops-actions');
+    const own = (el) => el.closest('.careerops-card, .careerops-bar, .careerops-actions, .careerops-reply');
 
     // The post's action bar (Like · Comment · Repost · Send): the smallest element holding its Comment and Repost buttons
     function actionBar(post) {
@@ -1075,6 +1230,7 @@
 
     function refresh() {
         decoratePosts();
+        decorateReplies();
         decorateEasyApply();
         decorateJobSave();
         if (!applyChecked && currentJobId()) startAutopilot();

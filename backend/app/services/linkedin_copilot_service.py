@@ -291,6 +291,22 @@ class LinkedInCopilotService:
               comment, "pending" if (instruction or relevance >= MIN_SCORE) and comment else "skipped"))
 
     @staticmethod
+    async def draft_reply(post_text: str, target_text: str, thread: Optional[str] = None, target_author: Optional[str] = None,
+                          my_comment: Optional[str] = None, my_name: Optional[str] = None, author_name: Optional[str] = None,
+                          instruction: Optional[str] = None, previous_draft: Optional[str] = None) -> dict:
+        """Answer to a reply in a comment thread: "continue" the discussion, or "close" it with a short thank-you."""
+        ai = await _skill("linkedin/engagement_reply.md", {
+            "post_text": post_text[:4000], "target_text": target_text[:2000], "thread": (thread or "")[:4000],
+            "target_author": target_author, "my_comment": (my_comment or "")[:2000], "my_name": my_name, "author_name": author_name,
+            "lang_name": detect_language(target_text if len(target_text) >= 40 else f"{target_text} {my_comment or post_text}"),
+            "instruction": (instruction or "")[:1000], "previous_draft": previous_draft,
+        })
+        reply = (ai.get("reply") or "").strip()
+        if not reply:
+            raise RuntimeError("A IA não devolveu uma resposta")
+        return {"kind": "close" if ai.get("kind") == "close" else "continue", "reason": ai.get("reason"), "reply": reply}
+
+    @staticmethod
     def reconcile_engagement() -> int:
         """Closes queue items you already commented on LinkedIn — also when you discarded the draft and wrote another.
 

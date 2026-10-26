@@ -214,6 +214,27 @@ async def add_engagement(req: EngagementIn):
         raise HTTPException(status_code=502, detail=str(e))
 
 
+class ReplyIn(BaseModel):
+    post_text: str = Field(..., min_length=10)
+    target_text: str = Field(..., min_length=1)
+    thread: Optional[str] = None
+    target_author: Optional[str] = None
+    my_comment: Optional[str] = None
+    my_name: Optional[str] = None
+    author_name: Optional[str] = None
+    instruction: Optional[str] = None
+    previous_draft: Optional[str] = None
+
+
+@router.post("/engagement/reply")
+async def draft_reply(req: ReplyIn):
+    """Drafts an answer to a reply in a comment thread (not stored: the extension inserts it and you send it)."""
+    try:
+        return await Copilot.draft_reply(**req.model_dump())
+    except RuntimeError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
 @router.patch("/engagement/{item_id}")
 async def update_engagement(item_id: int, req: EngagementUpdate):
     return _found(Copilot.update_engagement(item_id, req.status, req.comment_draft))
