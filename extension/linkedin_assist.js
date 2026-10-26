@@ -1,4 +1,4 @@
-// CareerOps — LinkedIn assist: AI comment drafts on posts, AI invite notes on profiles, and scoring of the people
+// CareerOps — LinkedIn assist: AI comment drafts on posts, connect-without-note on profiles, and scoring of the people
 // listed on a page. Everything is drafted and filled in for you; the final click (Publicar / Enviar / Conectar) is
 // always yours. Nothing is posted, sent, liked or followed by this script.
 (() => {
@@ -448,61 +448,107 @@
         });
     }
 
-    // ── 2. Profile: "🤝 Convite IA" ───────────────────────────────────────────────────────────────────
+    // ── 2. Profile: "🤝 Conectar" ───────────────────────────────────────────────────────────────────
     const isProfilePage = () => /^\/in\/[^/]+\/?$/.test(location.pathname);
     let profilePanel = null;
 
-    function inviteTextarea() {
-        const dialog = document.querySelector('div[role="dialog"], .artdeco-modal');
-        return dialog && dialog.querySelector('textarea[name="message"], textarea#custom-message, textarea');
+    // Connection requests go out WITHOUT a note (the free plan only allows a few personalized ones per month).
+    const CONNECT = /^(conectar|connect)$/i;
+    const SEND_NO_NOTE = ['enviar sem nota', 'send without a note', 'send without note'];
+    const SEND = ['enviar', 'send', 'enviar convite', 'send invitation'];
+    const inDialog = () => document.querySelector('div[role="dialog"], .artdeco-modal');
+    const btnLabel = (b) => clean(b.innerText || b.getAttribute('aria-label') || '').split('\n')[0].toLowerCase();
+
+    // "Connect" sits in the profile's action row or, for some profiles, inside the "More" menu
+    async function findConnect(main) {
+        const find = () => [...main.querySelectorAll('button, a, [role="button"], [role="menuitem"], div[aria-label]')]
+            .find((el) => el.offsetParent !== null && !el.closest('.careerops-card')
+                && (CONNECT.test(btnLabel(el)) || /^(convidar|invite) .*(conectar|connect)/i.test(el.getAttribute('aria-label') || '')));
+        let el = find();
+        if (el) return el;
+        const more = [...main.querySelectorAll('button')].find((b) => b.offsetParent !== null && /^(mais|more)$/i.test(btnLabel(b)) || /mais a[cç][oõ]es|more actions/i.test(b.getAttribute('aria-label') || ''));
+        if (more) { more.click(); el = await waitFor(() => find() || null, 2000); }
+        return el;
+    }
+
+    // Returns 'sent' | 'pending' | 'connected' | 'unavailable' | 'needs_user'
+    async function connectNoNote() {
+        const main = document.querySelector('main') || document.body;
+        const actions = [...main.querySelectorAll('button, a')].map(btnLabel);
+        if (actions.some((l) => /^(pendente|pending)$/.test(l))) return 'pending';
+        const target = await findConnect(main);
+        if (!target) return actions.some((l) => /^(mensagem|message)$/.test(l)) ? 'connected' : 'unavailable';
+        target.click();
+        const dlg = await waitFor(inDialog, 4000);
+        if (!dlg) return 'needs_user';
+        const btn = await waitFor(() => [...dlg.querySelectorAll('button')].find((b) => SEND_NO_NOTE.includes(btnLabel(b)))
+            || [...dlg.querySelectorAll('button')].find((b) => SEND.includes(btnLabel(b)) && !dlg.querySelector('input[type="email"], input[name="email"]')), 3000);
+        if (!btn) return 'needs_user';   // e.g. LinkedIn asks for the person's email: that one is yours
+        btn.click();
+        await wait(800);
+        return 'sent';
+    }
+
+    // Saves the profile as a prospect (scored), then connects on your click
+    async function ensureProspect() {
+        const main = document.querySelector('main') || document.body;
+        const name = clean((main.querySelector('h1') || {}).innerText || '');
+        const headline = clean((main.querySelector('.text-body-medium') || {}).innerText || '');
+        return api('POST', '/prospects', {
+            profile_url: location.origin + location.pathname, name: name || null, headline: headline || null,
+            profile_text: clean(main.innerText).slice(0, 6000),
+        });
+    }
+
+    async function runConnect(prospectId) {
+        const result = await connectNoNote();
+        const msg = {
+            sent: ['Convite enviado (sem nota) e registrado no CareerOps', true],
+            pending: ['Já existe um convite pendente para esta pessoa', true],
+            connected: ['Vocês já estão conectados', true],
+            unavailable: ['Não achei o botão Conectar neste perfil', false],
+            needs_user: ['O LinkedIn pediu algo a mais (ex.: e-mail): termine o convite manualmente', false],
+        }[result];
+        if (prospectId && ['sent', 'pending'].includes(result)) await api('PATCH', `/prospects/${prospectId}`, { status: 'invited' });
+        if (prospectId && result === 'connected') await api('PATCH', `/prospects/${prospectId}`, { status: 'accepted' });
+        toast(msg[0], msg[1]);
+        return result;
     }
 
     async function draftInvite() {
         if (profilePanel) profilePanel.remove();
-        profilePanel = card('CareerOps · convite');
-        profilePanel.style.cssText += ';position:fixed;right:16px;bottom:64px;width:360px;margin:0;z-index:2147483646';
+        profilePanel = card('CareerOps · conectar');
+        profilePanel.style.cssText += ';position:fixed;right:16px;bottom:64px;width:340px;margin:0;z-index:2147483646';
         document.body.appendChild(profilePanel);
         const status = line(profilePanel, 'Avaliando o perfil…');
-        const main = document.querySelector('main') || document.body;
-        const name = clean((main.querySelector('h1') || {}).innerText || '');
-        const headline = clean((main.querySelector('.text-body-medium') || {}).innerText || '');
-        const res = await api('POST', '/prospects', {
-            profile_url: location.origin + location.pathname, name: name || null, headline: headline || null,
-            profile_text: clean(main.innerText).slice(0, 6000),
-        });
+        const res = await ensureProspect();
         if (!res.ok) { status.textContent = errText(res); status.style.color = '#d63031'; return; }
         const p = res.data;
         status.textContent = `Encaixe ${p.fit ?? '?'} · ${p.market === 'br' ? 'Brasil' : p.market === 'intl' ? 'Exterior' : '—'} · ${p.segment || ''}`;
         if (p.reason) line(profilePanel, p.reason);
-        if (p.status === 'skipped' || !p.note_draft) { line(profilePanel, 'A IA sugere não convidar (fora dos seus mercados).', '#999'); return; }
-        const ta = editor(profilePanel, p.note_draft, 300);
-        line(profilePanel, 'Clique em Conectar → Adicionar nota, depois em "Inserir na nota". O envio é com você.', '#777');
+        if (p.status === 'skipped') line(profilePanel, 'A IA sugere não convidar (fora dos seus mercados).', '#999');
         const actions = document.createElement('div');
-        actions.appendChild(button('Inserir na nota', () => {
-            const target = inviteTextarea();
-            if (!target) { toast('Abra Conectar → Adicionar nota primeiro', false); return; }
-            fill(target, ta.value);
-            toast('Nota inserida. Revise e clique em Enviar.');
-        }));
-        actions.appendChild(button('Copiar', () => navigator.clipboard.writeText(ta.value).then(() => toast('Copiado')), false));
-        actions.appendChild(button('Convite enviado', () => api('PATCH', `/prospects/${p.id}`, { status: 'invited', note_draft: ta.value }).then(() => { toast('Registrado'); profilePanel.remove(); }), false));
+        actions.appendChild(button('Conectar sem nota', async () => { profilePanel.remove(); profilePanel = null; await runConnect(p.id); }));
         profilePanel.appendChild(actions);
-        profilePanel.__prospectId = p.id;
-        profilePanel.__note = ta;
     }
 
-    // Clicking LinkedIn's "Enviar" in the invite dialog marks the prospect as invited
+    // Opened from the CareerOps app ("Conectar"): <profile>#careerops-connect=<prospect id> connects and tells the app
+    async function autoConnectFromApp() {
+        const m = location.hash.match(/careerops-connect=(\d+)/);
+        if (!m || !isProfilePage()) return;
+        history.replaceState(null, '', location.pathname + location.search);
+        await waitFor(() => document.querySelector('main h1'), 10000);
+        await wait(1200);   // let the action row finish rendering
+        await runConnect(Number(m[1]));
+    }
+
+    // Clicking LinkedIn's own "Enviar" in the invite dialog (manual connect) marks the prospect as invited
     document.addEventListener('click', (e) => {
-        if (!profilePanel || !profilePanel.__prospectId) return;
         const b = e.target.closest('button');
         if (!b || !b.closest('div[role="dialog"], .artdeco-modal')) return;
-        const label = (b.innerText || b.getAttribute('aria-label') || '').trim().toLowerCase();
-        if (['enviar', 'send', 'enviar convite', 'send invitation', 'enviar sem nota', 'send without a note'].includes(label)) {
-            api('PATCH', `/prospects/${profilePanel.__prospectId}`, { status: 'invited', note_draft: profilePanel.__note.value });
-            toast('Convite registrado no CareerOps');
-            profilePanel.remove();
-            profilePanel = null;
-        }
+        if (![...SEND_NO_NOTE, ...SEND].includes(btnLabel(b)) || !isProfilePage()) return;
+        ensureProspect().then((res) => { if (res.ok) api('PATCH', `/prospects/${res.data.id}`, { status: 'invited' }); });
+        toast('Convite registrado no CareerOps');
     }, true);
 
     // ── 3. Lists of people: "⭐ Avaliar pessoas da página" ─────────────────────────────────────────────
@@ -976,7 +1022,7 @@
     fab.style.cssText = 'position:fixed;right:16px;bottom:16px;z-index:2147483645;display:flex;gap:6px';
     // Invite button: placed in the profile's own action row (next to Connect/Message); if that row is not found it
     // floats at the top right, below LinkedIn's nav — the bottom right is covered by the messaging dock
-    const inviteBtn = button('🤝 Convite IA', draftInvite);
+    const inviteBtn = button('🤝 Conectar (CareerOps)', draftInvite);
     inviteBtn.style.cssText += ';font-size:14px;padding:8px 16px;border-radius:20px;margin:0 0 0 8px;white-space:nowrap;flex:0 0 auto';
     const inviteFloat = 'position:fixed;top:72px;right:16px;z-index:2147483646;margin:0;box-shadow:0 4px 14px rgba(0,0,0,.3)';
     function placeInvite() {
@@ -1018,4 +1064,5 @@
     new MutationObserver(() => { clearTimeout(refresh.t); refresh.t = setTimeout(refresh, 400); })
         .observe(document.documentElement, { childList: true, subtree: true });
     refresh();
+    autoConnectFromApp();
 })();

@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
-  Megaphone, Sparkles, Send, Check, X, Copy, ExternalLink, Calendar, Users, MessageCircle, BarChart3, Link2, Plus, Undo2,
+  Megaphone, Sparkles, Send, Check, X, Copy, ExternalLink, Calendar, Users, MessageCircle, BarChart3, Link2, Plus, Undo2, UserPlus,
 } from 'lucide-react';
 import {
   linkedinCopilotService as svc, CopilotPost, CopilotStatus, Market, Inspiration, EngagementItem, Prospect, ProspectStatus, WeekMetrics,
@@ -287,7 +287,7 @@ const EngagementCard = ({ item, onMark }: { item: EngagementItem; onMark: (id: n
 
 // ── Prospects ─────────────────────────────────────────────────────────────
 const NEXT_STATUS: Partial<Record<ProspectStatus, { to: ProspectStatus; label: string }[]>> = {
-  to_contact: [{ to: 'invited', label: 'Convite enviado' }, { to: 'skipped', label: 'Pular' }],
+  to_contact: [{ to: 'invited', label: 'Já convidei' }, { to: 'skipped', label: 'Pular' }],
   invited: [{ to: 'accepted', label: 'Aceitou' }, { to: 'replied', label: 'Respondeu' }],
   accepted: [{ to: 'replied', label: 'Respondeu' }],
 };
@@ -308,7 +308,7 @@ const ProspectsTab = () => {
       await load();
     } catch (e) { alert(errMsg(e)); } finally { setLoading(false); }
   };
-  const update = async (id: number, patch: Partial<Pick<Prospect, 'status' | 'note_draft'>>) => { await svc.updateProspect(id, patch); load(); };
+  const update = async (id: number, patch: Partial<Pick<Prospect, 'status'>>) => { await svc.updateProspect(id, patch); load(); };
   return (
     <>
       <div className="panel">
@@ -326,7 +326,7 @@ const ProspectsTab = () => {
             placeholder="Headline, empresa, about… (cole o que tiver)" style={{ ...field, gridColumn: 'span 2', resize: 'vertical' }} />
         </div>
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1rem' }}>
-          <button className="btn btn-primary" onClick={add} disabled={loading}>{loading ? 'Analisando…' : 'Analisar e rascunhar convite'}</button>
+          <button className="btn btn-primary" onClick={add} disabled={loading}>{loading ? 'Analisando…' : 'Analisar e salvar'}</button>
         </div>
       </div>
       {data.items.map(p => <ProspectCard key={`${p.id}-${p.status}`} p={p} onUpdate={update} />)}
@@ -335,11 +335,12 @@ const ProspectsTab = () => {
   );
 };
 
-const ProspectCard = ({ p, onUpdate }: { p: Prospect; onUpdate: (id: number, patch: Partial<Pick<Prospect, 'status' | 'note_draft'>>) => void }) => {
-  const [note, setNote] = useState(p.note_draft || '');
+const ProspectCard = ({ p, onUpdate }: { p: Prospect; onUpdate: (id: number, patch: Partial<Pick<Prospect, 'status'>>) => void }) => {
+  // The extension finishes the job on LinkedIn: it opens the profile, clicks Conectar → "Enviar sem nota" and marks it as invited here
+  const connectUrl = p.profile_url ? `${p.profile_url.split('#')[0]}#careerops-connect=${p.id}` : null;
   return (
-    <div className="panel" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
-      <div>
+    <div className="panel" style={{ display: 'flex', justifyContent: 'space-between', gap: '1.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+      <div style={{ flex: '1 1 320px' }}>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6, flexWrap: 'wrap' }}>
           <span style={chip(STATUS_COLOR[p.status])}>{p.status}</span>
           <span style={chip('#00d4aa')}>fit {p.fit ?? '?'}</span>
@@ -350,17 +351,15 @@ const ProspectCard = ({ p, onUpdate }: { p: Prospect; onUpdate: (id: number, pat
         <div style={muted}>{[p.headline, p.company].filter(Boolean).join(' · ')}</div>
         {p.reason && <p style={{ ...muted, marginTop: 8 }}>{p.reason}</p>}
       </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        <textarea value={note} onChange={e => setNote(e.target.value.slice(0, 300))} rows={4} style={{ ...field, resize: 'vertical' }} />
-        <div style={{ ...muted, textAlign: 'right' }}>{note.length}/300</div>
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-          <button className="btn btn-secondary" onClick={() => copy(note)}><Copy size={15} /> Copiar nota</button>
-          {p.profile_url && <a className="btn btn-secondary" href={p.profile_url} target="_blank" rel="noreferrer"><ExternalLink size={15} /> Abrir perfil</a>}
-          {(NEXT_STATUS[p.status] || []).map(n => (
-            <button key={n.to} className={n.to === 'skipped' ? 'btn btn-secondary' : 'btn btn-primary'}
-              onClick={() => onUpdate(p.id, { status: n.to, ...(note !== (p.note_draft || '') ? { note_draft: note } : {}) })}>{n.label}</button>
-          ))}
-        </div>
+      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+        {p.status === 'to_contact' && connectUrl && (
+          <a className="btn btn-primary" href={connectUrl} target="_blank" rel="noreferrer"
+            title="Abre o perfil e a extensão envia o convite sem nota"><UserPlus size={15} /> Conectar</a>
+        )}
+        {p.profile_url && <a className="btn btn-secondary" href={p.profile_url} target="_blank" rel="noreferrer"><ExternalLink size={15} /> Abrir perfil</a>}
+        {(NEXT_STATUS[p.status] || []).map(n => (
+          <button key={n.to} className="btn btn-secondary" onClick={() => onUpdate(p.id, { status: n.to })}>{n.label}</button>
+        ))}
       </div>
     </div>
   );

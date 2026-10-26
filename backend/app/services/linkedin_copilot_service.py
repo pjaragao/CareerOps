@@ -289,12 +289,11 @@ class LinkedInCopilotService:
         })
         fit = _score(ai.get("fit"))
         market = ai.get("market") if ai.get("market") in ("br", "intl") else None
-        note = (ai.get("note") or "").strip()[:300] or None
         return _one("""
-            INSERT INTO public.linkedin_prospects (profile_url, name, headline, company, profile_text, market, segment, fit, reason, note_draft, status)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING *
+            INSERT INTO public.linkedin_prospects (profile_url, name, headline, company, profile_text, market, segment, fit, reason, status)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING *
         """, (profile_url, name or ai.get("name"), headline or ai.get("headline"), company or ai.get("company"), profile_text,
-              market, ai.get("segment"), fit, ai.get("reason"), note, "to_contact" if fit >= MIN_SCORE else "skipped"))
+              market, ai.get("segment"), fit, ai.get("reason"), "to_contact" if fit >= MIN_SCORE else "skipped"))
 
     @staticmethod
     async def score_people(people: List[Dict[str, Any]], topic: Optional[str] = None) -> List[dict]:
@@ -325,14 +324,13 @@ class LinkedInCopilotService:
                     continue
                 fit = _score(item.get("fit"))
                 market = item.get("market") if item.get("market") in ("br", "intl") else None
-                note = (item.get("note") or "").strip()[:300] or None
                 results[person["profile_url"]] = _one("""
-                    INSERT INTO public.linkedin_prospects (profile_url, name, headline, profile_text, market, segment, fit, reason, note_draft, status)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    INSERT INTO public.linkedin_prospects (profile_url, name, headline, profile_text, market, segment, fit, reason, status)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (profile_url) WHERE profile_url IS NOT NULL DO NOTHING
                     RETURNING *
                 """, (person["profile_url"], person["name"] or None, person["headline"] or None, person["headline"], market,
-                      item.get("segment"), fit, item.get("reason"), note, "to_contact" if fit >= MIN_SCORE else "skipped")) \
+                      item.get("segment"), fit, item.get("reason"), "to_contact" if fit >= MIN_SCORE else "skipped")) \
                     or _one("SELECT * FROM public.linkedin_prospects WHERE profile_url = %s", (person["profile_url"],))
         return [results[c["profile_url"]] for c in clean if c["profile_url"] in results]
 
