@@ -11,9 +11,46 @@ const preferBase = (url) => {
     const i = API_BASES.findIndex((b) => url.startsWith(b));
     if (i > 0) API_BASES.unshift(API_BASES.splice(i, 1)[0]);
 };
-// Never let an unreachable address hang the worker: every request gives up after 8 s and the next address is tried.
+// AI calls take 10–60 s, so real requests may run up to 3 min. Reachability is decided separately and fast:
+// apiBase() probes each address with a 6 s limit and remembers the one that answers for 5 minutes.
 const rawFetch = self.fetch.bind(self);
-self.fetch = (url, opts = {}) => rawFetch(url, { signal: AbortSignal.timeout(8000), ...opts }).then((res) => { preferBase(String(url)); return res; });
+self.fetch = (url, opts = {}) => rawFetch(url, { signal: AbortSignal.timeout(180000), ...opts }).then((res) => { preferBase(String(url)); return res; });
+
+let cachedBase = null;
+let cachedAt = 0;
+let probeErrors = [];
+async function apiBase(force = false) {
+    if (!force && cachedBase && Date.now() - cachedAt < 300000) return cachedBase;
+    probeErrors = [];
+    for (const base of [...API_BASES]) {
+        try {
+            const res = await rawFetch(base + '/linkedin-copilot/extension/info', { signal: AbortSignal.timeout(6000) });
+            if (res.ok) { cachedBase = base; cachedAt = Date.now(); preferBase(base); return base; }
+            probeErrors.push(`${base.split('/')[2]} → HTTP ${res.status}`);
+        } catch (e) {
+            probeErrors.push(`${base.split('/')[2]} → ${e.name}`);
+        }
+    }
+    cachedBase = null;
+    return null;
+}
+
+// One request to the reachable backend (no retry on other addresses, so an AI call never runs twice)
+async function callBackend(path, method, body) {
+    const base = await apiBase();
+    if (!base) return { ok: false, status: 0, data: { detail: 'Backend do CareerOps indisponível. Detalhes: ' + probeErrors.join(' | ') } };
+    try {
+        const res = await fetch(base + path, {
+            method: method || 'GET',
+            headers: { 'Content-Type': 'application/json' },
+            body: body ? JSON.stringify(body) : undefined
+        });
+        return { ok: res.ok, status: res.status, data: await res.json().catch(() => null) };
+    } catch (e) {
+        cachedBase = null;   // next call probes again
+        return { ok: false, status: 0, data: { detail: e.name === 'TimeoutError' ? 'A IA demorou mais de 3 minutos — tente de novo' : `Falha de rede: ${e.message}` } };
+    }
+}
 
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
@@ -137,7 +174,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 // ── LinkedIn Copilot: user-triggered capture (right-click → "Enviar ao CareerOps Copilot") ──
 // Sends only what the user chose: the selected text (a post) or the current profile page.
 // Nothing is liked, commented, followed or sent on LinkedIn — the backend only drafts.
-const COPILOT_ENDPOINTS = API_BASES.map((b) => b + '/linkedin-copilot/capture');
 
 chrome.runtime.onInstalled.addListener(() => {
     chrome.contextMenus.create({
@@ -155,21 +191,8 @@ function setBadge(text, color) {
 }
 
 async function sendToCopilot(payload) {
-    for (const url of COPILOT_ENDPOINTS) {
-        try {
-            const res = await fetch(url, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
-            if (res.ok) return await res.json();
-            console.warn('Copilot capture rejected by', url, res.status, await res.text());
-            return null;
-        } catch (e) {
-            console.warn('Copilot: failed to reach', url, e);
-        }
-    }
-    return null;
+    const r = await callBackend('/linkedin-copilot/capture', 'POST', payload);
+    return r.ok ? r.data : null;
 }
 
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
@@ -194,21 +217,10 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 });
 
 // ── Profile filler: field texts (EN + PT) from the CareerOps backend ──
-const PROFILE_COPY_ENDPOINTS = API_BASES.map((b) => b + '/linkedin-copilot/profile-copy');
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action !== 'getProfileCopy') return;
-    (async () => {
-        for (const url of PROFILE_COPY_ENDPOINTS) {
-            try {
-                const res = await fetch(url);
-                if (res.ok) { sendResponse({ ok: true, data: await res.json() }); return; }
-            } catch (e) {
-                console.warn('Profile copy: failed to reach', url, e);
-            }
-        }
-        sendResponse({ ok: false });
-    })();
+    callBackend('/linkedin-copilot/profile-copy', 'GET').then((r) => sendResponse(r.ok ? { ok: true, data: r.data } : { ok: false }));
     return true; // keep the channel open for the async response
 });
 
@@ -216,25 +228,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action !== 'copilotApi') return;
-    (async () => {
-        const errors = [];
-        for (const base of API_BASES.map((b) => b + '/linkedin-copilot')) {
-            try {
-                const res = await fetch(base + request.path, {
-                    method: request.method || 'GET',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: request.body ? JSON.stringify(request.body) : undefined
-                });
-                const data = await res.json().catch(() => null);
-                sendResponse({ ok: res.ok, status: res.status, data });
-                return;
-            } catch (e) {
-                console.warn('Copilot API: failed to reach', base, e);
-                errors.push(`${base.replace(/^https?:\/\//, '').split('/')[0]} → ${e.name}: ${e.message}`);
-            }
-        }
-        sendResponse({ ok: false, status: 0, data: { detail: 'Backend do CareerOps indisponível. Detalhes: ' + errors.join(' | ') } });
-    })();
+    callBackend('/linkedin-copilot' + request.path, request.method, request.body).then(sendResponse);
     return true;
 });
 
@@ -242,20 +236,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action !== 'backendStatus') return;
     (async () => {
-        for (const base of [...API_BASES]) {
-            const started = Date.now();
-            try {
-                const res = await fetch(base + '/linkedin-copilot/status');
-                if (!res.ok) continue;
-                const status = await res.json();
-                const info = await fetch(base + '/linkedin-copilot/extension/info').then((r) => (r.ok ? r.json() : null)).catch(() => null);
-                sendResponse({ ok: true, base, ms: Date.now() - started, status, serverVersion: info && info.version, appUrl: base.replace(/\/api$/, '') });
-                return;
-            } catch (e) {
-                console.warn('Status: failed', base, e);
-            }
-        }
-        sendResponse({ ok: false });
+        const started = Date.now();
+        const base = await apiBase(true);
+        if (!base) { sendResponse({ ok: false, errors: probeErrors }); return; }
+        const ms = Date.now() - started;
+        const status = await rawFetch(base + '/linkedin-copilot/status', { signal: AbortSignal.timeout(8000) }).then((r) => r.json()).catch(() => ({}));
+        const info = await rawFetch(base + '/linkedin-copilot/extension/info', { signal: AbortSignal.timeout(8000) }).then((r) => r.json()).catch(() => null);
+        sendResponse({ ok: true, base, ms, status, serverVersion: info && info.version, appUrl: base.replace(/\/api$/, '') });
     })();
     return true;
 });
@@ -263,21 +250,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 // ── Generic backend call (path under /api) with the JSON response, for content scripts ──
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action !== 'backendApi') return;
-    (async () => {
-        for (const base of [...API_BASES]) {
-            try {
-                const res = await fetch(base + request.path, {
-                    method: request.method || 'GET',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: request.body ? JSON.stringify(request.body) : undefined
-                });
-                sendResponse({ ok: res.ok, status: res.status, data: await res.json().catch(() => null) });
-                return;
-            } catch (e) {
-                console.warn('Backend API: failed', base, e);
-            }
-        }
-        sendResponse({ ok: false, status: 0, data: { detail: 'Backend do CareerOps indisponível' } });
-    })();
+    callBackend(request.path, request.method, request.body).then(sendResponse);
     return true;
 });
