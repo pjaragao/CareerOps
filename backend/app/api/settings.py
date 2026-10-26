@@ -14,15 +14,3 @@ async def update_settings(settings: Dict[str, Any]):
     if not success:
         raise HTTPException(status_code=500, detail="Failed to update settings")
     return {"ok": True}
-@router.get("/session-status")
-async def get_session_status():
-    from app.core.config import settings
-    import os
-    exists = settings.SESSION_FILE.exists()
-    mtime = 0
-    if exists:
-        mtime = os.path.getmtime(settings.SESSION_FILE)
-    return {
-        "exists": exists,
-        "last_updated": mtime
-    }

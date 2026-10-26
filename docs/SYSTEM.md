@@ -16,7 +16,7 @@ CareerOps is an AI-powered career automation platform that helps users:
 - **Build a Knowledge Base** from uploaded documents (PDF, DOCX) via **MarkItDown**
 - **Deep Context Engine**: Injects validated results/STAR cases into all AI flows ([docs/AI_CONTEXT_ENGINE.md](AI_CONTEXT_ENGINE.md))
 - Optimize their LinkedIn profile with AI-powered suggestions
-- Track applications through a Kanban pipeline
+- Track applications through a Kanban board
 
 ### Architecture Diagram
 
@@ -78,25 +78,22 @@ linkedin_resume/
 │   ├── scripts/                # Utility scripts (e.g. migration)
 │   └── main.py
 │
-├── frontend/                   # React + Vite dashboard
+├── frontend/                   # React + Vite app — five screens (App.tsx)
 │   └── src/
-│       ├── pages/
-│       │   ├── JobBoard.tsx         # Job listings table with AI actions
-│       │   ├── Strategies.tsx       # Search strategies (Ext. Automation)
-│       │   ├── LinkedInOptimizer.tsx # Full LinkedIn audit suite
-│       │   └── DocumentRepository.tsx # Onboarding & Document management
+│       ├── pages/Home.tsx           # Início: today's actions
+│       ├── pages/Profile.tsx · DocumentRepository.tsx · LinkedInTexts.tsx   # Meu Perfil tabs
+│       ├── pages/JobBoard.tsx · Interview.tsx   # Vagas tabs
+│       ├── pages/LinkedInCopilot.tsx
+│       └── pages/Settings.tsx · InstallExtension.tsx   # Configurações tabs
 │
 ├── extension/                  # Chrome Extension (Manifest V3)
-│   ├── content.js              # DOM scraping + Bulk Capture + Auto Search
-│   ├── background.js           # Service worker (sync to backend)
-│   ├── popup.html              # UI for Profile/Job/Bulk Import
+│   ├── content.js              # Job and profile import (one page at a time)
+│   ├── profile_filler.js       # "CareerOps · Perfil" panel on linkedin.com
+│   ├── background.js           # Sync to backend + "Enviar ao CareerOps Copilot" menu
+│   ├── popup.html              # Import button
+│   └── package.py              # Builds the download zip
 │
-├── linkedin-jobs/              # ⚠️ LEGACY Flask — Cleanup Mode
-│   ├── web.py                  # Simplified Flask (No scrapers)
-│   ├── job_evaluator.py        # [DEPRECATED] Ported to v2 service
-│   ├── resume_generator.py     # [DEPRECATED] Ported to v2 service
-│   ├── scraper.py              # [DELETED]
-│   └── migration.sql           # DB schema source of truth
+├── linkedin-jobs/.env(.example) # Environment file used by docker-compose (the legacy Flask app was removed)
 ```
 
 ---
@@ -106,12 +103,7 @@ linkedin_resume/
 ### 3.1 Job Import (via Extension)
 
 **Individual**: LinkedIn Page → Extension extracts DOM → Background.js POSTs to `/api/jobs/import-extension`.
-**Bulk**: LinkedIn Search → Extension iterates list → Clicks each job → Extracts description → Batch POSTs to Backend.
-
-### 3.2 Strategy Automation
-
-1. User clicks "Run Strategy" in Dashboard.
-2. Frontend triggers Extension via Message/Backend Flag.
+Bulk capture and search-strategy automation were removed: the extension only reads the page the user is on.
 
 ### 3.3 AI Onboarding & Knowledge Injection
 
@@ -168,7 +160,6 @@ Code: `api/linkedin_copilot.py` → `services/linkedin_copilot_service.py` (+ `s
 
 The backend should NEVER perform browser automation. All data ingestion must happen via the Extension. 
 
-**Sync Detection**: The system tracks `updated_at` (from LinkedIn imports) and `last_audit_at` (from Full Audits) in the `user_profiles` table to alert users when their AI analysis is out of sync with their actual LinkedIn profile.
 
 ---
 

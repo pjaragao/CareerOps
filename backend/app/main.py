@@ -3,7 +3,7 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
-from app.api import jobs, interview, profile, strategies, pipeline, dashboard, auth, actions, companies, settings as settings_api, documents, linkedin_copilot
+from app.api import jobs, interview, profile, actions, settings as settings_api, documents, linkedin_copilot
 from app.services.linkedin_copilot_service import LinkedInCopilotService
 
 app = FastAPI(
@@ -25,11 +25,6 @@ app.include_router(actions.router, prefix="/api/jobs")
 app.include_router(jobs.router, prefix="/api/jobs")
 app.include_router(interview.router, prefix="/api")
 app.include_router(profile.router, prefix="/api")
-app.include_router(strategies.router, prefix="/api")
-app.include_router(pipeline.router, prefix="/api")
-app.include_router(dashboard.router, prefix="/api")
-app.include_router(auth.router, prefix="/api/auth")
-app.include_router(companies.router, prefix="/api/companies")
 app.include_router(settings_api.router, prefix="/api")
 app.include_router(documents.router, prefix="/api/documents")
 app.include_router(linkedin_copilot.router, prefix="/api")

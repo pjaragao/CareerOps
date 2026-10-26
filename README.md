@@ -36,23 +36,12 @@
 - **Intelligent Consolidation**: Automatically merges and de-duplicates information from multiple sources into a single, persistent `user_data.md` "source of truth".
 - **Dynamic Context Injection**: Grounded AI responses via Jinja2 `{% include %}` — your validated history is automatically injected into interview prep, job matching, and LinkedIn optimization prompts.
 
-### 📊 LinkedIn Profile Optimizer
-- **PostgreSQL JSONB storage** — definitive source of truth for all profile data
-- **Profile Sync Alerts** — detect when your LinkedIn data has changed and needs a fresh AI audit
-- **One-click Full Audit** — comprehensive AI analysis of Score, SSI, Headlines, Bio, Experiences, and Skills in one step
-- **Profile audit** with strength score (0-100)
-- **SSI Score simulator** across 4 LinkedIn pillars
-- **Headline builder** with LinkedIn preview mockup
-- **Bio/Summary optimizer** — side-by-side original vs AI-enhanced
-- **Experience bullet rewriter** — action verbs + quantified impact
-- **Skills gap analysis** — keep/add/remove recommendations
-- **ATS match checker** — paste a job description and compare
-
-### 📋 Application Tracking
-- **Kanban board** with drag-and-drop (Applied → Screening → Interview → Offer)
-- **Job evaluation** — multi-dimensional scoring (match, north star, compensation, culture)
-- **Interview prep** — STAR+R story bank with auto-generation
-- **Pipeline queue** — URL-based job import queue
+### 🧭 Five screens
+- **Início** — what to do today: drafts to review, comments and invites against targets, applications in progress
+- **Meu Perfil** — profile data and the two master CVs (Brazil PT / abroad EN), the knowledge base, and the LinkedIn texts in both languages
+- **Vagas** — job list and Kanban (Applied → Interview → Offer); per job: tailored CV, cover letter, DM, chat and PDF; interview prep (STAR stories)
+- **LinkedIn Copilot** — posts, engagement, prospecting and metrics (below)
+- **Configurações** — AI keys/models and the extension install guide
 
 ### 📣 LinkedIn Copilot (human-in-the-loop)
 - **Two markets** — Brazil (Portuguese: engineering, sanitation, technical-financial modeling) and abroad (English: data, finance, modeling), with a master CV for each in `config/`

@@ -76,48 +76,4 @@ export const profileService = {
     });
     return response.data;
   },
-  importFromLinkedin: async () => {
-    const response = await api.post('/profile/import-linkedin');
-    return response.data;
-  },
-  optimizeSection: async (section: string, content: string, lang: string = 'pt', strategy_context?: any) => {
-    const response = await api.post<{ result: string }>('/profile/optimize', { section, content, lang, strategy_context });
-    return response.data.result;
-  },
-  getScore: async (content: string) => {
-    const response = await api.post('/profile/score', { content });
-    return response.data;
-  },
-  getHeadlineVariants: async (lang: string, count = 3, strategy_context?: any) => {
-    const response = await api.post('/profile/headline-variants', { lang, count, strategy_context });
-    return response.data;
-  },
-  optimizeExperience: async (lang: string, strategy_context?: any) => {
-    const response = await api.post('/profile/optimize-experience', { lang, strategy_context });
-    return response.data;
-  },
-  restructureExperience: async (lang: string, strategy_context?: any) => {
-    const response = await api.post('/profile/restructure-experience', { lang, strategy_context });
-    return response.data;
-  },
-  analyzeSkills: async (targetRole: string, lang: string = 'pt', strategy_context?: any) => {
-    const response = await api.post('/profile/analyze-skills', { target_role: targetRole, lang, strategy_context });
-    return response.data;
-  },
-  simulateSSI: async () => {
-    const response = await api.post('/profile/ssi-simulate');
-    return response.data;
-  },
-  atsMatch: async (jobDescription: string, lang: string = 'pt', strategy_context?: any) => {
-    const response = await api.post('/profile/ats-match', { job_description: jobDescription, lang, strategy_context });
-    return response.data;
-  },
-  getLatestAnalysis: async (type: string) => {
-    const response = await api.get(`/profile/optimizer-analysis?type=${type}`);
-    return response.data.analysis;
-  },
-  runFullAudit: async (lang: string, strategy_context?: any) => {
-    const response = await api.post('/profile/run-full-audit', { lang, strategy_context });
-    return response.data.results;
-  }
 };

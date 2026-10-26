@@ -371,63 +371,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     } else if (request.action === 'extractUniversal') {
         performUniversalExtraction();
         sendResponse({status: 'started'});
-    } else if (request.action === 'bulkCapture') {
-        performBulkCapture();
-        sendResponse({status: 'started'});
-    } else if (request.action === 'runStrategy') {
-        const { keywords, locations, remote_only } = request.data;
-        const query = encodeURIComponent(keywords.join(' OR '));
-        const loc = encodeURIComponent(locations[0] || 'Brasil');
-        let url = `https://www.linkedin.com/jobs/search/?keywords=${query}&location=${loc}&sortBy=DD`;
-        if (remote_only) url += '&f_WT=2';
-        
-        updateVisualStatus(`🔍 Navegando para busca: ${keywords.join(', ')}...`);
-        window.location.href = url;
-        sendResponse({status: 'navigating'});
     }
     return true;
 });
 
-async function performBulkCapture() {
-    updateVisualStatus('🔍 Iniciando captura em massa...');
-    const jobCards = Array.from(document.querySelectorAll('.jobs-search-results-list__list-item, [data-job-id]'));
-    
-    if (jobCards.length === 0) {
-        updateVisualStatus('❌ Nenhuma vaga encontrada na lista.', true);
-        setTimeout(() => chrome.storage.local.remove(['careerops_import_active']), 3000);
-        return;
-    }
-
-    updateVisualStatus(`📋 Encontradas ${jobCards.length} vagas. Capturando...`);
-    
-    const isSavedJobsPage = window.location.href.includes('/my-items/saved-jobs/');
-
-    for (let i = 0; i < jobCards.length; i++) {
-        const card = jobCards[i];
-        card.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        
-        // Selector for saved jobs page vs search page
-        const clickable = isSavedJobsPage 
-            ? card.querySelector('a[href*="/jobs/view/"]')
-            : card.querySelector('a.job-card-container__link, .job-card-list__title');
-
-        if (clickable) {
-            clickable.click();
-            updateVisualStatus(`⏳ Capturando ${i+1}/${jobCards.length}...`);
-            await wait(2800); // Wait more for detail loading
-            
-            const jobData = extractCurrentJobData();
-            
-            if (jobData.title && jobData.description) {
-                chrome.runtime.sendMessage({ action: 'importJob', data: jobData });
-            }
-        }
-    }
-    updateVisualStatus('✅ Captura em massa concluída!');
-    setTimeout(() => chrome.storage.local.remove(['careerops_import_active', 'careerops_status']), 3000);
-}
-
-// --- STATUS SYNC & FORM ASSISTANT ---
+// --- STATUS SYNC ---
 document.addEventListener('click', async (e) => {
     // 1. Detect Application Submission (Easy Apply)
     const btn = e.target.closest('button');
@@ -439,34 +387,7 @@ document.addEventListener('click', async (e) => {
             chrome.runtime.sendMessage({ action: 'markAsApplied', jobId });
         }
     }
-
-    // 2. Form Assistant UI Injection (Lazy check for modal)
-    if (btn && (btn.innerText.includes('Candidatura simplificada') || btn.innerText.includes('Easy Apply'))) {
-        setTimeout(injectFormAssistant, 1500);
-    }
 });
-
-function injectFormAssistant() {
-    const modal = document.querySelector('.jobs-easy-apply-modal');
-    if (!modal || document.getElementById('careerops-assist-btn')) return;
-
-    const footer = modal.querySelector('.artdeco-modal__footer');
-    if (footer) {
-        const assistBtn = document.createElement('button');
-        assistBtn.id = 'careerops-assist-btn';
-        assistBtn.innerText = '✨ IA Assist';
-        assistBtn.style.cssText = 'background: #8b5cf6; color: white; border: none; padding: 8px 12px; border-radius: 6px; font-weight: bold; margin-right: 10px; cursor: pointer;';
-        assistBtn.onclick = handleFormAssist;
-        footer.prepend(assistBtn);
-    }
-}
-
-async function handleFormAssist() {
-    const questions = Array.from(document.querySelectorAll('.jobs-easy-apply-form-section__grouping')).map(q => q.innerText.split('\n')[0]);
-    updateVisualStatus('🤖 Gerando respostas com IA...');
-    // This would call a backend route to get answers based on profile
-    alert('Funcionalidade em desenvolvimento: IA irá gerar respostas para: ' + questions.join(', '));
-}
 
 // Auto-resume if middle of an import
 window.addEventListener('load', async () => {

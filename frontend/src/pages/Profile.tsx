@@ -127,24 +127,10 @@ const ProfilePage = () => {
     <div className="animate-fade-in">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
         <div>
-          <h1 style={{ fontSize: '2rem', fontWeight: 700, marginBottom: '0.5rem' }}>Profile & Onboarding</h1>
-          <p style={{ color: 'var(--text-muted)' }}>Set up your professional data for AI-powered job matching.</p>
+          <h1 style={{ fontSize: '2rem', fontWeight: 700, marginBottom: '0.5rem' }}>Meu Perfil</h1>
+          <p style={{ color: 'var(--text-muted)' }}>Dados profissionais e os CVs base (exterior e Brasil). O perfil do LinkedIn é importado pela extensão.</p>
         </div>
         <div style={{ display: 'flex', gap: '1rem' }}>
-          <button className="btn btn-secondary" onClick={async () => {
-            setLoading(true);
-            try {
-              await profileService.importFromLinkedin();
-              await loadData();
-              alert("Successfully imported from LinkedIn!");
-            } catch (e) {
-              alert("Failed to import from LinkedIn. Check your session.");
-            } finally {
-              setLoading(false);
-            }
-          }} disabled={loading}>
-            <Globe size={18} /> Import from LinkedIn
-          </button>
           <label className="btn btn-secondary" style={{ cursor: 'pointer' }}>
             <Wand2 size={18} /> AI Onboarding
             <input type="file" hidden onChange={handleFileUpload} accept=".pdf,.doc,.docx" />

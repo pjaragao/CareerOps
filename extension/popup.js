@@ -1,6 +1,5 @@
 document.addEventListener('DOMContentLoaded', () => {
     const importBtn = document.getElementById('import-btn');
-    const bulkBtn = document.getElementById('bulk-btn');
     const cancelBtn = document.getElementById('cancel-btn');
     const statusText = document.getElementById('status-text');
     const loader = document.getElementById('loader');
@@ -10,20 +9,15 @@ document.addEventListener('DOMContentLoaded', () => {
         const { careerops_import_active, careerops_status } = await chrome.storage.local.get(['careerops_import_active', 'careerops_status']);
         
         const isLinkedIn = tab?.url?.includes('linkedin.com');
-        const isSearch = isLinkedIn && (tab?.url?.includes('/jobs/search') || tab?.url?.includes('/jobs/collections'));
-        const isSaved = isLinkedIn && tab?.url?.includes('/my-items/saved-jobs/');
 
         if (careerops_import_active) {
             importBtn.disabled = true;
-            bulkBtn.disabled = true;
             importBtn.innerText = 'Processando...';
             statusText.innerText = careerops_status || 'Iniciando...';
             loader.style.display = 'block';
             cancelBtn.style.display = 'flex';
         } else {
             importBtn.disabled = false;
-            bulkBtn.disabled = !(isSearch || isSaved);
-            bulkBtn.style.display = (isSearch || isSaved) ? 'flex' : 'none';
             cancelBtn.style.display = 'none';
             loader.style.display = 'none';
 
@@ -75,13 +69,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (isProfile) chrome.tabs.sendMessage(tab.id, { action: 'extractProfile' });
         else if (isJob) chrome.tabs.sendMessage(tab.id, { action: 'extractJob' });
         else chrome.tabs.sendMessage(tab.id, { action: 'extractUniversal' });
-    });
-
-    bulkBtn.addEventListener('click', async () => {
-        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-        await chrome.storage.local.set({ careerops_import_active: true, careerops_status: 'Iniciando captura em massa...' });
-        await ensureContentScript(tab);
-        chrome.tabs.sendMessage(tab.id, { action: 'bulkCapture' });
     });
 
     cancelBtn.addEventListener('click', async () => {

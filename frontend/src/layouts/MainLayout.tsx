@@ -1,36 +1,15 @@
 import React from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
-import { 
-  LayoutDashboard, 
-  UserCircle, 
-  Target, 
-  Briefcase, 
-  GitPullRequest, 
-  MessageSquare, 
-  Settings,
-  Rocket,
-  Shield,
-  Building2,
-  FileText,
-  Layout,
-  Megaphone,
-  Puzzle
-} from 'lucide-react';
+import { Home, UserCircle, Briefcase, Megaphone, Settings, Rocket } from 'lucide-react';
+import { linkedinCopilotService } from '../services/linkedinCopilotService';
 
 const Sidebar = () => {
   const navItems = [
-    { icon: <LayoutDashboard size={20} />, label: 'Dashboard', path: '/' },
-    { icon: <UserCircle size={20} />, label: 'User Profile', path: '/profile' },
-    { icon: <FileText size={20} />, label: 'Document Repository', path: '/onboarding' },
-    { icon: <Target size={20} />, label: 'Search Strategies', path: '/strategies' },
-    { icon: <Layout size={20} />, label: 'Job Board', path: '/jobs' },
-    { icon: <Building2 size={20} />, label: 'Empresas', path: '/companies' },
-    { icon: <GitPullRequest size={20} />, label: 'Pipeline', path: '/pipeline' },
-    { icon: <MessageSquare size={20} />, label: 'Interview Prep', path: '/interview' },
-    { icon: <Shield size={20} />, label: 'LinkedIn Optimizer', path: '/linkedin-optimizer' },
+    { icon: <Home size={20} />, label: 'Início', path: '/' },
+    { icon: <UserCircle size={20} />, label: 'Meu Perfil', path: '/perfil' },
+    { icon: <Briefcase size={20} />, label: 'Vagas', path: '/vagas' },
     { icon: <Megaphone size={20} />, label: 'LinkedIn Copilot', path: '/linkedin-copilot' },
-    { icon: <Puzzle size={20} />, label: 'Instalar extensão', path: '/extensao' },
-    { icon: <Settings size={20} />, label: 'Settings', path: '/settings' },
+    { icon: <Settings size={20} />, label: 'Configurações', path: '/configuracoes' },
   ];
 
   return (
@@ -43,7 +22,8 @@ const Sidebar = () => {
         {navItems.map((item) => (
           <div key={item.path} className="nav-item">
             <NavLink 
-              to={item.path} 
+              to={item.path}
+              end={item.path === "/"}
               className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
             >
               {item.icon}
@@ -57,32 +37,19 @@ const Sidebar = () => {
 };
 
 const TopBar = () => {
-  const [status, setStatus] = React.useState({ linkedin: false, ai: true });
+  // Publishing through the official LinkedIn API (LinkedIn Copilot); without it, posts are copied and pasted by hand.
+  const [connected, setConnected] = React.useState<boolean | null>(null);
 
   React.useEffect(() => {
-    const checkStatus = async () => {
-       try {
-         const res = await fetch('/api/auth/status');
-         const data = await res.json();
-         setStatus(prev => ({ ...prev, linkedin: data.active }));
-       } catch (e) {}
-    };
-    checkStatus();
-    const interval = setInterval(checkStatus, 30000);
-    return () => clearInterval(interval);
+    linkedinCopilotService.status().then(st => setConnected(st.connected)).catch(() => setConnected(null));
   }, []);
 
   return (
     <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '1rem 2rem', gap: '1.5rem', background: 'rgba(0,0,0,0.2)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.8rem' }}>
-        <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: status.linkedin ? '#00d4aa' : '#ff6b6b' }}></div>
-        <span style={{ color: 'var(--text-muted)' }}>LinkedIn:</span>
-        <span style={{ color: '#fff' }}>{status.linkedin ? 'Connected' : 'Disconnected'}</span>
-      </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.8rem' }}>
-        <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: status.ai ? '#00d4aa' : '#ff6b6b' }}></div>
-        <span style={{ color: 'var(--text-muted)' }}>AI Services:</span>
-        <span style={{ color: '#fff' }}>{status.ai ? 'Ready' : 'Error'}</span>
+        <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: connected ? '#00d4aa' : '#ffb020' }}></div>
+        <span style={{ color: 'var(--text-muted)' }}>Publicação no LinkedIn:</span>
+        <span style={{ color: '#fff' }}>{connected === null ? '—' : connected ? 'API conectada' : 'manual (copiar e colar)'}</span>
       </div>
     </div>
   );

@@ -393,9 +393,9 @@ const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
 ];
 
 const LinkedInCopilot = () => {
-  const [tab, setTab] = useState<Tab>('posts');
-  const [status, setStatus] = useState<CopilotStatus | null>(null);
   const [params, setParams] = useSearchParams();
+  const [tab, setTab] = useState<Tab>(() => (TABS.find(t => t.id === params.get('tab'))?.id ?? 'posts'));
+  const [status, setStatus] = useState<CopilotStatus | null>(null);
   const loadStatus = useCallback(() => svc.status().then(setStatus).catch(() => setStatus(null)), []);
   useEffect(() => { svc.status().then(setStatus).catch(() => setStatus(null)); }, []);
   useEffect(() => {
