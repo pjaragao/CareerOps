@@ -39,7 +39,11 @@ INSPIRATION — a post by someone else ({{ inspiration.author_name or "unknown a
 """
 {{ inspiration.post_text }}
 """
-Write about the SAME THEME from the candidate's own experience and point of view (agree, disagree or add a missing angle).
+{% if inspiration.note %}The candidate already commented on it — their stance, build on it (do not repeat it word for word):
+"""
+{{ inspiration.note }}
+"""
+{% endif %}Write about the SAME THEME from the candidate's own experience and point of view (agree, disagree or add a missing angle).
 Never copy or paraphrase its sentences, never quote it, never mention the author by name.
 {% endif %}
 {% if recent_posts %}

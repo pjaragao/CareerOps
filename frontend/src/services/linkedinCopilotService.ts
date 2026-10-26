@@ -53,6 +53,7 @@ export interface Inspiration {
   post_url: string | null;
   author_name: string | null;
   post_text: string;
+  note: string | null;
   used_count: number;
   created_at: string;
 }

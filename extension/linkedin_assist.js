@@ -130,14 +130,39 @@
 
     const CUT = /\n(add a comment|adicionar um coment[aá]rio|most relevant|mais relevantes|\d[\d.,]*\s*(reactions?|rea[cç][oõ]es|comments?|coment[aá]rios)\b|like\ncomment|gostei\ncomentar)/i;
 
+    // Post author in the new feed: the first named /in/ or /company/ link that isn't social context ("X likes this")
+    const SOCIAL = /\b(likes?|loves?|celebrates?|supports?|finds?|commented|reposted|follows?|curtiu|gostou|comentou|republicou|celebrou|apoiou|amou|achou)\b/i;
+    const META = /^(•.*|\d+\s*(s|m|min|h|d|w|sem|mo|y|a)\b.*|\+?\s*follow|following|seguir|seguindo|promoted|promovido|verified|premium|feed post|publicação no feed|.*•\s*(1st|2nd|3rd\+?|1º|2º|3º\+?))$/i;
+    function actorOf(post) {
+        for (const a of post.querySelectorAll('a[href*="/in/"], a[href*="/company/"]')) {
+            if (a.closest('.careerops-card, .careerops-bar, .careerops-actions, .comments-comments-list, [class*="comments-list"]')) continue;
+            const name = clean(a.innerText).split('\n')[0].replace(/\s*•.*$/, '').trim();
+            if (!name || name.length > 80 || /^(view|ver)\b/i.test(name)) continue;
+            const ctx = clean((a.parentElement && a.parentElement.innerText) || '');
+            if (ctx.length < 160 && SOCIAL.test(ctx.replace(name, ''))) continue;
+            const lines = clean(post.innerText).split('\n').map((l) => l.trim()).filter(Boolean);
+            const i = lines.indexOf(name);
+            const headline = i < 0 ? null : lines.slice(i + 1, i + 5).find((l) => l !== name && !META.test(l) && l.length > 2) || null;
+            return { name, headline };
+        }
+        return null;
+    }
+
+    // Post id from React's data, through urn_bridge.js (page world)
+    function reactUrn(post) {
+        post.setAttribute('data-careerops-ask', '1');
+        document.dispatchEvent(new CustomEvent('careerops-urn'));
+        post.removeAttribute('data-careerops-ask');
+        return post.getAttribute('data-careerops-urn');
+    }
+
     function postInfo(post) {
         const urnHolder = [post, ...post.querySelectorAll('[data-urn], [data-id], a[href*="urn:li:"]')]
             .map((el) => (el.getAttribute('data-urn') || el.getAttribute('data-id') || el.getAttribute('href') || ''))
             .concat(Array.from({ length: 6 }, (_, k) => { let a = post; for (let n = 0; n <= k && a; n++) a = a.parentElement; return a ? (a.getAttribute('data-urn') || '') : ''; }))
             .map((v) => (v.match(/urn:li:(activity|ugcPost|share):\d+/) || [])[0]).find(Boolean);
         const textEl = post.querySelector('.update-components-text, .feed-shared-inline-show-more-text, .feed-shared-update-v2__description, [data-test-id="main-feed-activity-card__commentary"]');
-        const authorEl = post.querySelector('.update-components-actor__title span[aria-hidden="true"], .update-components-actor__name, .feed-shared-actor__name')
-            || post.querySelector('a[href*="/in/"] span[aria-hidden="true"], a[href*="/in/"], a[href*="/company/"]');
+        const authorEl = post.querySelector('.update-components-actor__title span[aria-hidden="true"], .update-components-actor__name, .feed-shared-actor__name');
         const headlineEl = post.querySelector('.update-components-actor__description span[aria-hidden="true"], .update-components-actor__description');
         let text;
         let comments = '';
@@ -148,27 +173,37 @@
         } else {
             // read the post without our own bar/cards, cut before reactions/comments, drop the author header
             const copy = post.cloneNode(true);
-            copy.querySelectorAll('.careerops-bar, .careerops-actions, .careerops-card, .careerops-badge').forEach((el) => el.remove());
+            copy.querySelectorAll(`.careerops-bar, .careerops-actions, .careerops-card, .careerops-badge, ${EDITOR}`).forEach((el) => el.remove());
             document.body.appendChild(copy);
             copy.style.cssText = 'position:absolute;left:-99999px;top:0;width:600px';
             text = copy.innerText || '';
             copy.remove();
             const m = text.match(CUT);
             if (m) { if (!comments) comments = text.slice(m.index); text = text.slice(0, m.index); }
-            const HEADER = /^(\d+\s*(s|m|min|h|d|w|sem|mo|y|a)\b.*|(following|seguindo|follow|seguir)\b.*|…|\.\.\.|•.*|.*•\s*(1st|2nd|3rd\+?|1º|2º|3º\+?)|promoted|promovido|edited|editado)$/i;
-            let lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
+            const HEADER = /^(\d+\s*(s|m|min|h|d|w|sem|mo|y|a)\b.*|(following|seguindo|follow|seguir)\b.*|…|\.\.\.|•.*|.*•\s*(1st|2nd|3rd\+?|1º|2º|3º\+?)|promoted|promovido|edited|editado|feed post|publicação no feed)$/i;
+            let lines = text.split('\n').map((l) => l.replace(/[\u200b-\u200d\ufeff]/g, '').trim()).filter((l) => l && !/^(show translation|ver tradução|traduzir|see translation)$/i.test(l));
             let last = -1;
             lines.slice(0, 8).forEach((l, k) => { if (HEADER.test(l)) last = k; });
             if (last >= 0) lines = lines.slice(last + 1);
             lines = lines.map((l) => l.replace(/\s*…\s*(see more|ver mais|more|mais)$/i, '')).filter((l) => l && !HEADER.test(l));
+            // the actor block (name, headline, followers) goes before the text; carousel/counter leftovers at the end
+            const who = actorOf(post);
+            if (who) {
+                const i = lines.slice(0, 8).indexOf(who.name);
+                if (i >= 0) lines = lines.slice(i + 1).filter((l, k) => !(k < 3 && (l === who.headline || /^[\d.,]+\s*(followers|seguidores)$/i.test(l))));
+            }
+            while (lines.length && /^([\d\s/.,]+|\d+\s*(pages?|páginas?))$/i.test(lines[lines.length - 1])) {
+                if (/pages?|páginas?/i.test(lines.pop()) && lines.length) lines.pop();   // "Title / 8 pages": drop the title too
+            }
             text = lines.join('\n');
         }
-        const author = authorEl ? clean(authorEl.innerText).split('\n')[0] : null;
+        const who = authorEl ? { name: clean(authorEl.innerText).split('\n')[0], headline: headlineEl ? clean(headlineEl.innerText) : null } : actorOf(post);
+        const urn = urnHolder || reactUrn(post);
         return {
-            post_url: urnHolder ? `https://www.linkedin.com/feed/update/${urnHolder}/` : null,
+            post_url: urn ? `https://www.linkedin.com/feed/update/${urn}/` : null,
             post_text: clean(text).slice(0, 6000),
-            author_name: author,
-            author_headline: headlineEl ? clean(headlineEl.innerText).slice(0, 300) : null,
+            author_name: who ? who.name : null,
+            author_headline: who && who.headline ? who.headline.slice(0, 300) : null,
             other_comments: clean(comments).slice(0, 3000) || null,
         };
     }
@@ -215,7 +250,7 @@
         }));
         actions.appendChild(button('Copiar', () => navigator.clipboard.writeText(ta.value).then(() => toast('Copiado')), false));
         actions.appendChild(button('🔄 Gerar outro', () => again(opts.instruction), false));
-        actions.appendChild(button('Já comentei', () => api('PATCH', `/engagement/${item.id}`, { status: 'done', comment_draft: ta.value }).then(() => { toast('Registrado'); box.remove(); }), false));
+        actions.appendChild(button('Já comentei', () => api('PATCH', `/engagement/${item.id}`, { status: 'done', comment_draft: ta.value }).then(() => { toast('Registrado'); box.remove(); saveCommented(post, ta.value); }), false));
         actions.appendChild(button('Pular', () => api('PATCH', `/engagement/${item.id}`, { status: 'skipped' }).then(() => box.remove()), false));
         box.appendChild(actions);
         promptRow(box, 'Refazer com um pedido (ex.: mais curto, discorde com educação)', again);
@@ -259,6 +294,33 @@
             }
         }, true);
     }
+
+    // ── Posts you comment on become saved topics (📌) automatically, with your comment as your angle ──
+    const SUBMIT = /^(post|publicar|comment|comentar|reply|responder)$/i;
+
+    function saveCommented(post, comment) {
+        if (post.__careeropsSaved) return;
+        const info = postInfo(post);
+        if (info.post_text.length < 20) return;
+        post.__careeropsSaved = true;
+        const note = comment ? `Você comentou: ${comment}`.slice(0, 2000) : null;
+        api('POST', '/inspirations', { ...info, note }).then((res) => {
+            if (res.ok) toast('📌 Tema salvo — você comentou neste post'); else post.__careeropsSaved = false;
+        });
+    }
+
+    // LinkedIn's own comment submit (with or without our draft): read the comment before LinkedIn clears the box
+    document.addEventListener('click', (e) => {
+        const b = e.target.closest && e.target.closest('button');
+        if (!b || own(b) || !(b.className.includes('comments-comment-box__submit-button') || SUBMIT.test(label(b)))) return;
+        let ed = null;
+        let box = b.closest('form') || b.parentElement;
+        for (let k = 0; k < 4 && box && !ed; k++, box = box.parentElement) ed = [...box.querySelectorAll(EDITOR)].find((el) => !own(el));
+        const text = ed ? clean(ed.innerText) : '';
+        if (text.length < 2) return;
+        const post = findPosts().find((p) => p.contains(b));
+        if (post) saveCommented(post, text);
+    }, true);
 
     const COMMENT_BTN = /^(comment|comentar)$/i;
     const own = (el) => el.closest('.careerops-card, .careerops-bar, .careerops-actions');

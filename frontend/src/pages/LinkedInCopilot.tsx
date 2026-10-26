@@ -184,7 +184,7 @@ const PostsTab = ({ connected }: { connected: boolean }) => {
         <div className="panel">
           <h3 style={{ marginBottom: '0.6rem' }}>📌 Temas salvos ({inspirations.length})</h3>
           <p style={{ ...muted, marginBottom: '0.8rem' }}>
-            Posts que você salvou no feed pela extensão. "Gerar post" escreve um post seu ({MARKET_LABEL[market]}) sobre o mesmo tema, a partir da sua experiência — sem copiar o original.
+            Posts que você salvou no feed pela extensão ou em que comentou (salvos sozinhos, com o seu comentário). "Gerar post" escreve um post seu ({MARKET_LABEL[market]}) sobre o mesmo tema, a partir da sua experiência — sem copiar o original.
           </p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {inspirations.map(i => (
@@ -193,6 +193,7 @@ const PostsTab = ({ connected }: { connected: boolean }) => {
                   <strong style={{ fontSize: '0.85rem' }}>{i.author_name || 'Autor desconhecido'}</strong>
                   {i.used_count > 0 && <span style={{ ...muted, marginLeft: 6 }}>· usado {i.used_count}x</span>}
                   <div style={{ ...muted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{i.post_text}</div>
+                  {i.note && <div style={{ ...muted, color: 'var(--accent, #00d4aa)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>💬 {i.note}</div>}
                 </div>
                 {i.post_url && <a className="btn btn-secondary" href={i.post_url} target="_blank" rel="noreferrer"><ExternalLink size={14} /></a>}
                 <button className="btn btn-primary" disabled={loading} onClick={() => fromInspiration(i.id)}><Sparkles size={14} /> Gerar post</button>

@@ -203,7 +203,11 @@ class LinkedInCopilotService:
         if post_url:
             existing = _one("SELECT * FROM public.linkedin_inspirations WHERE post_url = %s", (post_url,))
             if existing:
-                return existing
+                # saved again (e.g. by hand, then commented): fill what was missing — your comment, author, headline
+                return _one("""
+                    UPDATE public.linkedin_inspirations SET note = COALESCE(note, %s), author_name = COALESCE(author_name, %s),
+                           author_headline = COALESCE(author_headline, %s) WHERE id = %s RETURNING *
+                """, (note, author_name, author_headline, existing["id"]))
         return _one("""
             INSERT INTO public.linkedin_inspirations (post_url, author_name, author_headline, post_text, note)
             VALUES (%s, %s, %s, %s, %s) RETURNING *

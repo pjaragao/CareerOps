@@ -66,7 +66,7 @@ async def profile_copy():
 
 
 # ── Browser extension download (zip built from the extension folder baked into the image) ──
-EXTENSION_FILES = ["manifest.json", "background.js", "content.js", "content.css", "profile_filler.js", "linkedin_assist.js", "popup.html", "popup.js"]
+EXTENSION_FILES = ["manifest.json", "background.js", "content.js", "content.css", "profile_filler.js", "linkedin_assist.js", "urn_bridge.js", "popup.html", "popup.js"]
 
 
 def _extension_dir():
