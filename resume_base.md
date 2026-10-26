@@ -1,108 +1,70 @@
-# PAULO JOSÉ ARAGÃO JR
+# PAULO JOSÉ ARAGÃO JR.
 
-**Data & Automation Engineer | AI/LLM Integration Specialist | Full-Stack Developer**
+**Applied AI Engineer | LLM Agents & Financial Systems | Engineer & former CFO**
 
-Florianópolis/SC – Brazil | +55 00 00000-0000 | pjaragaojr@gmail.com | linkedin.com/in/paulojrarj
+Florianópolis, Brazil (UTC−3) | Open to relocation to the EU or US (visa sponsorship required) and to remote roles
+pjaragaojr@gmail.com | +55 00 00000-0000 | linkedin.com/in/paulojrarj | github.com/pjaragao
 
 ---
 
 ## PROFESSIONAL SUMMARY
 
-Versatile engineer with 14+ years of experience bridging engineering, data analytics, project management, and cutting-edge technology. Proven track record of leading digital transformation initiatives — from ERP migrations and BIM implementation to AI-powered automation workflows and full-stack web application development. Recognized for rapid technology adoption, critical thinking, and ability to deliver complex cross-functional projects. Currently leveraging AI/LLM tools and vibe coding methodologies to build production-grade web applications, automated pipelines, and intelligent business solutions.
+Engineer and former CFO with 15+ years in infrastructure and corporate finance, now building production AI systems. I ship LLM-powered software end to end — agents with tool calling and MCP, database-enforced guardrails, Python and TypeScript on PostgreSQL — for domains where mistakes cost money: accounting, tax, trading and infrastructure. I pair engineering discipline (2,000+ automated database tests, CI/CD, architecture decision records) with hands-on financial modeling from nearly 18 years at an infrastructure consultancy: pricing ~90 tenders a year, coordinating a World Bank–financed urban program and running the firm's finances as CFO.
 
 ---
 
-## CORE COMPETENCIES
+## SKILLS
 
-### Technology & AI
-- **AI & LLM Integration**: Prompt engineering, AI-powered workflow automation (n8n), Claude, ChatGPT, Gemini, Antigravity, Roocode
-- **Vibe Coding**: Rapid full-stack web application development using AI-assisted coding workflows
-- **Full-Stack Development**: React, Next.js, TypeScript, Node.js, HTML/CSS, REST APIs, python. Using AI-assisted coding workflows
-- **Database & Backend**: SQL, SQLite, PostgreSQL, Supabase (Auth, Edge Functions, Realtime, RLS), Docker
-- **API Integration**: Government APIs, third-party services, webhook-driven architectures
-- **Data Analysis & Visualization**: Python, SQL, Power BI, Tableau, advanced Excel modeling
-- **AI-powered Automation & Low-Code**: n8n, PowerApps, Power Automate, SharePoint integrations
-- **DevOps & Infrastructure**: Docker, Git/GitHub, CI/CD (GitHub Actions), Vercel deployment
-
-### Engineering & Management
-- **Project Management**: Full lifecycle delivery ($5M–$50M scope), budget control, risk management
-- **Process Optimization**: Lean methodologies, pricing automation, proposal efficiency improvements
-- **Technical Leadership**: Cross-functional team coordination, stakeholder management, client negotiation
-- **Regulatory Compliance**: Environmental regulations, ISO 9001, ISO 14001, BIM standards (BEP creation)
-- **Financial Analysis**: in utilities projects: Feasibility studies (DCF), cost estimating, CAPEX/OPEX analysis, tariff modeling
-- **Digital Transformation**: ERP implementation, SharePoint migration, BIM methodology adoption, AI-powered automation, AI-driven process optimization, AI-driven full-stack web application development
+- **AI & LLM:** AI agents, tool calling, Model Context Protocol (MCP), prompt engineering, guardrails and prompt-injection defense, human-in-the-loop, multi-provider routing (OpenRouter, Gemini, Claude, Ollama), TimesFM forecasting, n8n
+- **Software:** Python (FastAPI, Flask), TypeScript (Next.js, React), PostgreSQL (PL/pgSQL, row-level security, pgTAP, pgmq), Supabase, Docker, GitHub Actions CI/CD, REST APIs and webhooks, Linux
+- **Finance:** financial modeling, DCF and feasibility studies, concession and tariff modeling, CAPEX/OPEX, budgeting and KPIs, cost accounting, pricing, Power BI, SQL, Excel
+- **Infrastructure:** water, wastewater, drainage and solid waste; sanitation planning; environmental management; public procurement (QCBS/LCS); project management; ERP, BIM, ISO 9001
 
 ---
 
 ## PROFESSIONAL EXPERIENCE
 
-### Senior Engineer / Project & Data Manager
-**MPB Engineering** | Florianópolis/SC – Brazil | Aug 2011 – Present (14+ years)
+### Applied AI Engineer — Self-employed
+**Florianópolis, Brazil (remote)** | Feb 2026 – Present
 
-**As Data & Technology Leader:**
-- Built full-stack web applications (React/Next.js + Supabase/PostgreSQL) using vibe coding methodology, delivering production apps with authentication, real-time data sync, and government API integrations
-- Designed and deployed AI-automated workflows using n8n and LLM APIs (Gemini, Claude, ChatGPT) for document generation, data extraction, and business process automation
-- Developed custom dashboards and reporting tools using Python, SQL, and Power BI, increasing operational visibility
-- Created PowerApps/Power Automate solutions integrated with SharePoint Online and ERP systems, eliminating manual data entry processes
+Build and operate AI products end to end as sole engineer, using AI-assisted development (Claude Code) with automated tests and CI as the quality gate.
 
-**As Project Manager & Engineering Leader:**
-- Managed 15+ concurrent engineering projects ($2M–$50M scope) with 85% on-time delivery and zero budget overruns. Developing KPIs and dashboards to monitor project progress and performance
-- Led company-wide digital transformation: ERP implementation (including database migration and cost apportionment methodology), SharePoint 2010 → Online migration with cross-departmental improvements
-- Coordinated BIM methodology adoption: hired consultants, managed software training, created company BEP standards, built family libraries, and modernized hardware/software infrastructure
-- Developed innovative proposal pricing methodology based on objective metrics (project type, dimension, risk factors), reducing bid preparation time
+- **CentralOps — AI-native retail ERP and omnichannel platform.** ~95k-line system (Next.js 16/TypeScript, async Python workers, PostgreSQL/Supabase): point of sale, inventory ledger, double-entry accounting, cash flow and P&L, payroll, Brazilian tax and e-invoicing; 133 migrations, 2,000+ pgTAP tests, CI/CD with gated production migrations, 8 ADRs.
+- Put the customer-facing LLM agent behind an MCP server (16 tools) that acts only through database RPCs scoped by signed short-lived tokens and row-level security; a guardrail validator checks every price, stock level and coupon against that run's tool results, and autopilot is limited to whitelisted intents, with handoff to a human.
+- **Trading Copilot (B3).** Tracks analyst signals, sends orders to MetaTrader 5 with confirmation, reconciles broker statements for real costs and slippage, computes capital-gains tax and backtests strategies with TimesFM forecasts; 100+ tests.
+- **Multi-tenant WhatsApp AI agent** for fantasy-football leagues: per-league isolation, LLM fallback chain, scheduled reports and live alerts; 300+ tests. Also built CareerOps (FastAPI/React prompt-skills engine) and a Gemini-based public-tender classifier; all self-hosted on Docker/Coolify.
 
-**As Commercial & Financial Analyst:**
-- Analised and/or prepared 90+ financial proposals annually integrating historical project data, labor allocation models, risk analysis, and competitive pricing strategies (QCBS and LCS selection processes)
-- Conducted feasibility studies with discounted cash flow analysis for municipal water and wastewater concessions, defining tariff structures considering demand projections, regulatory compliance, and efficiency benchmarks
+### Independent Consultant — Infrastructure Engineering & Project Finance
+**Florianópolis, Brazil** | Feb 2026 – Present
 
-**As Sanitary & Environmental Engineer:**
-- Authored and reviewed municipal sanitation plans (water, sewage, drainage, solid waste) compliant with federal/state regulations, covering diagnosis, prognosis, investment programs, and service quality targets
-- Performed engineering alternative analyses (CAPEX/OPEX evaluation) for public infrastructure projects serving municipalities across Brazil
+- Advise large Brazilian corporate groups (under NDA) on major infrastructure projects: coordination of sanitation engineering projects and engineering-financial models (CAPEX/OPEX, cash flow, feasibility) for solid-waste infrastructure.
 
-### Intern
-**MPB Engineering** | Florianópolis/SC – Brazil | May 2008 – Aug 2011
-- Supported financial proposal preparation, sewage project design, treatment project analysis, and technical report development
+### MPB Engineering — Florianópolis, Brazil
+**Consultancy for water, wastewater, urban, highway-environmental and solid-waste infrastructure** | May 2008 – Jan 2026
 
-### International Work Experience
-**PF Chang's** | Ft Lauderdale, FL – USA | Dec 2008 – Mar 2009
-- Participated in international work experience program during college, independently securing employment and developing advanced English fluency in a fast-paced service environment
+**Finance Director (CFO)** | Feb 2023 – Jan 2026
+- Led a 5-person finance team; introduced the annual budget with monthly variance tracking and the KPIs used to monitor operational goals.
+- Built BI reporting on department and project performance and major expenses; redesigned ERP cost accounting with timesheet-based labor allocation.
+- Automated reporting and document workflows with n8n, LLM APIs and Power Platform integrated with the ERP and SharePoint, eliminating manual data entry.
+
+**Senior Engineer — Projects, Proposals & Digital Transformation** | Aug 2011 – Jan 2023
+- Managed 5–7 concurrent contracts (~US$4M a year) of US$0.2–0.4M each, supporting infrastructure investments of US$20–150M; owned scope, schedule, budget, risk and client reporting.
+- General coordinator and engineer of record for the **World Bank–financed Lagoas do Norte Program** in Teresina (2014–2019): proposal and integrated design of sewerage for 312,000 residents, 28 km of drainage, water, roads, a 1 MW biogas plant and BIM-modeled urban design across ~1,300 ha.
+- Engineer of record on 46 registered engagements, including the Mearim river-basin plan (99,000 km², 2.1M people), water systems for state utilities (up to 1,250 L/s), a sanitary-landfill design and environmental management of highway programs (BR-470 for DNIT; Arteris concession, 357 km).
+- Prepared financial proposals for the firm's ~90 tenders a year (QCBS/LCS) and designed a metrics-based pricing method that significantly cut bid-preparation time.
+- Built DCF feasibility and tariff models for municipal water and wastewater concessions and analyzed concession processes for four municipalities.
+- Led the firm's ERP, SharePoint Online and BIM transformations with in-house staff.
+
+**Engineering Intern** | May 2008 – Aug 2011
 
 ---
 
 ## EDUCATION
 
-**MBA in Building Information Modeling (BIM)** | Universidade Paulista (UNIP) | 2021
-- Specialized in BIM methodology, digital transformation in construction, and engineering process optimization
-
-**MBA in Business Management** | Fundação Getulio Vargas (FGV) | 2015
-- Strategic business management, financial analysis, decision-making, team leadership, and business simulation
-
-**Bachelor of Sanitary & Environmental Engineering** | Universidade Federal de Santa Catarina (UFSC) | 2011
-- Comprehensive training in hydraulics, hydrology, water resources, environmental management, and engineering systems
-
----
-
-## EMERGING TECH SKILLS & PROJECTS
-
-- **Full-Stack Web Apps (Vibe Coding)**: Built production applications with Next.js, React, TypeScript, Supabase (PostgreSQL + Auth + Edge Functions + Realtime), including push notifications, i18n, and role-based access control
-- **API Integrations**: Government APIs (public data endpoints), sports data APIs (Sleeper), social auth (Google, Apple), webhook-driven event processing
-- **AI Automation Pipelines**: Designed n8n workflows for document generation, web scraping (Tavily), AI-powered content creation, and PDF automation (Gotenberg/Docker)
-- **DevOps & Deployment**: Docker containerization, GitHub Actions CI/CD, Vercel hosting, Supabase Edge Functions, environment management
-- **Open-Source Contributions**: Active in automation and AI tooling communities
-
----
+- **B.Eng., Sanitary and Environmental Engineering** — Federal University of Santa Catarina (UFSC), Brazil | 2011
+- **MBA in Business Management** (executive postgraduate program) — Fundação Getulio Vargas (FGV) | 2015
+- **MBA in Building Information Modeling** (postgraduate program) — Universidade Paulista (UNIP) | 2021
 
 ## LANGUAGES
 
-- **Portuguese**: Native
-- **English**: Fluent (C1) — lived and worked in the USA
-- **Spanish**: Intermediate (B1)
-
----
-
-## INTERESTS
-
-- Fantasy sports analytics and web application development
-- AI/LLM automation and workflow optimization
-- Financial markets and investment analysis
-- Craft beer brewing and outdoor sports
+Portuguese (native) | English (fluent, C1 — lived and worked in the US) | Spanish (intermediate, B1)
