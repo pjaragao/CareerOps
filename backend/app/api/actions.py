@@ -9,6 +9,7 @@ from app.services.profile_service import ProfileService
 from app.services.pdf_service import PDFService
 from app.services.skill_service import SkillService
 from app.services.ai_service import AIService
+from app.services.ai_settings_service import detect_language
 from app.core.config import settings
 
 router = APIRouter(tags=["job-actions"])
@@ -31,22 +32,12 @@ def get_tone_instruction(tone: str) -> str:
     return "Tone: Semi-formal, balanced, professional but accessible."
 
 def get_job_lang(job: dict) -> str:
+    """Portuguese only for Portuguese job ads; English otherwise (ties and Spanish included)."""
     lang = job.get('language')
     if lang:
         return "Portuguese" if "pt" in lang.lower() else "English"
-    
-    desc = job.get('description', '').lower()
-    if not desc:
-        return "Portuguese"
-        
-    # Heurística simples de detecção
-    pt_indicators = [' requisitos ', ' experiência ', ' sobre a vaga ', ' benefícios ', ' currículo ']
-    en_indicators = [' requirements ', ' experience ', ' about the role ', ' benefits ', ' resume ', ' description ']
-    
-    pt_score = sum(1 for word in pt_indicators if word in desc)
-    en_score = sum(1 for word in en_indicators if word in desc)
-    
-    return "Portuguese" if pt_score >= en_score else "English"
+    text = f"{job.get('job_title') or ''} {job.get('description') or ''}"
+    return "Portuguese" if detect_language(text) == "Portuguese" else "English"
 
 @router.post("/{job_id}/generate-resume")
 async def generate_resume(job_id: int, options: ActionOptions):
