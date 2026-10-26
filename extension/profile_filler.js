@@ -13,12 +13,12 @@
     };
     const UI = {
         en: { present: 'Present', headline: 'Headline', about: 'About', positions: 'Experience', projects: 'Projects',
-              skills: 'Skills', remove: 'Remove / fix', copy: 'Copy', insert: 'Insert', title: 'Title', description: 'Description',
+              skills: 'Skills', remove: 'Remove / fix', education: 'Education', licenses: 'Licenses & certifications', languages: 'Languages', degree: 'Degree', field: 'Field of study', copy: 'Copy', insert: 'Insert', title: 'Title', description: 'Description',
               hint: 'Click a field in LinkedIn\'s edit form, then “Insert”. Review and click Save on LinkedIn.',
               noField: 'Click the LinkedIn field first, then “Insert”.', optional: 'optional', top: 'Top 5', all: 'Add these',
               howto: 'English profile: Profile → “Add profile in another language” → English. Fill name, headline, About and each position title/description.' },
         pt: { present: 'o momento', headline: 'Título', about: 'Sobre', positions: 'Experiência', projects: 'Projetos',
-              skills: 'Competências', remove: 'Apagar / corrigir', copy: 'Copiar', insert: 'Inserir', title: 'Cargo', description: 'Descrição',
+              skills: 'Competências', remove: 'Apagar / corrigir', education: 'Formação acadêmica', licenses: 'Licenças e certificados', languages: 'Idiomas', degree: 'Diploma', field: 'Área de estudo', copy: 'Copiar', insert: 'Inserir', title: 'Cargo', description: 'Descrição',
               hint: 'Clique num campo do formulário de edição do LinkedIn e depois em “Inserir”. Revise e clique em Salvar no LinkedIn.',
               noField: 'Clique primeiro no campo do LinkedIn e depois em “Inserir”.', optional: 'opcional', top: 'Top 5', all: 'Adicionar',
               howto: 'Perfil principal em português. As competências e os projetos são únicos para os dois idiomas: cadastre em inglês.' },
@@ -177,6 +177,24 @@
             const when = `${fmtDate(p.start, lang)} – ${fmtDate(p.end, lang)}`;
             panel.appendChild(textBlock(`${p.id}:title`, t.title, p[lang].title, when));
             panel.appendChild(textBlock(`${p.id}:desc`, `${t.description} — ${p[lang].title}`, p[lang].description));
+        }
+
+        section(t.education);
+        for (const e of data.education || []) {
+            const when = `${e.school} · ${e.start}–${e.end}`;
+            panel.appendChild(textBlock(`${e.id}:degree`, t.degree, e[lang].degree, when));
+            panel.appendChild(textBlock(`${e.id}:field`, t.field, e[lang].field, when));
+            panel.appendChild(textBlock(`${e.id}:desc`, `${t.description} — ${e[lang].field}`, e[lang].description));
+        }
+
+        section(t.licenses);
+        for (const l of data.licenses || []) {
+            panel.appendChild(textBlock(`${l.id}:name`, t.title, l[lang].name, `${l.issuer} · ${l.credential_id}`));
+        }
+
+        section(t.languages);
+        for (const [i, l] of (data.languages || []).entries()) {
+            panel.appendChild(textBlock(`lang:${i}`, t.languages, l[lang]));
         }
 
         section(t.skills);

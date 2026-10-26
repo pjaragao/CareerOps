@@ -136,6 +136,36 @@ PROJECTS = [
      "pt": {"title": "Radar de Licitações", "description": "Busca na API do Portal Nacional de Contratações Públicas (PNCP) em vários estados e classifica os editais conforme o perfil da empresa com Gemini."}},
 ]
 
+EDUCATION = [
+    {"id": "ufsc", "school": "Universidade Federal de Santa Catarina (UFSC)", "start": "2005", "end": "2011",
+     "en": {"degree": "Bachelor of Engineering (B.Eng.)", "field": "Sanitary and Environmental Engineering",
+            "description": "Hydraulics, hydrology and water resources; water supply and treatment; urban and industrial wastewater treatment; urban and industrial solid waste; water-pollution control; environmental impact assessment and management; geoprocessing."},
+     "pt": {"degree": "Bacharelado em Engenharia", "field": "Engenharia Sanitária e Ambiental",
+            "description": "Hidráulica, hidrologia e recursos hídricos; abastecimento e tratamento de água; tratamento de efluentes urbanos e industriais; resíduos sólidos urbanos e industriais; controle da poluição hídrica; avaliação de impactos e gestão ambiental; geoprocessamento."}},
+    {"id": "fgv", "school": "Fundação Getulio Vargas (FGV)", "start": "2013", "end": "2015",
+     "en": {"degree": "MBA (executive postgraduate program)", "field": "Business Management",
+            "description": "Strategic management and value creation, finance and decision-making, leadership; business-simulation capstone."},
+     "pt": {"degree": "MBA (pós-graduação lato sensu)", "field": "Gestão Empresarial",
+            "description": "Gestão estratégica e criação de valor, finanças e tomada de decisão, liderança; jogo de negócios como trabalho final."}},
+    {"id": "unip", "school": "Universidade Paulista (UNIP)", "start": "2019", "end": "2021",
+     "en": {"degree": "MBA (postgraduate program)", "field": "Building Information Modeling (BIM)",
+            "description": "BIM for engineering design: 3D modeling, 4D planning and 5D cost estimating; leading BIM adoption in engineering firms."},
+     "pt": {"degree": "MBA (pós-graduação lato sensu)", "field": "Modelagem da Informação da Construção (BIM)",
+            "description": "BIM no projeto de engenharia: modelagem 3D, planejamento 4D e orçamento 5D; condução da implantação do BIM em empresas de engenharia."}},
+]
+
+LICENSES = [
+    {"id": "crea", "issuer": "CREA-SC — Conselho Regional de Engenharia e Agronomia de Santa Catarina", "credential_id": "SC 108928-7",
+     "en": {"name": "Registered Engineer — Sanitary and Environmental Engineering (Brazil)"},
+     "pt": {"name": "Engenheiro Sanitarista e Ambiental — registro profissional"}},
+]
+
+LANGUAGES = [
+    {"en": "Portuguese — Native or bilingual proficiency", "pt": "Português — Nível nativo ou bilíngue"},
+    {"en": "English — Full professional proficiency (C1; lived and worked in the US)", "pt": "Inglês — Fluência profissional (C1; morei e trabalhei nos EUA)"},
+    {"en": "Spanish — Limited working proficiency (B1)", "pt": "Espanhol — Proficiência profissional limitada (B1)"},
+]
+
 PROFILE = {
     "en": {
         "headline": "Data, Financial Modeling & AI | Forecasting, Valuation & Analytics | Python · SQL · PostgreSQL | ex-CFO · 15+ yrs Infrastructure Finance | Open to EU/US relocation · Remote",
@@ -147,6 +177,9 @@ PROFILE = {
     },
     "positions": POSITIONS,
     "projects": PROJECTS,
+    "education": EDUCATION,
+    "licenses": LICENSES,
+    "languages": LANGUAGES,
     "skills_top": ["Financial Modeling", "Data Analysis", "Python", "Artificial Intelligence (AI)", "Sanitation Engineering"],
     "skills": ["Data Science", "Forecasting", "Financial Analysis", "Water & Wastewater", "Model Context Protocol (MCP)", "Prompt Engineering", "Generative AI", "LLMOps", "Human-in-the-loop",
                "TypeScript", "Next.js", "React", "FastAPI", "Supabase", "Docker", "CI/CD", "GitHub Actions", "REST APIs",

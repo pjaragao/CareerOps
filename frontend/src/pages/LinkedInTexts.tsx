@@ -10,6 +10,9 @@ interface ProfileCopy {
   pt: { headline: string; about: string };
   positions: ({ id: string; company: string; start: string; end: string | null; optional?: boolean } & Record<Lang, Texts>)[];
   projects: ({ id: string; start: string; end: string | null } & Record<Lang, Texts>)[];
+  education?: ({ id: string; school: string; start: string; end: string } & Record<Lang, { degree: string; field: string; description: string }>)[];
+  licenses?: ({ id: string; issuer: string; credential_id: string } & Record<Lang, { name: string }>)[];
+  languages?: Record<Lang, string>[];
   skills_top: string[];
   skills: string[];
   remove: Record<Lang, string>[];
@@ -84,6 +87,19 @@ const LinkedInTexts = () => {
       {data.projects.map(p => (
         <Block key={p.id} label={p[lang].title} meta={`${date(p.start)} – ${date(p.end)}`} text={p[lang].description} />
       ))}
+
+      <h3 style={{ marginTop: '0.5rem' }}>{lang === 'pt' ? 'Formação acadêmica' : 'Education'}</h3>
+      {(data.education || []).map(e => (
+        <Block key={e.id} label={`${e[lang].degree} — ${e[lang].field}`} meta={`${e.school} · ${e.start}–${e.end}`} text={e[lang].description} />
+      ))}
+
+      <h3 style={{ marginTop: '0.5rem' }}>{lang === 'pt' ? 'Licenças e certificados' : 'Licenses & certifications'}</h3>
+      {(data.licenses || []).map(l => (
+        <Block key={l.id} label={l[lang].name} meta={`${l.issuer} · ${l.credential_id}`} text={l[lang].name} />
+      ))}
+
+      <h3 style={{ marginTop: '0.5rem' }}>{lang === 'pt' ? 'Idiomas' : 'Languages'}</h3>
+      <Block label={lang === 'pt' ? 'Idiomas' : 'Languages'} text={(data.languages || []).map(l => l[lang]).join('\n')} />
 
       <h3 style={{ marginTop: '0.5rem' }}>{lang === 'pt' ? 'Competências (únicas para os dois idiomas)' : 'Skills (shared by both languages)'}</h3>
       <Block label="Top 5" text={data.skills_top.join(' · ')} />
