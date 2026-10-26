@@ -13,7 +13,8 @@ import {
   Building2,
   FileText,
   Layout,
-  Megaphone
+  Megaphone,
+  Puzzle
 } from 'lucide-react';
 
 const Sidebar = () => {
@@ -28,6 +29,7 @@ const Sidebar = () => {
     { icon: <MessageSquare size={20} />, label: 'Interview Prep', path: '/interview' },
     { icon: <Shield size={20} />, label: 'LinkedIn Optimizer', path: '/linkedin-optimizer' },
     { icon: <Megaphone size={20} />, label: 'LinkedIn Copilot', path: '/linkedin-copilot' },
+    { icon: <Puzzle size={20} />, label: 'Instalar extensão', path: '/extensao' },
     { icon: <Settings size={20} />, label: 'Settings', path: '/settings' },
   ];
 

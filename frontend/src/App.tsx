@@ -12,6 +12,7 @@ import LinkedInOptimizer from './pages/LinkedInOptimizer';
 import Companies from './pages/Companies';
 import DocumentRepository from './pages/DocumentRepository';
 import LinkedInCopilot from './pages/LinkedInCopilot';
+import InstallExtension from './pages/InstallExtension';
 
 function App() {
   return (
@@ -28,6 +29,7 @@ function App() {
           <Route path="linkedin-optimizer" element={<LinkedInOptimizer />} />
           <Route path="linkedin-copilot" element={<LinkedInCopilot />} />
           <Route path="onboarding" element={<DocumentRepository />} />
+          <Route path="extensao" element={<InstallExtension />} />
           <Route path="settings" element={<Settings />} />
         </Route>
       </Routes>
