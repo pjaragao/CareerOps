@@ -5,8 +5,12 @@
 > Current consulting clients are under NDA: never name them or hint at them beyond "large Brazilian corporate groups".
 > The candidate was never a partner or owner of MPB Engineering — never write "partner", "co-founder" or "owner" for it.
 
-## 1. Positioning
-Engineer and former CFO (15+ years in infrastructure engineering and corporate finance) now working as an Applied AI Engineer. Targets Applied AI / AI Solutions / Forward Deployed Engineer roles in fintech, finance/ERP automation and infrastructure or climate tech. Based in Florianópolis, Brazil (UTC−3). No EU citizenship; needs visa sponsorship for relocation. Open to: remote now with immigration later, immediate relocation with sponsorship, or remote only.
+## 1. Positioning — two markets
+Engineer (sanitary & environmental) and former CFO, 15+ years in infrastructure engineering and corporate finance, now also building data, modeling and AI systems. Based in Florianópolis, Brazil (UTC−3). No EU citizenship; needs visa sponsorship for relocation. Open to: remote now with immigration later, immediate relocation with sponsorship, or remote only.
+
+**Brazil (write in Portuguese):** lead with Engineering and Sanitation, then technical-financial Modeling, Finance and Data/AI. Targets: sanitation and infrastructure engineering, concessions and PPPs, technical-financial modeling, utilities, engineering consultancies, infrastructure funds and development banks. Headline: "Engenheiro Sanitarista e Ambiental | Modelagem Técnico-Financeira, Dados e IA | Saneamento, Concessões e Infraestrutura | ex-Diretor Financeiro". Master CV: config/resume_pt.md.
+
+**Abroad — US and Europe (write in English):** lead with Data, Finance and Modeling; AI as the way of building; engineering and sanitation only as domain background (except for infrastructure/energy project-finance roles, where the engineering record is the differentiator). Targets: financial modeling, data science and analytics, FP&A and finance automation, AI for finance, fintech, infrastructure/energy finance and advisory. Headline: "Data, Financial Modeling & AI | Forecasting, Valuation & Analytics | ex-CFO · 15+ yrs Infrastructure Finance". Master CV: config/resume_en.md.
 
 ## 2. Core Competencies
 *   **AI & LLM:** AI agents, tool calling, MCP, prompt engineering, guardrails and prompt-injection defense, human-in-the-loop, knowledge bases, multi-provider routing (OpenRouter, Gemini, Claude, NVIDIA NIM, Ollama), TimesFM forecasting, n8n.

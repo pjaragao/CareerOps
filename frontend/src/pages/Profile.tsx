@@ -21,7 +21,8 @@ const ProfilePage = () => {
       pt: { experience: [], education: [], skills: [] }
     }
   });
-  const [resume, setResume] = useState('');
+  const [resumes, setResumes] = useState<{ en: string; pt: string }>({ en: '', pt: '' });
+  const [resumeMarket, setResumeMarket] = useState<'en' | 'pt'>('en');
   const [activeTab, setActiveTab] = useState('personal');
   const [activeLanguage, setActiveLanguage] = useState('pt');
   const [newLanguage, setNewLanguage] = useState('');
@@ -36,7 +37,10 @@ const ProfilePage = () => {
     setLoading(true);
     try {
       const p = await profileService.getProfile().catch(() => ({} as Profile));
-      const r = await profileService.getResume().catch(() => ({ content: '' }));
+      const [rEn, rPt] = await Promise.all([
+        profileService.getResume('en').catch(() => ({ content: '' })),
+        profileService.getResume('pt').catch(() => ({ content: '' })),
+      ]);
       
       setProfile({
         personal: p.personal || {},
@@ -44,7 +48,7 @@ const ProfilePage = () => {
         preferences: p.preferences || {},
         languages: p.languages || { pt: { experience: [], education: [], skills: [] } }
       });
-      setResume(r.content || '');
+      setResumes({ en: rEn.content || '', pt: rPt.content || '' });
     } catch (error) {
       console.error("Failed to load profile", error);
     } finally {
@@ -56,7 +60,8 @@ const ProfilePage = () => {
     setSaving(true);
     try {
       await profileService.saveProfile(profile);
-      await profileService.saveResume(resume);
+      await profileService.saveResume(resumes.en, 'en');
+      await profileService.saveResume(resumes.pt, 'pt');
       alert("Profile saved successfully!");
     } catch (error) {
       alert("Failed to save profile");
@@ -435,10 +440,20 @@ const ProfilePage = () => {
             <div className="animate-fade-in">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
                 <h2 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><FileText /> Base Resume (Markdown)</h2>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button className={`btn ${resumeMarket === 'en' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setResumeMarket('en')}>Exterior (EN)</button>
+                  <button className={`btn ${resumeMarket === 'pt' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setResumeMarket('pt')}>Brasil (PT)</button>
+                </div>
               </div>
+              <p style={{ color: 'var(--text-muted)', marginBottom: '1rem', fontSize: '0.9rem' }}>
+                {resumeMarket === 'en'
+                  ? 'Vagas no exterior: dados, finanças e modelagem na frente; engenharia como domínio.'
+                  : 'Vagas no Brasil: engenharia e saneamento, modelagem técnico-financeira, dados e IA.'}
+                {' '}Ao gerar um CV para uma vaga, o app usa a base do idioma da vaga.
+              </p>
               <textarea 
-                value={resume}
-                onChange={e => setResume(e.target.value)}
+                value={resumes[resumeMarket]}
+                onChange={e => setResumes(prev => ({ ...prev, [resumeMarket]: e.target.value }))}
                 style={{ width: '100%', height: '500px', fontFamily: 'monospace' }}
               />
             </div>

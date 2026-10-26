@@ -1,56 +1,74 @@
-# Plano de conteúdo — LinkedIn
+# Plano de conteúdo — LinkedIn (dois mercados)
 
-Objetivo: ser encontrado por recrutadores e hiring managers dos EUA e da Europa como **Applied AI Engineer com domínio de finanças e infraestrutura**.
-Os posts vão em inglês, prontos para publicar. Este plano está em português.
+Objetivo: ser encontrado em **dois mercados**, cada um com seu foco:
+
+| Mercado | Idioma | Foco (nesta ordem) | Público |
+|---|---|---|---|
+| **Brasil** | Português | Engenharia e saneamento → modelagem técnico-financeira → finanças → dados e IA | companhias de saneamento e autarquias, concessionárias, consultorias, construtoras, fundos de infraestrutura, bancos de fomento |
+| **Exterior** (EUA e Europa) | Inglês | Dados → finanças → modelagem; IA como forma de construir; engenharia só como domínio | financial modeling, data science/analytics, FP&A, IA para finanças, fintech, finanças de infraestrutura e energia |
+
+Os rascunhos são gerados no **LinkedIn Copilot** do CareerOps, escolhendo o mercado. Este plano está em português.
 
 ---
 
 ## 0. O papel de cada canal
 
-| Canal | Papel | Idioma |
-|---|---|---|
-| **LinkedIn** | O único canal de publicação: é onde recrutador procura. Posts de texto, carrosséis em PDF (documento) e vídeos curtos nativos. | Inglês |
-| **GitHub** | A prova. Todo post aponta para um repositório ou uma demo. | Inglês |
-| **Artigo longo** (LinkedIn Articles + dev.to ou Medium) | 1 por mês. É o que aparece no Google e vira link no Featured. | Inglês |
+| Canal | Papel |
+|---|---|
+| **LinkedIn** | O canal de publicação: posts de texto, carrosséis em PDF e vídeos curtos nativos, no idioma de cada mercado |
+| **GitHub** | A prova técnica (exterior). Posts de dados e modelagem apontam para um repositório ou demo |
+| **Artigo longo** (LinkedIn Articles) | 1 por mês, alternando os mercados. Vira link no Featured |
 
 ---
 
-## 1. Mensagem central (a frase que todo post reforça)
+## 1. Mensagem central
 
-> **"I build AI agents that are safe to touch money — because I spent 18 years in infrastructure and finance, I know which numbers must never be wrong."**
+- **Brasil:** "Engenharia de saneamento com rigor de quem já foi diretor financeiro — e com dados e IA para projetar, orçar e operar melhor."
+- **Exterior:** "I build the models people make decisions with — and the data and AI systems around them — after 15 years modeling infrastructure and running finance."
 
-## 2. Pilares (alternar)
+## 2. Pilares
 
-| Pilar | O que mostra | Fonte de material |
+**Brasil (PT)**
+
+| Pilar | O que mostra | Fonte |
 |---|---|---|
-| **A. Agents that touch money** | Engenharia de agentes com segurança: MCP, RLS, guardrails, humano no circuito | CentralOps (ADR-0005, ADR-0008) |
-| **B. Ex-CFO builds** | Finanças + IA: orçamento, KPIs, contabilidade, impostos, trading | CentralOps (financeiro), Trading Copilot |
-| **C. Infrastructure × AI** | 18 anos em saneamento, resíduos e Banco Mundial; onde a IA entra em infraestrutura | MPB, consultoria atual (sem nomes), Radar de Licitações |
-| **D. AI-assisted engineering** | Como usar agentes de código com rigor: testes, ADRs, CI | CentralOps, Mr Irrelevant |
-| **E. Estatística, não só LLM** | Modelagem e calibração com backtest | Modelo de projeção eleitoral |
-| **F. IA na engenharia de infraestrutura** (~1 em cada 3 posts) | IA no ciclo inteiro do empreendimento: concepção e projeto, estudos hidráulicos, quantitativos, orçamento, edital e preço de proposta, BIM, licenciamento e monitoramento ambiental, gestão de obra (cronograma, medição, aditivos) e operação (perdas, O&M). Mostrar onde a IA ajuda e onde não se pode confiar nela | Lagoas do Norte, sistemas de água das companhias, programas ambientais de rodovias, viabilidade de concessões, ~90 licitações/ano |
+| **E. Engenharia e saneamento** | Lições de projeto: o que funciona e o que dá errado | Lagoas do Norte, sistemas da CASAN e Sanepar, Mearim, aterro, rodovias |
+| **C. Concessões e modelagem técnico-financeira** | Viabilidade, tarifa, CAPEX/OPEX, análise de concessões, preço de proposta | Concessões de Penha, Camboriú, Bombinhas e Pomerode; ~90 licitações/ano |
+| **O. IA e dados em projeto, orçamento e obra** | Onde a IA ajuda (e onde não) em quantitativos, orçamento, edital, BIM, licenciamento, medição, aditivos, perdas | Experiência de projeto + ferramentas próprias |
+| **G. Gestão financeira de engenharia** | Orçamento, KPIs, custo por projeto, BI | Período como diretor financeiro |
+| **T. Tecnologia na infraestrutura** | Sistemas próprios aplicados ao setor | CentralOps, modelos estatísticos, automações |
+
+**Exterior (EN)**
+
+| Pilar | O que mostra | Fonte |
+|---|---|---|
+| **M. Financial modeling & valuation** | DCF, tarifa, concessões, pricing, orçamento | MPB, consultoria atual |
+| **S. Forecasting & statistics** | Estatística de verdade, calibrada com backtest | Modelo de projeção eleitoral, TimesFM |
+| **D. Data & financial systems** | Razão contábil, conciliação, DRE e caixa em código, testes de lógica financeira | CentralOps, Copiloto de Trades |
+| **A. AI for finance** | Agentes que mexem com dinheiro com segurança | CentralOps (ADR-0005) |
+| **I. Infrastructure & project finance** | Investimentos de US$ 20–150M vistos por quem modelou; engenharia como domínio | Lagoas do Norte (Banco Mundial), concessões |
 
 ## 3. Perfil
 
-A headline e o About já estão em [linkedin_en.md](linkedin_en.md). Na seção "Contact info", coloque o GitHub e o link da demo do CentralOps.
+Os textos do perfil (EN e PT) ficam em `international/build_linkedin_profile.py` e aparecem no painel **CareerOps · Perfil** da extensão. Na seção "Contact info", coloque o GitHub.
 
 ## 4. Cadência e horário
 
-- **LinkedIn:** 2 posts por semana (terça e quinta), **10h no horário de Brasília**. Equivale a 8–9h na costa leste dos EUA e 14–15h na Europa Central, então pega os dois públicos.
-- **Na primeira hora depois de postar:** responda todos os comentários e comente em 5 posts de gente da sua área-alvo. Isso pesa mais no alcance do que a hora exata.
+- **3 posts por semana:** 2 do exterior (EN, terça e quinta) e 1 do Brasil (PT, quarta), **10h no horário de Brasília** (8–9h na costa leste dos EUA, 14–15h na Europa Central).
+- **Na primeira hora depois de postar:** responda os comentários e comente em 5 posts da área-alvo do mercado daquele post.
 
 ---
 
 ## 5. Calendário das 4 primeiras semanas
 
-| Sem. | Terça | Quinta |
-|---|---|---|
-| 1 | **Post 1 — Quem sou eu** (pronto abaixo) | **Post 2 — Agente seguro para mexer em dinheiro** (pronto abaixo) |
-| 2 | **Post 3 — 95k linhas com IA, 2.000 testes** (pronto abaixo) | Vídeo nativo de 45 s: o agente recusando um preço errado e passando para um humano |
-| 3 | "What World Bank infrastructure projects taught me about shipping AI": termos de referência viram specs, contrato vira teste de aceitação, banca avaliadora vira avaliação do modelo | "My trading copilot reconciles broker statements — here's why the tax math was harder than the AI": nota de corretagem, custos reais, slippage, IR |
-| 4 | "A CFO's checklist before letting AI near your ledger": partidas dobradas, rateio, fechamento, trilha de auditoria | **Artigo longo** (versão estendida do Post 2) + post curto com o link |
+| Sem. | Terça (EN · exterior) | Quarta (PT · Brasil) | Quinta (EN · exterior) |
+|---|---|---|---|
+| 1 | **Post 1 — Quem sou eu** (abaixo; ajuste o fim para dados, finanças e modelagem) | Apresentação: engenheiro sanitarista, Lagoas do Norte, 46 ARTs, modelagem de concessões | Pilar S: o modelo de projeção eleitoral e o backtest em três eleições |
+| 2 | Pilar M: o que um modelo de viabilidade de concessão precisa ter para alguém decidir com ele | Pilar C: o que a modelagem tarifária ensina sobre viabilidade de concessão | **Post 2 — números que vêm do banco** (abaixo), como pilar A |
+| 3 | Pilar D: razão contábil e conciliação em código com 2.000 testes | Pilar O: IA em quantitativos e orçamento — onde ajuda e onde não confiar | Pilar I: infraestrutura vista de quem modelou US$ 20–150M |
+| 4 | **Artigo longo** (EN) + post curto com o link | Pilar G: orçamento e KPIs numa consultoria de engenharia | Pilar M ou S, a partir do que repercutiu |
 
-Depois disso: repetir os pilares A–D em rodízio, sempre com um projeto como prova.
+Os posts 1 a 3 abaixo foram escritos para o posicionamento anterior, centrado em IA. Eles servem como pilar A (IA para finanças) e D (dados e sistemas financeiros) do exterior; para o resto, gere rascunhos no Copilot.
 
 ---
 
@@ -138,7 +156,7 @@ Depois disso: repetir os pilares A–D em rodízio, sempre com um projeto como p
 ## 8. Prospecção ativa (o conteúdo sozinho não basta)
 
 Toda semana:
-- **20 convites** para hiring managers e recrutadores de AI engineering em fintech, ERP/finanças e infra/climate tech, nos países-alvo (Portugal, Espanha, Irlanda, Holanda, Alemanha; EUA remoto).
+- **20 convites**, divididos entre os mercados: no Brasil, gestores e recrutadores de saneamento, concessões, consultorias e fundos de infraestrutura; no exterior, hiring managers e recrutadores de financial modeling, dados, FP&A e IA para finanças (Portugal, Espanha, Irlanda, Holanda, Alemanha, Reino Unido; EUA remoto).
 - **5 candidaturas** adaptadas pelo CareerOps.
 - **Comentários de verdade** em posts dessas pessoas antes de mandar mensagem.
 

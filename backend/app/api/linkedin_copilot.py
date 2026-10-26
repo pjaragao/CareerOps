@@ -65,6 +65,7 @@ async def profile_copy():
 
 # ── Posts ────────────────────────────────────────────────────────────────
 class GenerateRequest(BaseModel):
+    market: Literal["br", "intl"] = "intl"
     count: int = Field(2, ge=1, le=5)
     pillar: Optional[str] = None
     topic: Optional[str] = None
@@ -88,7 +89,7 @@ async def list_posts(status: Optional[str] = None):
 @router.post("/posts/generate")
 async def generate_posts(req: GenerateRequest):
     try:
-        return {"posts": await Copilot.generate_posts(req.count, req.pillar, req.topic, req.source_notes)}
+        return {"posts": await Copilot.generate_posts(req.count, req.pillar, req.topic, req.source_notes, req.market)}
     except RuntimeError as e:
         raise HTTPException(status_code=502, detail=str(e))
 

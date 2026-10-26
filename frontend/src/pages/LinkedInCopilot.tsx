@@ -4,7 +4,7 @@ import {
   Megaphone, Sparkles, Send, Check, X, Copy, ExternalLink, Calendar, Users, MessageCircle, BarChart3, Link2, Plus, Undo2,
 } from 'lucide-react';
 import {
-  linkedinCopilotService as svc, CopilotPost, CopilotStatus, EngagementItem, Prospect, ProspectStatus, WeekMetrics,
+  linkedinCopilotService as svc, CopilotPost, CopilotStatus, Market, EngagementItem, Prospect, ProspectStatus, WeekMetrics,
 } from '../services/linkedinCopilotService';
 
 type Tab = 'posts' | 'engagement' | 'prospects' | 'metrics';
@@ -18,10 +18,18 @@ const chip = (color: string): React.CSSProperties => ({
   padding: '2px 8px', borderRadius: '6px', fontSize: '0.75rem', background: `${color}22`, color, whiteSpace: 'nowrap',
 });
 
-const PILLARS: Record<string, string> = {
-  A: 'Agents that touch money', B: 'Ex-CFO builds', C: 'Infrastructure × AI', D: 'AI-assisted engineering',
-  E: 'Statistics, not just LLMs', F: 'IA na engenharia de infraestrutura',
+const PILLARS: Record<Market, Record<string, string>> = {
+  br: {
+    E: 'Engenharia e saneamento', C: 'Concessões e modelagem técnico-financeira', O: 'IA e dados em projeto, orçamento e obra',
+    G: 'Gestão financeira de engenharia', T: 'Tecnologia na infraestrutura',
+  },
+  intl: {
+    M: 'Financial modeling & valuation', S: 'Forecasting & statistics', D: 'Data & financial systems',
+    A: 'AI for finance', I: 'Infrastructure & project finance',
+  },
 };
+const MARKET_LABEL: Record<Market, string> = { br: 'Brasil · PT', intl: 'Exterior · EN' };
+const pillarLabel = (m: Market, p: string) => PILLARS[m]?.[p] || '';
 const STATUS_COLOR: Record<string, string> = {
   draft: '#9aa4b2', approved: '#4da3ff', published: '#00d4aa', failed: '#ff6b6b',
   to_contact: '#9aa4b2', invited: '#4da3ff', accepted: '#00d4aa', replied: '#c38bff', skipped: '#666',
@@ -77,7 +85,8 @@ const PostCard = ({ post, connected, onChange }: { post: CopilotPost; connected:
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', alignItems: 'center' }}>
         <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
           <span style={chip(STATUS_COLOR[post.status])}>{post.status}</span>
-          {post.pillar && <span style={chip('#ffb020')}>{post.pillar} · {PILLARS[post.pillar] || ''}</span>}
+          <span style={chip(post.market === 'br' ? '#00b894' : '#4da3ff')}>{MARKET_LABEL[post.market]}</span>
+          {post.pillar && <span style={chip('#ffb020')}>{post.pillar}{pillarLabel(post.market, post.pillar) ? ` · ${pillarLabel(post.market, post.pillar)}` : ''}</span>}
           {post.topic && <span style={muted}>{post.topic}</span>}
         </div>
         <span style={muted}>{body.length} car.</span>
@@ -118,6 +127,7 @@ const PostCard = ({ post, connected, onChange }: { post: CopilotPost; connected:
 
 const PostsTab = ({ connected }: { connected: boolean }) => {
   const [posts, setPosts] = useState<CopilotPost[]>([]);
+  const [market, setMarket] = useState<Market>('intl');
   const [form, setForm] = useState({ count: 2, pillar: '', topic: '', source_notes: '' });
   const [loading, setLoading] = useState(false);
   const load = useCallback(async () => setPosts(await svc.listPosts()), []);
@@ -125,21 +135,34 @@ const PostsTab = ({ connected }: { connected: boolean }) => {
   const generate = async () => {
     setLoading(true);
     try {
-      await svc.generatePosts({ count: form.count, pillar: form.pillar || undefined, topic: form.topic || undefined, source_notes: form.source_notes || undefined });
+      await svc.generatePosts({ market, count: form.count, pillar: form.pillar || undefined, topic: form.topic || undefined, source_notes: form.source_notes || undefined });
       await load();
     } catch (e) { alert(errMsg(e)); } finally { setLoading(false); }
   };
   return (
     <>
       <div className="panel">
-        <h3 style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: 8 }}><Sparkles size={18} /> Gerar rascunhos</h3>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', gap: 8, flexWrap: 'wrap' }}>
+          <h3 style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Sparkles size={18} /> Gerar rascunhos</h3>
+          <div style={{ display: 'flex', gap: 8 }}>
+            {(['br', 'intl'] as Market[]).map(m => (
+              <button key={m} className={`btn ${market === m ? 'btn-primary' : 'btn-secondary'}`}
+                onClick={() => { setMarket(m); setForm(f => ({ ...f, pillar: '' })); }}>{MARKET_LABEL[m]}</button>
+            ))}
+          </div>
+        </div>
+        <p style={{ ...muted, marginBottom: '1rem' }}>
+          {market === 'br'
+            ? 'Brasil, em português: engenharia e saneamento, concessões e modelagem técnico-financeira, dados e IA na infraestrutura.'
+            : 'Exterior, em inglês: dados, finanças e modelagem; engenharia como domínio.'}
+        </p>
         <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr 1fr', gap: '1rem' }}>
           <select value={form.count} onChange={e => setForm({ ...form, count: Number(e.target.value) })} style={field}>
             {[1, 2, 3, 4, 5].map(n => <option key={n} value={n} style={{ color: '#000' }}>{n} post{n > 1 ? 's' : ''}</option>)}
           </select>
           <select value={form.pillar} onChange={e => setForm({ ...form, pillar: e.target.value })} style={field}>
             <option value="" style={{ color: '#000' }}>Pilar: rodízio automático</option>
-            {Object.entries(PILLARS).map(([k, v]) => <option key={k} value={k} style={{ color: '#000' }}>{k} · {v}</option>)}
+            {Object.entries(PILLARS[market]).map(([k, v]) => <option key={k} value={k} style={{ color: '#000' }}>{k} · {v}</option>)}
           </select>
           <input value={form.topic} onChange={e => setForm({ ...form, topic: e.target.value })} placeholder="Tema (opcional)" style={field} />
           <textarea value={form.source_notes} onChange={e => setForm({ ...form, source_notes: e.target.value })} rows={4}
@@ -289,6 +312,7 @@ const ProspectCard = ({ p, onUpdate }: { p: Prospect; onUpdate: (id: number, pat
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6, flexWrap: 'wrap' }}>
           <span style={chip(STATUS_COLOR[p.status])}>{p.status}</span>
           <span style={chip('#00d4aa')}>fit {p.fit ?? '?'}</span>
+          {p.market && <span style={chip(p.market === 'br' ? '#00b894' : '#4da3ff')}>{MARKET_LABEL[p.market]}</span>}
           {p.segment && <span style={chip('#ffb020')}>{p.segment}</span>}
         </div>
         <strong>{p.name || 'Sem nome'}</strong>

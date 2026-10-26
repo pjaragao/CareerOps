@@ -55,7 +55,8 @@
 - **Pipeline queue** — URL-based job import queue
 
 ### 📣 LinkedIn Copilot (human-in-the-loop)
-- **Post drafts** — AI writes posts from your knowledge base and fresh notes, rotating six content pillars (incl. AI in infrastructure engineering: design, takeoff, estimating, construction management)
+- **Two markets** — Brazil (Portuguese: engineering, sanitation, technical-financial modeling) and abroad (English: data, finance, modeling), with a master CV for each in `config/`
+- **Post drafts** — AI writes posts per market from your knowledge base and fresh notes, rotating each market's content pillars
 - **Approve → publish** — only posts you approve go out, through the official LinkedIn API (`w_member_social`), now or at a scheduled time; max posts per day is capped
 - **Engagement queue** — capture posts while browsing (extension: right-click → *Enviar ao CareerOps Copilot*); AI scores relevance and drafts a specific comment; you comment on LinkedIn and tick it off
 - **Prospecting** — capture profiles; AI scores fit and drafts a ≤300-char connection note; track invited → accepted → replied against a weekly target

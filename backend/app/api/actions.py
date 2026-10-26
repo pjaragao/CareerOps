@@ -53,10 +53,8 @@ async def generate_resume(job_id: int, options: ActionOptions):
     job = JobService.get_job_by_id(job_id)
     if not job: raise HTTPException(status_code=404)
     
-    resume_base = ""
-    if os.path.exists(settings.RESUME_BASE_FILE):
-        with open(settings.RESUME_BASE_FILE, 'r') as f:
-            resume_base = f.read()
+    # Brazilian (Portuguese) jobs start from the Brazil CV; everything else from the international one
+    resume_base = ProfileService.get_resume_base("pt" if get_job_lang(job) == "Portuguese" else "en")
     
     response = await SkillService.run_skill(
         "jobs/resume.md",

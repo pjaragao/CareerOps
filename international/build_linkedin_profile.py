@@ -7,41 +7,32 @@ import pathlib
 LIMITS = {"headline": 220, "about": 2600, "position_title": 100, "position_description": 2000,
           "project_title": 255, "project_description": 2000}
 
-EN_ABOUT = """I build AI systems that run real operations — and I know those operations from the inside, because I ran them for 15 years.
+EN_ABOUT = """I turn operational and financial data into models people make decisions with — and, increasingly, into AI systems that run on top of them.
 
-I'm an engineer and former CFO who now works as an Applied AI Engineer. Recent work:
-• CentralOps — an AI-native retail ERP (~95k hand-written lines, 2,000+ automated database tests) with an LLM agent exposed through an MCP server, where every price, stock level and coupon the agent quotes is checked against the database before it reaches a customer.
-• Trading Copilot — a trading and tax assistant that sends orders to MetaTrader 5, reconciles broker statements, computes capital-gains tax and backtests strategies with time-series forecasting.
-• A multi-tenant WhatsApp AI agent running fantasy-football leagues, with per-league isolation, an LLM fallback chain and 300+ tests.
+15+ years in infrastructure and finance, the last three as CFO: DCF feasibility and tariff models for water and wastewater concessions, pricing for ~90 tenders a year, and budgets, KPIs and BI with a 5-person finance team. Today I build the data and AI side myself:
+• Forecasting & statistics — an election-night projection model for Brazil's 2026 runoff: a Bayesian hierarchical model on official data, with uncertainty calibrated by replaying three past elections; TimesFM forecasts and strategy backtests in a trading copilot.
+• Financial systems — CentralOps, a retail ERP with double-entry ledger, cash flow, P&L and tax (PostgreSQL, 2,000+ automated tests), where an AI agent can sell but every number comes from the database.
+• Data engineering & AI — Python, SQL, PostgreSQL, Power BI, data pipelines, LLM agents with guardrails, Docker, CI/CD.
 
-Before that, I spent nearly 18 years at an engineering consultancy for water, wastewater, urban and solid-waste infrastructure in Brazil, from intern to Finance Director (CFO). I prepared the financial proposals for the firm's ~90 tenders a year, coordinated a World Bank–financed urban infrastructure program, managed consulting contracts for infrastructure investments of US$20–150M, built DCF feasibility and tariff models for municipal concessions, led a 5-person finance team, and drove the firm's ERP, SharePoint and BIM transformations. Today I also advise large Brazilian corporate groups on major infrastructure projects, including engineering-financial modeling for solid waste.
+My engineering background — sanitary & environmental engineer, general coordinator of a World Bank–financed urban program, utilities' water systems and concession studies — gives me real domain depth in infrastructure, utilities and project finance.
 
-What I bring:
-• LLM agents that are safe to put in front of customers and money — tool calling, MCP, guardrails, prompt-injection defenses, human-in-the-loop.
-• Production engineering — Python, TypeScript/Next.js, PostgreSQL (RLS, PL/pgSQL, pgTAP), Docker, CI/CD, architecture decision records.
-• Finance and domain depth — financial modeling, accounting and tax workflows, pricing, CAPEX/OPEX. I can talk to the CFO and to the codebase.
-
-I'm looking for Applied AI, AI Solutions and Forward Deployed Engineer roles, especially in fintech, finance/ERP automation and infrastructure or climate tech.
+I'm looking for roles in financial modeling, data science and analytics, and AI for finance: fintech, FP&A and finance automation, and infrastructure or energy finance and advisory.
 
 Based in Florianópolis, Brazil (UTC−3: full overlap with US Eastern hours, ~5 hours with Central Europe). Open to remote work and to relocation to Europe or the US with visa sponsorship.
 
 Portuguese (native) · English (fluent, C1 — lived and worked in the US) · Spanish (intermediate)"""
 
-PT_ABOUT = """Construo sistemas de IA que operam processos reais — e conheço esses processos por dentro, porque passei 15 anos tocando cada um deles.
+PT_ABOUT = """Engenheiro sanitarista e ambiental com quase 18 anos em projetos de saneamento e infraestrutura — de estagiário a diretor financeiro — e hoje dedicado a unir engenharia, modelagem técnico-financeira, dados e IA.
 
-Sou engenheiro sanitarista e ambiental, ex-diretor financeiro, e hoje trabalho como Engenheiro de IA Aplicada. Trabalhos recentes:
-• CentralOps — ERP de varejo nativo em IA (~95 mil linhas escritas, mais de 2.000 testes automatizados de banco de dados) com um agente de IA exposto por um servidor MCP, em que todo preço, estoque e cupom citado pelo agente é conferido no banco antes de chegar ao cliente.
-• Copiloto de Trades — assistente de operações e de imposto que envia ordens ao MetaTrader 5, concilia notas de corretagem, calcula o IR e faz backtest de estratégias com previsão de séries temporais.
-• Agente de IA no WhatsApp para várias ligas de fantasy football, com isolamento por liga, cadeia de modelos de reserva e mais de 300 testes.
+Na engenharia: coordenador geral e responsável técnico do Programa Lagoas do Norte, em Teresina, financiado pelo Banco Mundial — esgotamento sanitário para 312 mil habitantes, drenagem, abastecimento de água, sistema viário, biogás e projeto urbanístico em BIM. Responsável técnico em 46 ARTs: planos diretores de drenagem (Bacia do Rio Mearim, 99 mil km²), sistemas de água para CASAN, Sanepar e autarquias municipais, aterro sanitário e gestão ambiental de rodovias (BR-470/DNIT).
 
-Antes disso, foram quase 18 anos numa consultoria de engenharia de saneamento, drenagem, urbanização e resíduos sólidos, de estagiário a diretor financeiro. Preparei as propostas financeiras das ~90 licitações por ano da empresa, coordenei um programa de infraestrutura urbana financiado pelo Banco Mundial, gerenciei contratos de consultoria para empreendimentos de R$ 100 a 800 milhões, fiz estudos de viabilidade (fluxo de caixa descontado) e modelagem tarifária de concessões, liderei uma equipe financeira de 5 pessoas e conduzi a transformação digital da empresa (ERP, SharePoint e BIM). Hoje também presto consultoria a grandes grupos empresariais em projetos de infraestrutura, incluindo modelagem técnico-financeira de resíduos sólidos.
+Em finanças e modelagem: estudos de viabilidade (fluxo de caixa descontado) e modelagem tarifária de concessões de água e esgoto, análise de processos de concessão em quatro municípios, propostas financeiras das ~90 licitações por ano da empresa (técnica e preço) e, como diretor financeiro, orçamento anual, KPIs, BI e contabilidade de custos com uma equipe de 5 pessoas.
 
-O que eu trago:
-• Agentes de IA seguros para lidar com clientes e com dinheiro — tool calling, MCP, guardrails, defesa contra prompt injection, humano no circuito.
-• Engenharia de software de produção — Python, TypeScript/Next.js, PostgreSQL (RLS, PL/pgSQL, pgTAP), Docker, CI/CD, registros de decisão de arquitetura.
-• Profundidade em finanças e infraestrutura — modelagem financeira, contabilidade e tributos, precificação, CAPEX/OPEX. Converso com o CFO e com o código.
+Em dados e IA: desenvolvo sistemas próprios em Python, SQL e PostgreSQL — um ERP com contabilidade, fiscal e agente de IA (CentralOps), um modelo estatístico de projeção da apuração eleitoral, previsão de séries temporais e automações com IA.
 
-Busco posições de Engenheiro de IA Aplicada, AI Solutions e Forward Deployed Engineer, principalmente em fintech, automação financeira/ERP e infraestrutura ou climate tech. Aberto a trabalho remoto e a mudança para a Europa ou os EUA.
+Hoje presto consultoria a grandes grupos empresariais em projetos de infraestrutura: coordenação de projetos de saneamento e modelagem técnico-financeira de resíduos sólidos.
+
+Busco posições e projetos em engenharia e saneamento, concessões e PPPs, modelagem técnico-financeira, e dados e IA aplicados à infraestrutura.
 
 Português (nativo) · Inglês (fluente, C1 — morei e trabalhei nos EUA) · Espanhol (intermediário)"""
 
@@ -49,14 +40,16 @@ POSITIONS = [
     {
         "id": "ai-engineer", "company": "Self-employed / Autônomo", "start": "2026-02", "end": None,
         "location": "Florianópolis, Santa Catarina, Brazil", "employment_type": "Self-employed", "workplace": "Remote",
-        "en": {"title": "Applied AI Engineer", "description": """I design, build and operate AI products end to end as the sole engineer, using an AI-assisted workflow (Claude Code) with automated tests and CI as the quality gate.
+        "en": {"title": "Data & AI Engineer", "description": """I design, build and operate data, modeling and AI products end to end as the sole engineer, using an AI-assisted workflow (Claude Code) with automated tests and CI as the quality gate.
+
+• Election-night projection model (Brazil 2026): Bayesian hierarchical model of municipal deviations on official electoral data (national → regional → state shrinkage), uncertainty calibrated by replaying the 2014, 2018 and 2022 runoffs in real vote-arrival order; 56 tests.
 
 • CentralOps — AI-native retail ERP and omnichannel platform: Next.js 16/TypeScript, async Python workers, PostgreSQL/Supabase. POS, inventory ledger, double-entry accounting with cost allocation, cash flow and P&L, payroll, Brazilian tax and e-invoicing. 133 SQL migrations, 2,000+ pgTAP tests, CI/CD with manually approved production migrations, 8 architecture decision records.
 • Customer-facing LLM agent behind an MCP server (16 tools): it can only act through database RPCs scoped by signed, short-lived context tokens and row-level security; a guardrail validator checks every number in a reply against that run's tool results; autopilot only for whitelisted intents above a confidence threshold, otherwise a human takes over.
 • Trading Copilot (B3): signal tracking, MetaTrader 5 execution with confirmation, broker-statement parsing to reconcile real costs and slippage, monthly capital-gains tax, strategy backtests with TimesFM forecasts.
-• Multi-tenant WhatsApp agent (Hermes Agent + Evolution API) for fantasy-football leagues: isolated persona, data and schedule per league; LLM fallback chain; 300+ unit and end-to-end tests. Includes an election-night projection model (Bayesian hierarchical shrinkage on official electoral data, backtested on three past runoffs).
+• Multi-tenant WhatsApp agent (Hermes Agent + Evolution API) for fantasy-football leagues: isolated persona, data and schedule per league; LLM fallback chain; 300+ unit and end-to-end tests.
 • Everything self-hosted on a Docker / Coolify / Traefik homelab."""},
-        "pt": {"title": "Engenheiro de IA Aplicada", "description": """Projeto, desenvolvo e opero produtos de IA de ponta a ponta como único engenheiro, com desenvolvimento assistido por IA (Claude Code) e testes automatizados e CI como controle de qualidade.
+        "pt": {"title": "Engenheiro de Dados e IA", "description": """Projeto, desenvolvo e opero produtos de dados, modelagem e IA de ponta a ponta como único engenheiro, com desenvolvimento assistido por IA (Claude Code) e testes automatizados e CI como controle de qualidade.
 
 • CentralOps — ERP de varejo nativo em IA e plataforma omnichannel: Next.js 16/TypeScript, workers Python assíncronos, PostgreSQL/Supabase. PDV, estoque em livro-razão, contabilidade de partidas dobradas com rateio, fluxo de caixa e DRE, folha, fiscal e nota fiscal eletrônica. 133 migrations SQL, mais de 2.000 testes pgTAP, CI/CD com migrations de produção aprovadas manualmente, 8 registros de decisão de arquitetura.
 • Agente de atendimento atrás de um servidor MCP (16 ferramentas): só age por funções do banco, com token de contexto assinado e de curta duração e segurança por linha (RLS); um validador confere cada número da resposta com o resultado das ferramentas daquela execução; piloto automático só para intenções pré-aprovadas acima de um nível de confiança, senão um humano assume.
@@ -67,10 +60,10 @@ POSITIONS = [
     {
         "id": "consultant", "company": "Self-employed / Autônomo", "start": "2026-02", "end": None,
         "location": "Florianópolis, Santa Catarina, Brazil", "employment_type": "Freelance", "workplace": "Hybrid",
-        "en": {"title": "Independent Consultant — Infrastructure Engineering & Project Finance", "description": """• Advise large Brazilian corporate groups (names under NDA) on major infrastructure projects.
+        "en": {"title": "Independent Consultant — Infrastructure Project Finance & Modeling", "description": """• Advise large Brazilian corporate groups (names under NDA) on major infrastructure projects.
 • General coordination of sanitation engineering projects: scope, schedule, multidisciplinary team and client deliverables.
 • Engineering-financial models for solid-waste infrastructure projects: CAPEX/OPEX, cash flow and economic feasibility."""},
-        "pt": {"title": "Consultor Independente — Engenharia e Finanças de Projetos de Infraestrutura", "description": """• Consultoria a grandes grupos empresariais brasileiros (sob NDA) em projetos de infraestrutura de grande porte.
+        "pt": {"title": "Consultor Independente — Engenharia de Saneamento e Modelagem Técnico-Financeira", "description": """• Consultoria a grandes grupos empresariais brasileiros (sob NDA) em projetos de infraestrutura de grande porte.
 • Coordenação geral de projetos de engenharia de saneamento: escopo, cronograma, equipe multidisciplinar e entregas ao cliente.
 • Modelagem técnico-financeira de projetos de infraestrutura de resíduos sólidos: CAPEX/OPEX, fluxo de caixa e viabilidade econômica."""},
     },
@@ -91,19 +84,18 @@ POSITIONS = [
     {
         "id": "mpb-engineer", "company": "MPB Engenharia", "start": "2011-08", "end": "2023-01",
         "location": "Florianópolis, Santa Catarina, Brazil", "employment_type": "Full-time", "workplace": "On-site",
-        "en": {"title": "Senior Engineer — Projects, Proposals & Digital Transformation", "description": """• Managed 5–7 concurrent consulting contracts (~US$4M a year) of US$0.2–0.4M each, supporting infrastructure investments of US$20–150M in water, wastewater, drainage and environment.
-• General coordinator and engineer of record for the World Bank–financed Lagoas do Norte Program in Teresina (2014–2019): proposal and integrated design of sewerage for 312,000 residents, 28 km of drainage, water supply, roads, a 1 MW biogas plant, BIM-modeled urban design and the social-environmental program across ~1,300 ha.
-• Engineer of record on 46 registered engagements, including the Mearim river-basin plan (99,000 km², 2.1M people), water systems for state utilities (up to 1,250 L/s; Criciúma, 311,000 people; 148 km of network on the Paraná coast) and a sanitary-landfill design and licensing.
-• Technical-economic analysis of water and wastewater concession processes for four municipalities; DCF feasibility and tariff models for municipal concessions.
-• Environmental management of highway programs: BR-470 duplication for DNIT (73 km), SC-477 (73 km) and the Arteris Autopista Litoral Sul concession (357 km).
-• Prepared the financial proposals for the firm's ~90 tenders a year (QCBS and LCS) and designed a metrics-based pricing method that significantly cut bid-preparation time.
+        "en": {"title": "Senior Engineer — Feasibility Modeling, Proposals & Projects", "description": """• Built DCF feasibility and tariff models for full municipal water and wastewater concessions, and ran the technical-economic analysis of concession processes for four municipalities.
+• Prepared the financial proposals for the firm's ~90 tenders a year (QCBS and LCS) and designed a metrics-based pricing method (project type, size, risk) that significantly cut bid-preparation time.
+• Managed 5–7 concurrent consulting contracts (~US$4M a year) of US$0.2–0.4M each, supporting infrastructure investments of US$20–150M.
+• General coordinator and engineer of record for the World Bank–financed Lagoas do Norte Program in Teresina (2014–2019): proposal and integrated design of sewerage for 312,000 residents, 28 km of drainage, water supply, roads, a 1 MW biogas plant and BIM-modeled urban design across ~1,300 ha.
+• Engineer of record on 46 registered engagements, including the Mearim river-basin plan (99,000 km², 2.1M people), water systems for state utilities (up to 1,250 L/s), a sanitary landfill and environmental management of highway programs (BR-470 for DNIT; Arteris concession, 357 km).
 • Led the firm's ERP, SharePoint Online (in-house team only), Power Platform, ISO 9001 and BIM transformations."""},
-        "pt": {"title": "Engenheiro Sênior — Projetos, Propostas e Transformação Digital", "description": """• Gestão de 5 a 7 contratos de consultoria simultâneos (~R$ 20 milhões/ano), de R$ 1 a 2 milhões cada, para empreendimentos de R$ 100 a 800 milhões em saneamento, drenagem e meio ambiente.
-• Coordenador geral e responsável técnico do Programa Lagoas do Norte em Teresina, financiado pelo Banco Mundial (2014–2019): proposta e projeto integrado de esgotamento sanitário para 312 mil habitantes, 28 km de drenagem, abastecimento de água, sistema viário, usina de biogás de 1 MW, projeto urbanístico em BIM e programa socioambiental em ~1.300 ha.
+        "pt": {"title": "Engenheiro Sênior — Projetos de Saneamento, Modelagem e Propostas", "description": """• Coordenador geral e responsável técnico do Programa Lagoas do Norte em Teresina, financiado pelo Banco Mundial (2014–2019): proposta e projeto integrado de esgotamento sanitário para 312 mil habitantes, 28 km de drenagem, abastecimento de água, sistema viário, usina de biogás de 1 MW, projeto urbanístico em BIM e programa socioambiental em ~1.300 ha.
 • Responsável técnico em 46 ARTs, incluindo o Plano Diretor de Drenagem da Bacia do Rio Mearim (99 mil km², 2,1 milhões de habitantes), sistemas de água para companhias estaduais (até 1.250 L/s; Criciúma, 311 mil habitantes; 148 km de rede no litoral do Paraná) e projeto e licenciamento de aterro sanitário.
+• Gestão de 5 a 7 contratos de consultoria simultâneos (~R$ 20 milhões/ano), de R$ 1 a 2 milhões cada, para empreendimentos de R$ 100 a 800 milhões em saneamento, drenagem e meio ambiente.
 • Análise técnico-econômica de processos de concessão de água e esgoto em quatro municípios; estudos de viabilidade (fluxo de caixa descontado) e modelagem tarifária de concessões.
-• Gestão ambiental de programas rodoviários: duplicação da BR-470 para o DNIT (73 km), SC-477 (73 km) e concessão Arteris Autopista Litoral Sul (357 km).
 • Propostas financeiras das ~90 licitações por ano da empresa (técnica e preço e menor preço) e metodologia de precificação por métricas objetivas que reduziu muito o tempo de elaboração.
+• Gestão ambiental de programas rodoviários: duplicação da BR-470 para o DNIT (73 km), SC-477 (73 km) e concessão Arteris Autopista Litoral Sul (357 km).
 • Condução do ERP, da migração para o SharePoint Online (só com equipe interna), Power Platform, ISO 9001 e da implantação do BIM."""},
     },
     {
@@ -146,17 +138,17 @@ PROJECTS = [
 
 PROFILE = {
     "en": {
-        "headline": "Applied AI Engineer | LLM Agents, MCP & Financial Systems | Python · TypeScript · PostgreSQL | 15+ yrs Infrastructure Engineering & Finance (ex-CFO) | Open to relocation EU/US · Remote",
+        "headline": "Data, Financial Modeling & AI | Forecasting, Valuation & Analytics | Python · SQL · PostgreSQL | ex-CFO · 15+ yrs Infrastructure Finance | Open to EU/US relocation · Remote",
         "about": EN_ABOUT,
     },
     "pt": {
-        "headline": "Engenheiro de IA Aplicada | Agentes de IA, MCP e Sistemas Financeiros | Python · TypeScript · PostgreSQL | 15+ anos em Engenharia de Infraestrutura e Finanças (ex-CFO) | Aberto a Europa/EUA e remoto",
+        "headline": "Engenheiro Sanitarista e Ambiental | Modelagem Técnico-Financeira, Dados e IA | Saneamento, Concessões e Infraestrutura | ex-Diretor Financeiro",
         "about": PT_ABOUT,
     },
     "positions": POSITIONS,
     "projects": PROJECTS,
-    "skills_top": ["AI Agents", "Large Language Models (LLM)", "Python", "PostgreSQL", "Financial Modeling"],
-    "skills": ["Model Context Protocol (MCP)", "Prompt Engineering", "Generative AI", "LLMOps", "Human-in-the-loop",
+    "skills_top": ["Financial Modeling", "Data Analysis", "Python", "Artificial Intelligence (AI)", "Sanitation Engineering"],
+    "skills": ["Data Science", "Forecasting", "Financial Analysis", "Water & Wastewater", "Model Context Protocol (MCP)", "Prompt Engineering", "Generative AI", "LLMOps", "Human-in-the-loop",
                "TypeScript", "Next.js", "React", "FastAPI", "Supabase", "Docker", "CI/CD", "GitHub Actions", "REST APIs",
                "Linux", "n8n", "Time-Series Forecasting", "Bayesian Statistics", "Financial Analysis",
                "Discounted Cash Flow (DCF)", "Feasibility Studies", "Budgeting", "Power BI", "SQL", "Project Management",

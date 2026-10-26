@@ -2,8 +2,12 @@ import api from './api';
 
 export type PostStatus = 'draft' | 'approved' | 'published' | 'failed' | 'discarded';
 
+// br = Brazil (Portuguese: engineering, sanitation, modeling) · intl = abroad (English: data, finance, modeling)
+export type Market = 'br' | 'intl';
+
 export interface CopilotPost {
   id: number;
+  market: Market;
   pillar: string | null;
   topic: string | null;
   source_notes: string | null;
@@ -32,6 +36,7 @@ export type ProspectStatus = 'to_contact' | 'invited' | 'accepted' | 'replied' |
 
 export interface Prospect {
   id: number;
+  market: Market | null;
   profile_url: string | null;
   name: string | null;
   headline: string | null;
@@ -72,7 +77,7 @@ export const linkedinCopilotService = {
   disconnect: async () => (await api.post(`${base}/disconnect`)).data,
 
   listPosts: async () => (await api.get<{ posts: CopilotPost[] }>(`${base}/posts`)).data.posts,
-  generatePosts: async (req: { count: number; pillar?: string; topic?: string; source_notes?: string }) =>
+  generatePosts: async (req: { market: Market; count: number; pillar?: string; topic?: string; source_notes?: string }) =>
     (await api.post<{ posts: CopilotPost[] }>(`${base}/posts/generate`, req)).data.posts,
   updatePost: async (id: number, body: string) => (await api.patch<CopilotPost>(`${base}/posts/${id}`, { body })).data,
   approvePost: async (id: number, scheduled_for?: string) =>

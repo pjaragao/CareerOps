@@ -38,12 +38,12 @@ async def save_profile(profile: Dict[str, Any]):
     return {"ok": True}
 
 @router.get("/resume")
-async def get_resume():
-    return {"content": ProfileService.get_resume_base()}
+async def get_resume(lang: str = "en"):
+    return {"content": ProfileService.get_resume_base(lang)}
 
 @router.post("/resume")
-async def save_resume(data: ResumeUpdate):
-    ProfileService.save_resume_base(data.content)
+async def save_resume(data: ResumeUpdate, lang: str = "en"):
+    ProfileService.save_resume_base(data.content, lang)
     return {"ok": True}
 
 @router.get("/status")

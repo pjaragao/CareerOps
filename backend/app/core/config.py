@@ -50,7 +50,9 @@ class Settings(BaseSettings):
     OUTPUT_DIR: Path = PROJECT_DIR / os.getenv("OUTPUT_DIR", "./output")
     AUTH_DIR: Path = PROJECT_DIR / "auth"
     SESSION_FILE: Path = AUTH_DIR / "linkedin_session.json"
-    RESUME_BASE_FILE: Path = PROJECT_DIR / "resume_base.md"
+    # Master CVs (in config/, which is mounted into the container): abroad = English, Brazil = Portuguese
+    RESUME_BASE_FILE: Path = PROJECT_DIR / "config" / "resume_en.md"
+    RESUME_BASE_PT_FILE: Path = PROJECT_DIR / "config" / "resume_pt.md"
     PROMPT_FILE: Path = PROJECT_DIR / "prompt_template.md"
     CONFIG_DIR: Path = PROJECT_DIR / "config"
     PROFILE_FILE: Path = CONFIG_DIR / "profile.yml"

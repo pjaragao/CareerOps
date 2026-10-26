@@ -121,14 +121,18 @@ class ProfileService:
             conn.close()
 
     @staticmethod
-    def get_resume_base() -> str:
-        if settings.RESUME_BASE_FILE.exists():
-            return settings.RESUME_BASE_FILE.read_text(encoding="utf-8")
-        return ""
+    def _resume_file(lang: str = "en"):
+        return settings.RESUME_BASE_PT_FILE if (lang or "").lower().startswith("p") else settings.RESUME_BASE_FILE
 
     @staticmethod
-    def save_resume_base(content: str):
-        settings.RESUME_BASE_FILE.write_text(content, encoding="utf-8")
+    def get_resume_base(lang: str = "en") -> str:
+        """Master CV: "en" = abroad (data, finance, modeling), "pt" = Brazil (engineering, sanitation, modeling)."""
+        path = ProfileService._resume_file(lang)
+        return path.read_text(encoding="utf-8") if path.exists() else ""
+
+    @staticmethod
+    def save_resume_base(content: str, lang: str = "en"):
+        ProfileService._resume_file(lang).write_text(content, encoding="utf-8")
 
     @staticmethod
     def get_latest_stats() -> Optional[dict]:

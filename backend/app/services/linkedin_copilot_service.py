@@ -83,10 +83,11 @@ class LinkedInCopilotService:
 
     @staticmethod
     async def generate_posts(count: int = 2, pillar: Optional[str] = None, topic: Optional[str] = None,
-                             source_notes: Optional[str] = None) -> List[dict]:
-        recent = _rows("SELECT topic FROM public.linkedin_posts WHERE topic IS NOT NULL ORDER BY created_at DESC LIMIT 15")
+                             source_notes: Optional[str] = None, market: str = "intl") -> List[dict]:
+        """market: "br" = Brazil (Portuguese, engineering/sanitation first) or "intl" = abroad (English, data/finance/modeling)."""
+        recent = _rows("SELECT topic FROM public.linkedin_posts WHERE topic IS NOT NULL AND market = %s ORDER BY created_at DESC LIMIT 15", (market,))
         result = await _skill("linkedin/post_drafts.md", {
-            "count": max(1, min(count, 5)), "pillar": pillar, "topic": topic, "source_notes": source_notes,
+            "market": market, "count": max(1, min(count, 5)), "pillar": pillar, "topic": topic, "source_notes": source_notes,
             "recent_posts": [r["topic"] for r in recent],
         }, model_key="ai_model_optimizer")  # public text: use the stronger model
         created = []
@@ -95,9 +96,9 @@ class LinkedInCopilotService:
             if not body:
                 continue
             created.append(_one("""
-                INSERT INTO public.linkedin_posts (pillar, topic, source_notes, body)
-                VALUES (%s, %s, %s, %s) RETURNING *
-            """, (p.get("pillar") or pillar, p.get("topic") or topic, source_notes, body)))
+                INSERT INTO public.linkedin_posts (market, pillar, topic, source_notes, body)
+                VALUES (%s, %s, %s, %s, %s) RETURNING *
+            """, (market, p.get("pillar") or pillar, p.get("topic") or topic, source_notes, body)))
         return created
 
     @staticmethod
@@ -238,12 +239,13 @@ class LinkedInCopilotService:
             "profile_text": profile_text[:6000], "profile_url": profile_url, "name": name, "headline": headline, "company": company,
         })
         fit = _score(ai.get("fit"))
+        market = ai.get("market") if ai.get("market") in ("br", "intl") else None
         note = (ai.get("note") or "").strip()[:300] or None
         return _one("""
-            INSERT INTO public.linkedin_prospects (profile_url, name, headline, company, profile_text, segment, fit, reason, note_draft, status)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING *
+            INSERT INTO public.linkedin_prospects (profile_url, name, headline, company, profile_text, market, segment, fit, reason, note_draft, status)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING *
         """, (profile_url, name or ai.get("name"), headline or ai.get("headline"), company or ai.get("company"), profile_text,
-              ai.get("segment"), fit, ai.get("reason"), note, "to_contact" if fit >= MIN_SCORE else "skipped"))
+              market, ai.get("segment"), fit, ai.get("reason"), note, "to_contact" if fit >= MIN_SCORE else "skipped"))
 
     @staticmethod
     def list_prospects(status: Optional[str] = None) -> dict:

@@ -59,12 +59,13 @@ export const profileService = {
     const response = await api.post('/profile', profile);
     return response.data;
   },
-  getResume: async () => {
-    const response = await api.get<{ content: string }>('/profile/resume');
+  // lang: 'en' = CV for jobs abroad, 'pt' = CV for jobs in Brazil
+  getResume: async (lang: 'en' | 'pt' = 'en') => {
+    const response = await api.get<{ content: string }>('/profile/resume', { params: { lang } });
     return response.data;
   },
-  saveResume: async (content: string) => {
-    const response = await api.post('/profile/resume', { content });
+  saveResume: async (content: string, lang: 'en' | 'pt' = 'en') => {
+    const response = await api.post('/profile/resume', { content }, { params: { lang } });
     return response.data;
   },
   uploadResume: async (file: File) => {
