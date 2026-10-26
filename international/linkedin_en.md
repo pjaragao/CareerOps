@@ -113,6 +113,10 @@ Skills: Python · Quantitative Finance · Time-Series Forecasting
 Fantasy-football league agent on WhatsApp: tool with 40 queries, per-league isolation, LLM fallback chain, cron-driven reports, charts and live alerts, 300+ tests.
 Skills: AI Agents · Python · LLM Ops
 
+**Election-Night Projection Model (Brazil 2026)** · Sep 2026 – Oct 2026
+Real-time projection of Brazil's 2026 presidential runoff from official electoral-court (TSE) data: Bayesian hierarchical model of municipal deviations from a first-round + vote-transfer baseline (national → regional → state shrinkage, log-odds), analytic uncertainty calibrated by replaying the 2014, 2018 and 2022 runoffs in their real vote-arrival order; verifies the TSE's Ed25519-signed feeds and posts live updates to WhatsApp. No LLM — pure statistics; 56 tests.
+Skills: Bayesian Statistics · Python · Backtesting · Data Engineering
+
 **CareerOps — AI career-automation platform** · Feb 2026 – Jun 2026
 FastAPI + React + Chrome extension. Modular Jinja2 prompt skills across Gemini, NVIDIA NIM and Ollama, human-validated knowledge base, ATS matching and PDF generation.
 Skills: FastAPI · React · Prompt Engineering
@@ -131,7 +135,10 @@ Skills: Next.js · React Native · Supabase
 1. CentralOps — GitHub showcase repo + 2-minute demo video (agent answering a customer, guardrail blocking a wrong price, human handoff).
 2. A post: "How I made an LLM agent safe to touch money" (MCP + RLS + numeric guardrails). Technical posts are how international recruiters find you.
 3. Trading Copilot — GitHub repo.
-4. GitHub profile.
+4. JãoBolão — link to the live app or its GitHub repo (github.com/pjaragao/J-oBol-o) with a 3-screen image (pool, live ranking, subscription plans). Description: "Web + mobile sports-pool SaaS: Next.js, React Native/Expo, Supabase (Postgres, Auth, Realtime, Edge Functions), Stripe and RevenueCat subscriptions, live rankings and a WhatsApp AI bot." Shows full product delivery: payments, mobile and real time.
+5. Election-night projection model — GitHub link + the live chart image. Description: "Real-time projection of Brazil's 2026 presidential runoff from official electoral-court (TSE) data: Bayesian hierarchical model of municipal deviations from a first-round + vote-transfer baseline (national → regional → state shrinkage, log-odds), analytic uncertainty calibrated by replaying the 2014, 2018 and 2022 runoffs in their real vote-arrival order; verifies the TSE's Ed25519-signed feeds and posts live updates to WhatsApp. No LLM — pure statistics; 56 tests." Shows statistical modeling and calibration, not just LLMs.
+6. Mr Irrelevant — GitHub link + a WhatsApp screenshot (league chart or trade verdict). Description: "Multi-tenant WhatsApp AI agent for fantasy-football leagues: one instance serves several leagues with isolated persona, data, secrets and schedule, built from nothing but the league ID; 40-query league tool, LLM fallback chain ending in deterministic text, cron-driven reports, charts and live injury alerts; 300+ unit and end-to-end tests." Shows an AI agent running in production for real users.
+7. GitHub profile.
 
 ---
 

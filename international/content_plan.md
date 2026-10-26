@@ -27,6 +27,8 @@ Os posts vão em inglês, prontos para publicar. Este plano está em português.
 | **B. Ex-CFO builds** | Finanças + IA: orçamento, KPIs, contabilidade, impostos, trading | CentralOps (financeiro), Trading Copilot |
 | **C. Infrastructure × AI** | 18 anos em saneamento, resíduos e Banco Mundial; onde a IA entra em infraestrutura | MPB, consultoria atual (sem nomes), Radar de Licitações |
 | **D. AI-assisted engineering** | Como usar agentes de código com rigor: testes, ADRs, CI | CentralOps, Mr Irrelevant |
+| **E. Estatística, não só LLM** | Modelagem e calibração com backtest | Modelo de projeção eleitoral |
+| **F. IA na engenharia de infraestrutura** (~1 em cada 3 posts) | IA no ciclo inteiro do empreendimento: concepção e projeto, estudos hidráulicos, quantitativos, orçamento, edital e preço de proposta, BIM, licenciamento e monitoramento ambiental, gestão de obra (cronograma, medição, aditivos) e operação (perdas, O&M). Mostrar onde a IA ajuda e onde não se pode confiar nela | Lagoas do Norte, sistemas de água das companhias, programas ambientais de rodovias, viabilidade de concessões, ~90 licitações/ano |
 
 ## 3. Perfil
 
