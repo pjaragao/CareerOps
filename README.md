@@ -51,6 +51,7 @@
 - **Prospecting** — capture profiles; AI scores fit and drafts a ≤300-char connection note; track invited → accepted → replied against a weekly target
 - **Weekly metrics** — posts, comments and invites counted automatically, plus profile views / impressions / recruiter messages entered from LinkedIn analytics
 - **Profile filler (EN + PT)** — extension panel *CareerOps · Perfil* on linkedin.com with the approved headline, About, positions and projects in both languages (`config/linkedin_profile.json`, built by `international/build_linkedin_profile.py`); click a LinkedIn field, press *Inserir*, review and Save
+- **LinkedIn assist (extension)** — `✨ Comentário IA` on every post (drafts and fills the comment box; clicking Publicar marks it done), `🤝 Convite IA` on profiles (scores fit and fills the invite note; clicking Enviar marks it invited), `⭐ Avaliar pessoas da página` on search and My Network (scores everyone visible in one AI call and saves good fits with a ready note)
 - **No bots**: nothing likes, comments, follows or connects on your behalf — that violates LinkedIn's User Agreement and gets accounts restricted
 
 ---

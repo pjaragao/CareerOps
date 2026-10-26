@@ -2,7 +2,7 @@ import io
 import json
 import zipfile
 from datetime import date, datetime
-from typing import Literal, Optional
+from typing import List, Literal, Optional
 
 from fastapi import APIRouter, HTTPException
 from urllib.parse import quote
@@ -66,7 +66,7 @@ async def profile_copy():
 
 
 # ── Browser extension download (zip built from the extension folder baked into the image) ──
-EXTENSION_FILES = ["manifest.json", "background.js", "content.js", "content.css", "profile_filler.js", "popup.html", "popup.js"]
+EXTENSION_FILES = ["manifest.json", "background.js", "content.js", "content.css", "profile_filler.js", "linkedin_assist.js", "popup.html", "popup.js"]
 
 
 def _extension_dir():
@@ -214,6 +214,25 @@ async def list_prospects(status: Optional[str] = None):
 async def add_prospect(req: ProspectIn):
     try:
         return await Copilot.add_prospect(req.profile_text, req.profile_url, req.name, req.headline, req.company)
+    except RuntimeError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+class PersonIn(BaseModel):
+    profile_url: str
+    name: Optional[str] = None
+    headline: Optional[str] = None
+
+
+class PeopleBatchIn(BaseModel):
+    people: List[PersonIn] = Field(..., min_length=1, max_length=40)
+
+
+@router.post("/prospects/batch")
+async def score_people(req: PeopleBatchIn):
+    """Scores the people visible on a LinkedIn list page (search, My Network) and stores them as prospects."""
+    try:
+        return {"items": await Copilot.score_people([p.model_dump() for p in req.people])}
     except RuntimeError as e:
         raise HTTPException(status_code=502, detail=str(e))
 

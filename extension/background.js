@@ -220,3 +220,32 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     })();
     return true; // keep the channel open for the async response
 });
+
+// ── Copilot API proxy for linkedin_assist.js (HTTPS pages cannot call the HTTP backend directly) ──
+const COPILOT_API_BASES = [
+    'http://127.0.0.1:8005/api/linkedin-copilot',
+    'http://localhost:8005/api/linkedin-copilot',
+    'http://100.109.242.35:8005/api/linkedin-copilot'
+];
+
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    if (request.action !== 'copilotApi') return;
+    (async () => {
+        for (const base of COPILOT_API_BASES) {
+            try {
+                const res = await fetch(base + request.path, {
+                    method: request.method || 'GET',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: request.body ? JSON.stringify(request.body) : undefined
+                });
+                const data = await res.json().catch(() => null);
+                sendResponse({ ok: res.ok, status: res.status, data });
+                return;
+            } catch (e) {
+                console.warn('Copilot API: failed to reach', base, e);
+            }
+        }
+        sendResponse({ ok: false, status: 0, data: { detail: 'Backend do CareerOps indisponível (porta 8005)' } });
+    })();
+    return true;
+});

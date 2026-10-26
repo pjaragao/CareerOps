@@ -248,6 +248,45 @@ class LinkedInCopilotService:
               market, ai.get("segment"), fit, ai.get("reason"), note, "to_contact" if fit >= MIN_SCORE else "skipped"))
 
     @staticmethod
+    async def score_people(people: List[Dict[str, Any]]) -> List[dict]:
+        """Scores the people visible on a LinkedIn list page in one AI call and stores them as prospects.
+
+        people: [{"profile_url", "name", "headline"}]. Already-known profiles are returned as they are (no new AI cost).
+        """
+        clean, seen = [], set()
+        for person in people:
+            url = (person.get("profile_url") or "").split("?")[0].rstrip("/")
+            if not url or url in seen:
+                continue
+            seen.add(url)
+            clean.append({"profile_url": url, "name": (person.get("name") or "").strip()[:120],
+                          "headline": (person.get("headline") or "").strip()[:400]})
+        clean = clean[:25]
+        known = {r["profile_url"]: r for r in _rows(
+            "SELECT * FROM public.linkedin_prospects WHERE profile_url = ANY(%s)", ([c["profile_url"] for c in clean],))}
+        todo = [c for c in clean if c["profile_url"] not in known]
+        results = {url: row for url, row in known.items()}
+        if todo:
+            ai = await _skill("linkedin/prospect_batch.md", {"people": todo})
+            for item in ai.get("people", []):
+                try:
+                    person = todo[int(item.get("i"))]
+                except (TypeError, ValueError, IndexError):
+                    continue
+                fit = _score(item.get("fit"))
+                market = item.get("market") if item.get("market") in ("br", "intl") else None
+                note = (item.get("note") or "").strip()[:300] or None
+                results[person["profile_url"]] = _one("""
+                    INSERT INTO public.linkedin_prospects (profile_url, name, headline, profile_text, market, segment, fit, reason, note_draft, status)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (profile_url) WHERE profile_url IS NOT NULL DO NOTHING
+                    RETURNING *
+                """, (person["profile_url"], person["name"] or None, person["headline"] or None, person["headline"], market,
+                      item.get("segment"), fit, item.get("reason"), note, "to_contact" if fit >= MIN_SCORE else "skipped")) \
+                    or _one("SELECT * FROM public.linkedin_prospects WHERE profile_url = %s", (person["profile_url"],))
+        return [results[c["profile_url"]] for c in clean if c["profile_url"] in results]
+
+    @staticmethod
     def list_prospects(status: Optional[str] = None) -> dict:
         if status:
             items = _rows("SELECT * FROM public.linkedin_prospects WHERE status = %s ORDER BY fit DESC NULLS LAST, created_at", (status,))

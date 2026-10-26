@@ -89,6 +89,7 @@ linkedin_resume/
 ├── extension/                  # Chrome Extension (Manifest V3)
 │   ├── content.js              # Job and profile import (one page at a time)
 │   ├── profile_filler.js       # "CareerOps · Perfil" panel on linkedin.com
+│   ├── linkedin_assist.js      # AI comment on posts, AI invite note on profiles, scoring of listed people (user clicks send)
 │   ├── background.js           # Sync to backend + "Enviar ao CareerOps Copilot" menu
 │   ├── popup.html              # Import button
 │   (download zip is built on the fly by GET /api/linkedin-copilot/extension/download)
