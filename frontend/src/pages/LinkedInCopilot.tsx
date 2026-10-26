@@ -1,13 +1,13 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
-  Megaphone, Sparkles, Send, Check, X, Copy, ExternalLink, Calendar, Users, MessageCircle, BarChart3, Link2, Plus, Undo2, UserPlus,
+  Megaphone, Sparkles, Send, Check, X, Copy, ExternalLink, Calendar, Users, BarChart3, Link2, Plus, Undo2, UserPlus,
 } from 'lucide-react';
 import {
   linkedinCopilotService as svc, CopilotPost, PostStatus, CopilotStatus, Market, Inspiration, EngagementItem, Prospect, ProspectStatus, WeekMetrics,
 } from '../services/linkedinCopilotService';
 
-type Tab = 'posts' | 'engagement' | 'prospects' | 'metrics';
+type Tab = 'posts' | 'prospects' | 'metrics';
 
 const field: React.CSSProperties = {
   width: '100%', padding: '0.7rem', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border)',
@@ -229,7 +229,7 @@ const ThemesList = () => {
         <span style={muted}>Salvos pelo 📌 da extensão ou ao comentar. Com menos de 2 rascunhos esperando, a IA escreve um do tema novo mais recente.</span>
       </div>
       <DenseTable head={<>
-        <th style={th}>AUTOR & POST</th><th style={th}>IDIOMA</th><th style={th}>SALVO</th><th style={th}>STATUS</th><th style={{ ...th, textAlign: 'right' }}>AÇÕES</th>
+        <th style={th}>AUTOR & POST</th><th className="hide-sm" style={th}>IDIOMA</th><th className="hide-sm" style={th}>SALVO</th><th className="hide-sm" style={th}>STATUS</th><th style={{ ...th, textAlign: 'right' }}>AÇÕES</th>
       </>}>
         {shown.map(i => (
           <tr key={i.id} className="row-hover" style={{ borderBottom: '1px solid var(--border)', cursor: 'pointer' }} onClick={() => setOpen(open === i.id ? null : i.id)}>
@@ -241,9 +241,9 @@ const ThemesList = () => {
               <div style={{ ...muted, ...(open === i.id ? { whiteSpace: 'pre-line', overflowWrap: 'anywhere' } : clamp(1)) }}>{i.post_text}</div>
               {i.note && <div style={{ fontSize: '0.8rem', color: '#a29bfe', ...(open === i.id ? { overflowWrap: 'anywhere' } : clamp(1)) }}>💬 {i.note}</div>}
             </td>
-            <td style={td}><span style={chip(i.market === 'br' ? '#00b894' : '#4da3ff')}>{i.market === 'br' ? 'PT' : 'EN'}</span></td>
-            <td style={{ ...td, ...muted, whiteSpace: 'nowrap' }}>{ago(i.created_at)}</td>
-            <td style={td}><span style={chip(i.used_count ? '#9aa4b2' : '#00d4aa')}>{i.used_count ? `usado ${i.used_count}x` : 'novo'}</span></td>
+            <td className="hide-sm" style={td}><span style={chip(i.market === 'br' ? '#00b894' : '#4da3ff')}>{i.market === 'br' ? 'PT' : 'EN'}</span></td>
+            <td className="hide-sm" style={{ ...td, ...muted, whiteSpace: 'nowrap' }}>{ago(i.created_at)}</td>
+            <td className="hide-sm" style={td}><span style={chip(i.used_count ? '#9aa4b2' : '#00d4aa')}>{i.used_count ? `usado ${i.used_count}x` : 'novo'}</span></td>
             <td style={{ ...td, textAlign: 'right' }} onClick={e => e.stopPropagation()}>
               <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
                 <button className="btn btn-primary" style={{ ...smallBtn, whiteSpace: 'nowrap' }} disabled={busy !== null} onClick={() => generate(i)}
@@ -327,12 +327,17 @@ const GeneratePosts = ({ connected }: { connected: boolean }) => {
   );
 };
 
-const PostsTab = ({ connected }: { connected: boolean }) => {
-  const [sub, setSub] = useState<'themes' | 'generate'>('themes');
+type PostsSub = 'themes' | 'comments' | 'generate';
+const PostsTab = ({ connected, initial }: { connected: boolean; initial: PostsSub }) => {
+  const [sub, setSub] = useState<PostsSub>(initial);
   return (
     <>
-      <Pills value={sub} onChange={setSub} items={[{ id: 'themes', label: '📌 Posts salvos' }, { id: 'generate', label: '✨ Gerar post' }]} />
-      {sub === 'themes' ? <ThemesList /> : <GeneratePosts connected={connected} />}
+      <Pills value={sub} onChange={setSub} items={[
+        { id: 'themes', label: '📌 Posts salvos' }, { id: 'comments', label: '💬 Comentários a postar' }, { id: 'generate', label: '✨ Gerar post' },
+      ]} />
+      {sub === 'themes' && <ThemesList />}
+      {sub === 'comments' && <EngagementTab />}
+      {sub === 'generate' && <GeneratePosts connected={connected} />}
     </>
   );
 };
@@ -389,11 +394,11 @@ const EngagementTab = () => {
     <>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         <span style={muted}>Hoje: <strong style={{ color: '#fff' }}>{data.done_today}</strong> / {data.daily_target} comentários ·
-          {' '}{data.items.length} na fila · clique na linha para ver o post e editar o comentário</span>
+          {' '}{data.items.length} na fila · some sozinho quando você comenta o post (mesmo com outro texto) · clique na linha para editar</span>
         <AddEngagement onAdded={load} />
       </div>
       <DenseTable head={<>
-        <th style={th}>REL.</th><th style={th}>AUTOR & POST</th><th style={th}>COMENTÁRIO SUGERIDO</th><th style={{ ...th, textAlign: 'right' }}>AÇÕES</th>
+        <th style={th}>REL.</th><th style={th}>AUTOR & POST</th><th className="hide-sm" style={th}>COMENTÁRIO SUGERIDO</th><th style={{ ...th, textAlign: 'right' }}>AÇÕES</th>
       </>}>
         {data.items.map(item => (
           <EngagementRow key={item.id} item={item} open={open === item.id} onToggle={() => setOpen(open === item.id ? null : item.id)} onMark={mark} />
@@ -416,7 +421,7 @@ const EngagementRow = ({ item, open, onToggle, onMark }: {
           <strong style={{ color: '#fff' }}>{item.author_name || 'Autor desconhecido'}</strong>
           <div style={{ ...muted, ...clamp(1) }}>{item.post_text}</div>
         </td>
-        <td style={{ ...td, maxWidth: 0, width: '50%' }}><div style={{ ...muted, ...clamp(2) }}>{comment || '—'}</div></td>
+        <td className="hide-sm" style={{ ...td, maxWidth: 0, width: '50%' }}><div style={{ ...muted, ...clamp(2) }}>{comment || '—'}</div></td>
         <td style={{ ...td, textAlign: 'right' }} onClick={e => e.stopPropagation()}>
           <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
             <button className="btn btn-secondary" style={iconBtn} title="Copiar comentário" onClick={() => copy(comment)}><Copy size={15} /></button>
@@ -474,7 +479,7 @@ const ProspectsTab = () => {
           vêm dos autores e comentaristas dos posts que você salva ou comenta</span>
       </div>
       <DenseTable head={<>
-        <th style={th}>PESSOA</th><th style={th}>FIT</th><th style={th}>MERCADO</th><th style={th}>STATUS</th><th style={{ ...th, textAlign: 'right' }}>AÇÕES</th>
+        <th style={th}>PESSOA</th><th style={th}>FIT</th><th className="hide-sm" style={th}>MERCADO</th><th className="hide-sm" style={th}>STATUS</th><th style={{ ...th, textAlign: 'right' }}>AÇÕES</th>
       </>}>
         {shown.map(p => <ProspectRow key={p.id} p={p} onUpdate={update} />)}
       </DenseTable>
@@ -499,8 +504,8 @@ const ProspectRow = ({ p, onUpdate }: { p: Prospect; onUpdate: (id: number, patc
         {p.reason && <div style={{ ...muted, fontSize: '0.78rem', opacity: 0.75, ...clamp(1) }}>{p.reason}</div>}
       </td>
       <td style={td}><span style={chip((p.fit ?? 0) >= 70 ? '#00d4aa' : '#ffb020')}>{p.fit ?? '?'}</span></td>
-      <td style={td}>{p.market && <span style={chip(p.market === 'br' ? '#00b894' : '#4da3ff')}>{p.market === 'br' ? 'BR' : 'EXT'}</span>}</td>
-      <td style={td}><span style={chip(STATUS_COLOR[p.status])}>{STATUS_LABEL[p.status] || p.status}</span></td>
+      <td className="hide-sm" style={td}>{p.market && <span style={chip(p.market === 'br' ? '#00b894' : '#4da3ff')}>{p.market === 'br' ? 'BR' : 'EXT'}</span>}</td>
+      <td className="hide-sm" style={td}><span style={chip(STATUS_COLOR[p.status])}>{STATUS_LABEL[p.status] || p.status}</span></td>
       <td style={{ ...td, textAlign: 'right' }}>
         <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
           {p.status === 'to_contact' && connectUrl && (
@@ -568,14 +573,15 @@ const MetricsTab = () => {
 // ── Page ──────────────────────────────────────────────────────────────────
 const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
   { id: 'posts', label: 'Posts', icon: <Megaphone size={16} /> },
-  { id: 'engagement', label: 'Engajamento', icon: <MessageCircle size={16} /> },
   { id: 'prospects', label: 'Prospecção', icon: <Users size={16} /> },
   { id: 'metrics', label: 'Métricas', icon: <BarChart3 size={16} /> },
 ];
 
 const LinkedInCopilot = () => {
   const [params, setParams] = useSearchParams();
+  // ?tab=engagement (old links, e.g. from Início) opens the comment queue inside Posts
   const [tab, setTab] = useState<Tab>(() => (TABS.find(t => t.id === params.get('tab'))?.id ?? 'posts'));
+  const postsSub: PostsSub = params.get('tab') === 'engagement' ? 'comments' : 'themes';
   const [status, setStatus] = useState<CopilotStatus | null>(null);
   const loadStatus = useCallback(() => svc.status().then(setStatus).catch(() => setStatus(null)), []);
   useEffect(() => { svc.status().then(setStatus).catch(() => setStatus(null)); }, []);
@@ -605,8 +611,7 @@ const LinkedInCopilot = () => {
         A IA rascunha; você aprova. Posts só saem aprovados; convites saem sem nota, um por clique em "Conectar"; comentários e follows você faz no LinkedIn.
       </p>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-        {tab === 'posts' && <PostsTab connected={!!status?.connected} />}
-        {tab === 'engagement' && <EngagementTab />}
+        {tab === 'posts' && <PostsTab connected={!!status?.connected} initial={postsSub} />}
         {tab === 'prospects' && <ProspectsTab />}
         {tab === 'metrics' && <MetricsTab />}
       </div>

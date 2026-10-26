@@ -206,8 +206,8 @@ class LinkedInCopilotService:
 
     # ── Inspirations (posts saved from the feed as topics of interest) ───
     @staticmethod
-    def add_inspiration(post_text: str, post_url: Optional[str] = None, author_name: Optional[str] = None,
-                        author_headline: Optional[str] = None, note: Optional[str] = None) -> dict:
+    def _save_inspiration(post_text: str, post_url: Optional[str] = None, author_name: Optional[str] = None,
+                          author_headline: Optional[str] = None, note: Optional[str] = None) -> dict:
         if post_url:
             existing = _one("SELECT * FROM public.linkedin_inspirations WHERE post_url = %s", (post_url,))
             if existing:
@@ -220,6 +220,14 @@ class LinkedInCopilotService:
             INSERT INTO public.linkedin_inspirations (post_url, author_name, author_headline, post_text, note)
             VALUES (%s, %s, %s, %s, %s) RETURNING *
         """, (post_url, author_name, author_headline, post_text[:6000], note))
+
+    @staticmethod
+    def add_inspiration(post_text: str, post_url: Optional[str] = None, author_name: Optional[str] = None,
+                        author_headline: Optional[str] = None, note: Optional[str] = None) -> dict:
+        item = LinkedInCopilotService._save_inspiration(post_text, post_url, author_name, author_headline, note)
+        if note:   # a comment you just posted closes the matching queue item
+            LinkedInCopilotService.reconcile_engagement()
+        return item
 
     @staticmethod
     def list_inspirations() -> List[dict]:
@@ -283,7 +291,27 @@ class LinkedInCopilotService:
               comment, "pending" if (instruction or relevance >= MIN_SCORE) and comment else "skipped"))
 
     @staticmethod
+    def reconcile_engagement() -> int:
+        """Closes queue items you already commented on LinkedIn — also when you discarded the draft and wrote another.
+
+        The extension saves every post you comment on as a theme with "Você comentou: <your text>"; a pending item for
+        the same post (by link, or by its opening text when there is no link) is done, with what you really wrote.
+        """
+        return _one("""
+            WITH closed AS (
+            UPDATE public.linkedin_engagement e
+               SET status = 'done', comment_draft = regexp_replace(i.note, '^Você comentou: ', ''),
+                   done_at = COALESCE(e.done_at, i.created_at)
+              FROM public.linkedin_inspirations i
+             WHERE e.status = 'pending' AND i.note LIKE 'Você comentou: %%'
+               AND (e.post_url = i.post_url OR (e.post_url IS NULL AND left(e.post_text, 200) = left(i.post_text, 200)))
+         RETURNING e.id)
+            SELECT COUNT(*) AS n FROM closed
+        """)["n"]
+
+    @staticmethod
     def engagement_queue() -> dict:
+        LinkedInCopilotService.reconcile_engagement()
         pending = _rows("""
             SELECT * FROM public.linkedin_engagement WHERE status = 'pending'
              ORDER BY relevance DESC NULLS LAST, created_at LIMIT %s
