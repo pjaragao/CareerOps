@@ -604,13 +604,28 @@
         const saveBtn = [...document.querySelectorAll('main button')]
             .find((b) => !b.closest('.careerops-card, .careerops-bar') && (SAVE.test(label(b)) || SAVED.test(label(b)))
                 && b.offsetParent !== null && !b.closest('li'));
-        if (!saveBtn || saveBtn.parentElement.querySelector('.careerops-jobbtn')) return;
+        if (!saveBtn || document.querySelector(`.careerops-jobbtn[data-job="${currentJobId()}"]`)) return;
         const mine = button('📥 CareerOps', () => importCurrentJob(mine));
         mine.classList.add('careerops-jobbtn');
         mine.title = 'Importar esta vaga para o CareerOps';
-        mine.style.marginLeft = '8px';
+        // same height as LinkedIn's pill buttons, never overlapping them
+        mine.style.cssText += ';position:static;flex:0 0 auto;align-self:center;height:32px;padding:0 14px;margin:0 0 0 8px;white-space:nowrap;border-radius:16px';
         mine.dataset.job = currentJobId();
-        saveBtn.insertAdjacentElement('afterend', mine);
+        // Save sits inside its own fixed-size wrapper: climb to the element that is a sibling of the Apply button's
+        // wrapper (the Apply/Save row) and add ours as a separate item of that row
+        const apply = [...document.querySelectorAll('main button, main a')].find((b) => /^(apply|candidatar|candidatar-se|easy apply|candidatura simplificada)\b/i.test(label(b)) && b.offsetParent !== null);
+        let anchor = saveBtn;
+        if (apply) {
+            while (anchor.parentElement && !anchor.parentElement.contains(apply)) anchor = anchor.parentElement;
+        } else if (saveBtn.parentElement && saveBtn.parentElement.children.length === 1) {
+            anchor = saveBtn.parentElement;
+        }
+        anchor.insertAdjacentElement('afterend', mine);
+        if (anchor.parentElement && getComputedStyle(anchor.parentElement).display.includes('flex') === false) {
+            mine.style.display = 'inline-flex';
+            mine.style.alignItems = 'center';
+            mine.style.verticalAlign = 'middle';
+        }
         // clicking LinkedIn's Save (not Unsave) also imports the job
         saveBtn.addEventListener('click', () => { if (SAVE.test(label(saveBtn))) importCurrentJob(mine, true); }, true);
     }
