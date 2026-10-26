@@ -85,13 +85,17 @@ async def import_job_extension(request: Request):
             data.get("description", ""),
             linkedin_job_id=data.get("linkedin_job_id")
         )
-        # Force status to applied if saved successfully to ensure it shows up
+        # Single-job import marks it applied (legacy behaviour); saved-jobs import sends status="new" and never
+        # moves a job that is already further along (applied, interviewing...) back.
         if success:
             try:
                 from app.db.session import get_db_connection
                 conn = get_db_connection()
                 with conn.cursor() as cur:
-                    cur.execute("UPDATE public.job_listings SET status = 'applied' WHERE url = %s OR linkedin_job_id = %s", (data.get("url"), data.get("linkedin_job_id")))
+                    if data.get("status") == "new":
+                        cur.execute("UPDATE public.job_listings SET status = 'new' WHERE (url = %s OR linkedin_job_id = %s) AND status IN ('scraped', 'archived')", (data.get("url"), data.get("linkedin_job_id")))
+                    else:
+                        cur.execute("UPDATE public.job_listings SET status = 'applied' WHERE url = %s OR linkedin_job_id = %s", (data.get("url"), data.get("linkedin_job_id")))
                 conn.commit()
                 conn.close()
             except: pass

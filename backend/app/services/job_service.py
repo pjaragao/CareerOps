@@ -88,7 +88,9 @@ class JobService:
                         company = EXCLUDED.company,
                         location = EXCLUDED.location,
                         description = EXCLUDED.description,
-                        status = 'scraped',
+                        -- re-importing never moves a job back from an application stage
+                        status = CASE WHEN job_listings.status IN ('applied', 'interviewing', 'offer', 'rejected', 'done')
+                                      THEN job_listings.status ELSE 'scraped' END,
                         scraped_at = EXCLUDED.scraped_at,
                         company_id = EXCLUDED.company_id
                     WHERE public.job_listings.status != 'applied'

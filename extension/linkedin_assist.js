@@ -502,12 +502,78 @@
         }
     }
 
+    // ── 5. Saved jobs: "📥 Importar vagas salvas" (my-items/saved-jobs) ───────────────────────────────
+    // Reads the list on screen (no clicks) and fetches each job's public posting, one at a time, slowly.
+    const backend = (method, path, body) => new Promise((resolve) => {
+        try {
+            chrome.runtime.sendMessage({ action: 'backendApi', method, path, body }, (res) => resolve(res || { ok: false, data: { detail: (chrome.runtime.lastError || {}).message || 'Sem resposta' } }));
+        } catch (e) { resolve({ ok: false, data: { detail: 'A extensão foi atualizada — recarregue esta página (F5)' } }); }
+    });
+    const isSavedJobsPage = () => /\/my-items\/saved-jobs/.test(location.pathname);
+
+    function savedJobsOnScreen() {
+        const jobs = new Map();
+        document.querySelectorAll('main a[href*="/jobs/view/"]').forEach((a) => {
+            const m = a.href.match(/\/jobs\/view\/(\d+)/);
+            if (!m || jobs.has(m[1])) return;
+            const box = a.closest('li, .entity-result, div[data-chameleon-result-urn], .reusable-search__result-container') || a.parentElement;
+            const lines = clean(box ? box.innerText : a.innerText).split('\n').map((l) => l.trim()).filter(Boolean);
+            jobs.set(m[1], { id: m[1], title: clean(a.innerText) || lines[0] || '', company: lines[1] || '', location: lines[2] || '' });
+        });
+        return [...jobs.values()].slice(0, 25);
+    }
+
+    async function jobPosting(id) {
+        try {
+            const html = await fetch(`/jobs-guest/jobs/api/jobPosting/${id}`, { credentials: 'include' }).then((r) => (r.ok ? r.text() : ''));
+            if (!html) return {};
+            const doc = new DOMParser().parseFromString(html, 'text/html');
+            const q = (sel) => clean((doc.querySelector(sel) || {}).textContent || '');
+            return {
+                title: q('.top-card-layout__title, .topcard__title'),
+                company: q('.topcard__org-name-link, .topcard__flavor a, .topcard__flavor'),
+                location: q('.topcard__flavor--bullet'),
+                description: clean((doc.querySelector('.show-more-less-html__markup, .description__text') || {}).innerText
+                    || (doc.querySelector('.show-more-less-html__markup, .description__text') || {}).textContent || ''),
+            };
+        } catch (e) { return {}; }
+    }
+
+    async function importSavedJobs(btn) {
+        const jobs = savedJobsOnScreen();
+        if (!jobs.length) { toast('Nenhuma vaga salva visível — role a lista e tente de novo', false); return { ok: false, imported: 0 }; }
+        let imported = 0, noDesc = 0;
+        for (let i = 0; i < jobs.length; i++) {
+            const j = jobs[i];
+            if (btn) btn.textContent = `Importando ${i + 1}/${jobs.length}…`;
+            const extra = await jobPosting(j.id);
+            if (!extra.description) noDesc++;
+            const res = await backend('POST', '/jobs/import-extension', {
+                title: extra.title || j.title, company: extra.company || j.company, location: extra.location || j.location,
+                url: `https://www.linkedin.com/jobs/view/${j.id}/`, linkedin_job_id: j.id,
+                description: extra.description || '', status: 'new',
+            });
+            if (res.ok) imported++;
+            await wait(1500 + Math.random() * 1000);   // slow and steady
+        }
+        if (btn) btn.textContent = '📥 Importar vagas salvas';
+        toast(`${imported} de ${jobs.length} vaga(s) salvas no CareerOps (Vagas)` + (noDesc ? ` · ${noDesc} sem descrição` : ''), imported > 0);
+        return { ok: true, imported, total: jobs.length };
+    }
+
+    chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+        if (request.action !== 'importSavedJobs') return;
+        importSavedJobs(savedBtn).then(sendResponse);
+        return true;
+    });
+
     // ── Floating buttons, re-evaluated as LinkedIn navigates (single-page app) ─────────────────────────
     const fab = document.createElement('div');
     fab.style.cssText = 'position:fixed;right:16px;bottom:16px;z-index:2147483645;display:flex;gap:6px';
     const inviteBtn = button('🤝 Convite IA', draftInvite);
     const scoreBtn = button('⭐ Avaliar pessoas da página', () => scorePage(scoreBtn));
-    fab.append(inviteBtn, scoreBtn);
+    const savedBtn = button('📥 Importar vagas salvas', () => importSavedJobs(savedBtn));
+    fab.append(inviteBtn, scoreBtn, savedBtn);
     document.documentElement.appendChild(fab);
 
     function refresh() {
@@ -516,6 +582,7 @@
         inviteBtn.style.display = isProfilePage() ? '' : 'none';
         const listPage = /\/search\/results\/people|\/mynetwork/.test(location.pathname);
         scoreBtn.style.display = listPage ? '' : 'none';
+        savedBtn.style.display = isSavedJobsPage() ? '' : 'none';
     }
     new MutationObserver(() => { clearTimeout(refresh.t); refresh.t = setTimeout(refresh, 400); })
         .observe(document.documentElement, { childList: true, subtree: true });

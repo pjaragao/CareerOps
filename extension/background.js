@@ -235,3 +235,47 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     })();
     return true;
 });
+
+// ── Popup: which backend answers, how fast, and the server-side extension version ──
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    if (request.action !== 'backendStatus') return;
+    (async () => {
+        for (const base of [...API_BASES]) {
+            const started = Date.now();
+            try {
+                const res = await fetch(base + '/linkedin-copilot/status');
+                if (!res.ok) continue;
+                const status = await res.json();
+                const info = await fetch(base + '/linkedin-copilot/extension/info').then((r) => (r.ok ? r.json() : null)).catch(() => null);
+                sendResponse({ ok: true, base, ms: Date.now() - started, status, serverVersion: info && info.version, appUrl: base.replace(/\/api$/, '') });
+                return;
+            } catch (e) {
+                console.warn('Status: failed', base, e);
+            }
+        }
+        sendResponse({ ok: false });
+    })();
+    return true;
+});
+
+// ── Generic backend call (path under /api) with the JSON response, for content scripts ──
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    if (request.action !== 'backendApi') return;
+    (async () => {
+        for (const base of [...API_BASES]) {
+            try {
+                const res = await fetch(base + request.path, {
+                    method: request.method || 'GET',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: request.body ? JSON.stringify(request.body) : undefined
+                });
+                sendResponse({ ok: res.ok, status: res.status, data: await res.json().catch(() => null) });
+                return;
+            } catch (e) {
+                console.warn('Backend API: failed', base, e);
+            }
+        }
+        sendResponse({ ok: false, status: 0, data: { detail: 'Backend do CareerOps indisponível' } });
+    })();
+    return true;
+});

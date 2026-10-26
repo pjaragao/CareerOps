@@ -1,114 +1,104 @@
 <!DOCTYPE html>
-<html>
+<html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
     <style>
-        body {
-            width: 320px;
-            padding: 20px;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: #0f172a;
-            color: white;
-            margin: 0;
-        }
-        .container {
-            display: flex;
-            flex-direction: column;
-            gap: 15px;
-        }
-        h2 {
-            margin: 0;
-            font-size: 1.2rem;
-            color: #38bdf8;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-        .status-card {
-            background: #1e293b;
-            border: 1px solid #334155;
-            border-radius: 8px;
-            padding: 12px;
-            min-height: 60px;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            text-align: center;
-        }
-        #status-text {
-            font-size: 0.9rem;
-            color: #94a3b8;
-            margin-bottom: 5px;
-        }
-        .loader {
-            width: 20px;
-            height: 20px;
-            border: 2px solid #38bdf8;
-            border-bottom-color: transparent;
-            border-radius: 50%;
-            display: none;
-            animation: rotation 1s linear infinite;
-            margin-top: 10px;
-        }
-        @keyframes rotation {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-        button {
-            background: #38bdf8;
-            color: #0f172a;
-            border: none;
-            padding: 12px;
-            border-radius: 6px;
-            font-weight: bold;
-            cursor: pointer;
-            transition: all 0.2s;
-            font-size: 1rem;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
-        }
-        button:hover {
-            background: #7dd3fc;
-            transform: translateY(-1px);
-        }
-        button:active {
-            transform: translateY(0);
-        }
-        button:disabled {
-            background: #475569;
-            cursor: not-allowed;
-        }
-        .footer {
-            font-size: 0.7rem;
-            color: #475569;
-            text-align: center;
-            margin-top: 10px;
-        }
+        :root { --bg: #0f1117; --card: #181b24; --line: #2a2f3d; --muted: #9aa3b5; --accent: #7c6cf0; --ok: #00c48c; --warn: #ffb020; --bad: #ff6b6b; }
+        * { box-sizing: border-box; }
+        body { width: 360px; margin: 0; padding: 14px; background: var(--bg); color: #eef0f6; font: 13px/1.45 'Segoe UI', system-ui, sans-serif; }
+        a { color: var(--accent); text-decoration: none; }
+        .row { display: flex; align-items: center; gap: 8px; }
+        .between { justify-content: space-between; }
+        header { margin-bottom: 10px; }
+        .brand { font-size: 16px; font-weight: 700; }
+        .brand span { color: var(--accent); }
+        .pill { font-size: 11px; padding: 2px 8px; border-radius: 10px; background: var(--card); border: 1px solid var(--line); color: var(--muted); }
+        .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; }
+        .card h3 { margin: 0 0 6px; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+        .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
+        .dot.ok { background: var(--ok); } .dot.warn { background: var(--warn); } .dot.bad { background: var(--bad); }
+        .muted { color: var(--muted); font-size: 12px; }
+        .update { display: none; margin-top: 6px; padding: 6px 8px; border-radius: 8px; background: #3a2f0b; color: #ffd57a; font-size: 12px; }
+        .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+        .stat { background: #11141b; border: 1px solid var(--line); border-radius: 8px; padding: 6px; text-align: center; }
+        .stat b { display: block; font-size: 17px; }
+        .stat span { font-size: 11px; color: var(--muted); }
+        .page-kind { font-weight: 600; }
+        ul.actions { margin: 6px 0 0; padding-left: 16px; }
+        ul.actions li { margin: 2px 0; }
+        button { width: 100%; border: 0; border-radius: 8px; padding: 9px; font: 600 13px 'Segoe UI', system-ui, sans-serif; cursor: pointer; background: var(--accent); color: #fff; margin-top: 8px; }
+        button:disabled { opacity: .5; cursor: default; }
+        button.secondary { background: transparent; border: 1px solid var(--line); color: #eef0f6; }
+        button.danger { background: var(--bad); }
+        #loader { display: none; width: 18px; height: 18px; border: 3px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin 1s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        details summary { cursor: pointer; color: var(--muted); font-size: 12px; }
+        .features { margin-top: 6px; display: grid; gap: 4px; }
+        .features div { font-size: 12px; }
+        .features b { color: #fff; }
+        .links { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+        .links a { display: block; text-align: center; padding: 6px; border: 1px solid var(--line); border-radius: 8px; font-size: 12px; color: #eef0f6; }
+        .links a:hover { border-color: var(--accent); }
+        footer { margin-top: 6px; text-align: center; font-size: 11px; color: var(--muted); }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h2>CareerOps Import</h2>
-        
-        <div class="status-card">
-            <div id="status-text">Pronto para importar</div>
-            <div id="loader" class="loader"></div>
-        </div>
+    <header class="row between">
+        <div class="brand">Career<span>Ops</span></div>
+        <div class="pill" id="version">v—</div>
+    </header>
 
-        <button id="import-btn">Importar (Perfil/Vaga)</button>
-        <button id="cancel-btn" style="background: #ef4444; color: white; display: none;">✕ Cancelar Operação</button>
-        <div style="margin-top: 12px; font-size: 11px; line-height: 1.5; color: #9a9ab0;">
-            No LinkedIn: botão <b>CareerOps · Perfil</b> (canto inferior esquerdo) com os textos EN/PT do perfil.<br>
-            Em cada post: <b>✨ Comentário IA</b>. No perfil: <b>🤝 Convite IA</b>. Em buscas e Minha rede: <b>⭐ Avaliar pessoas</b>. No Easy Apply: <b>✨ Preencher com IA</b>.<br>A IA escreve e preenche; publicar e enviar é com você.
-        </div>
-        
-        <div class="footer">
-            Versão 27.0 - Extração Robusta
+    <div class="card">
+        <h3>Conexão</h3>
+        <div class="row"><div class="dot" id="conn-dot"></div><div id="conn-text">Verificando o backend…</div></div>
+        <div class="muted" id="conn-detail"></div>
+        <div class="row" style="margin-top:4px"><div class="dot" id="pub-dot"></div><div class="muted" id="pub-text">Publicação no LinkedIn: —</div></div>
+        <div class="update" id="update"></div>
+    </div>
+
+    <div class="card">
+        <h3>Hoje</h3>
+        <div class="stats">
+            <div class="stat"><b id="s-drafts">—</b><span>posts p/ revisar</span></div>
+            <div class="stat"><b id="s-comments">—</b><span>comentários</span></div>
+            <div class="stat"><b id="s-invites">—</b><span>convites/semana</span></div>
         </div>
     </div>
+
+    <div class="card">
+        <h3>Nesta página</h3>
+        <div class="page-kind" id="page-kind">—</div>
+        <ul class="actions" id="page-actions"></ul>
+        <div class="row" style="margin-top:6px"><div id="loader"></div><div class="muted" id="status-text">Pronto para agir</div></div>
+        <button id="import-btn">Importar</button>
+        <button id="cancel-btn" class="danger" style="display:none">✕ Cancelar importação</button>
+    </div>
+
+    <div class="card">
+        <details>
+            <summary>Recursos da extensão</summary>
+            <div class="features">
+                <div><b>CareerOps · Perfil</b> (canto inferior esquerdo): textos EN/PT do seu perfil para copiar ou inserir nos campos.</div>
+                <div><b>✨ Comentário IA</b> em cada post: rascunha o comentário e insere na caixa; você publica.</div>
+                <div><b>📌 Salvar tema</b> em cada post: guarda como inspiração; vire post seu no Copilot → Posts.</div>
+                <div><b>🤝 Convite IA</b> no perfil de alguém: avalia o encaixe e preenche a nota do convite; você envia.</div>
+                <div><b>⭐ Avaliar pessoas</b> em buscas e Minha rede: pontua quem está na tela e salva os melhores.</div>
+                <div><b>✨ Preencher com IA</b> no Easy Apply: preenche cada etapa; salário sugerido em amarelo; você envia.</div>
+                <div><b>📥 Importar vagas salvas</b> em Minhas vagas salvas: traz a lista para o app com a descrição de cada vaga.</div>
+                <div><b>Clique direito → Enviar ao CareerOps Copilot</b>: manda um post ou perfil para as filas.</div>
+                <div class="muted">A extensão nunca publica, envia ou conecta sozinha — o clique final é sempre seu.</div>
+            </div>
+        </details>
+    </div>
+
+    <div class="links">
+        <a id="link-app" href="#" target="_blank">Abrir app</a>
+        <a id="link-copilot" href="#" target="_blank">Copilot</a>
+        <a id="link-install" href="#" target="_blank">Atualizar</a>
+    </div>
+
+    <footer id="footer">CareerOps · assistente de carreira</footer>
+
     <script src="popup.js"></script>
 </body>
 </html>
