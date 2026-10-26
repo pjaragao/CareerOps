@@ -4,7 +4,7 @@ import {
   Megaphone, Sparkles, Send, Check, X, Copy, ExternalLink, Calendar, Users, MessageCircle, BarChart3, Link2, Plus, Undo2, UserPlus,
 } from 'lucide-react';
 import {
-  linkedinCopilotService as svc, CopilotPost, CopilotStatus, Market, Inspiration, EngagementItem, Prospect, ProspectStatus, WeekMetrics,
+  linkedinCopilotService as svc, CopilotPost, PostStatus, CopilotStatus, Market, Inspiration, EngagementItem, Prospect, ProspectStatus, WeekMetrics,
 } from '../services/linkedinCopilotService';
 
 type Tab = 'posts' | 'engagement' | 'prospects' | 'metrics';
@@ -81,7 +81,7 @@ const PostCard = ({ post, connected, onChange }: { post: CopilotPost; connected:
   };
   const editable = post.status === 'draft' || post.status === 'failed' || post.status === 'approved';
   return (
-    <div className="panel" style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem' }}>
+    <div className="panel" style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem', minWidth: 0, marginBottom: 0 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', alignItems: 'center' }}>
         <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
           <span style={chip(STATUS_COLOR[post.status])}>{post.status}</span>
@@ -125,18 +125,64 @@ const PostCard = ({ post, connected, onChange }: { post: CopilotPost; connected:
   );
 };
 
+const clamp = (lines: number): React.CSSProperties => ({
+  display: '-webkit-box', WebkitLineClamp: lines, WebkitBoxOrient: 'vertical', overflow: 'hidden', overflowWrap: 'anywhere',
+});
+const ago = (iso: string) => {
+  const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
+  return days <= 0 ? 'hoje' : days === 1 ? 'ontem' : `há ${days} dias`;
+};
+// Themes saved before the extension read post links: find the post by its opening words
+const themeLink = (i: Inspiration) => i.post_url
+  || `https://www.linkedin.com/search/results/content/?keywords=${encodeURIComponent(i.post_text.split('\n')[0].slice(0, 80))}`;
+
+const ThemeCard = ({ i, busy, onGenerate, onDelete }: { i: Inspiration; busy: boolean; onGenerate: () => void; onDelete: () => void }) => (
+  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0, background: 'rgba(0,0,0,0.25)', border: '1px solid var(--border)', borderRadius: 14, padding: '0.9rem 1rem' }}>
+    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'flex-start' }}>
+      <div style={{ minWidth: 0 }}>
+        <a href={themeLink(i)} target="_blank" rel="noreferrer" style={{ color: '#fff', fontWeight: 600, fontSize: '0.9rem', textDecoration: 'none' }}>
+          {i.author_name || 'Autor desconhecido'}
+        </a>
+        {i.author_headline && <div style={{ ...muted, fontSize: '0.75rem', ...clamp(1) }}>{i.author_headline}</div>}
+      </div>
+      <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+        <span style={chip(i.market === 'br' ? '#00b894' : '#4da3ff')}>{i.market === 'br' ? 'PT' : 'EN'}</span>
+        <span style={chip(i.used_count ? '#9aa4b2' : '#00d4aa')}>{i.used_count ? `usado ${i.used_count}x` : 'novo'}</span>
+      </div>
+    </div>
+    <div style={{ ...muted, ...clamp(4), whiteSpace: 'pre-line' }}>{i.post_text}</div>
+    {i.note && <div style={{ fontSize: '0.8rem', color: '#a29bfe', ...clamp(2) }}>💬 {i.note}</div>}
+    <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 'auto', paddingTop: 4, flexWrap: 'wrap' }}>
+      <span style={{ ...muted, fontSize: '0.75rem', marginRight: 'auto' }}>{ago(i.created_at)}</span>
+      <a className="btn btn-secondary" style={{ padding: '0.4rem 0.7rem', fontSize: '0.8rem' }} href={themeLink(i)} target="_blank" rel="noreferrer"
+        title={i.post_url ? 'Abrir o post no LinkedIn' : 'Sem link salvo: busca o post no LinkedIn'}>
+        <ExternalLink size={13} /> {i.post_url ? 'Abrir post' : 'Buscar post'}
+      </a>
+      <button className="btn btn-primary" style={{ padding: '0.4rem 0.7rem', fontSize: '0.8rem' }} disabled={busy} onClick={onGenerate}
+        title={`Escreve um post seu (${MARKET_LABEL[i.market]}) sobre este tema`}><Sparkles size={13} /> Gerar post</button>
+      <button className="btn btn-secondary" style={{ padding: '0.4rem 0.6rem', color: 'var(--error)' }} title="Remover tema" onClick={onDelete}><X size={13} /></button>
+    </div>
+  </div>
+);
+
+const POST_FILTERS: { id: 'active' | PostStatus; label: string }[] = [
+  { id: 'active', label: 'Pendentes' }, { id: 'draft', label: 'Rascunhos' }, { id: 'approved', label: 'Agendados' }, { id: 'published', label: 'Publicados' },
+];
+
 const PostsTab = ({ connected }: { connected: boolean }) => {
   const [posts, setPosts] = useState<CopilotPost[]>([]);
   const [market, setMarket] = useState<Market>('intl');
   const [form, setForm] = useState({ count: 2, pillar: '', topic: '', source_notes: '' });
   const [loading, setLoading] = useState(false);
   const [inspirations, setInspirations] = useState<Inspiration[]>([]);
+  const [showAllThemes, setShowAllThemes] = useState(false);
+  const [filter, setFilter] = useState<'active' | PostStatus>('active');
   const load = useCallback(async () => setPosts(await svc.listPosts()), []);
   const loadInspirations = useCallback(async () => setInspirations(await svc.inspirations()), []);
   useEffect(() => { svc.listPosts().then(setPosts); svc.inspirations().then(setInspirations).catch(() => setInspirations([])); }, []);
-  const fromInspiration = async (id: number) => {
+  const fromInspiration = async (i: Inspiration) => {
     setLoading(true);
-    try { await svc.generatePosts({ market, count: 1, inspiration_id: id }); await load(); await loadInspirations(); }
+    try { await svc.generatePosts({ market: i.market, count: 1, inspiration_id: i.id }); await load(); await loadInspirations(); setFilter('draft'); }
     catch (e) { alert(errMsg(e)); } finally { setLoading(false); }
   };
   const generate = async () => {
@@ -144,12 +190,16 @@ const PostsTab = ({ connected }: { connected: boolean }) => {
     try {
       await svc.generatePosts({ market, count: form.count, pillar: form.pillar || undefined, topic: form.topic || undefined, source_notes: form.source_notes || undefined });
       await load();
+      setFilter('draft');
     } catch (e) { alert(errMsg(e)); } finally { setLoading(false); }
   };
+  const count = (f: 'active' | PostStatus) => posts.filter(p => (f === 'active' ? p.status !== 'published' : p.status === f)).length;
+  const shown = posts.filter(p => (filter === 'active' ? p.status !== 'published' : p.status === filter));
+  const themes = showAllThemes ? inspirations : inspirations.slice(0, 6);
   return (
     <>
-      <div className="panel">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', gap: 8, flexWrap: 'wrap' }}>
+      <div className="panel" style={{ minWidth: 0 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.6rem', gap: 8, flexWrap: 'wrap' }}>
           <h3 style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Sparkles size={18} /> Gerar rascunhos</h3>
           <div style={{ display: 'flex', gap: 8 }}>
             {(['br', 'intl'] as Market[]).map(m => (
@@ -163,7 +213,7 @@ const PostsTab = ({ connected }: { connected: boolean }) => {
             ? 'Brasil, em português: engenharia e saneamento, concessões e modelagem técnico-financeira, dados e IA na infraestrutura.'
             : 'Exterior, em inglês: dados, finanças e modelagem; engenharia como domínio.'}
         </p>
-        <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr 1fr', gap: '1rem' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(200px, 100%), 1fr))', gap: '0.8rem' }}>
           <select value={form.count} onChange={e => setForm({ ...form, count: Number(e.target.value) })} style={field}>
             {[1, 2, 3, 4, 5].map(n => <option key={n} value={n} style={{ color: '#000' }}>{n} post{n > 1 ? 's' : ''}</option>)}
           </select>
@@ -172,42 +222,50 @@ const PostsTab = ({ connected }: { connected: boolean }) => {
             {Object.entries(PILLARS[market]).map(([k, v]) => <option key={k} value={k} style={{ color: '#000' }}>{k} · {v}</option>)}
           </select>
           <input value={form.topic} onChange={e => setForm({ ...form, topic: e.target.value })} placeholder="Tema (opcional)" style={field} />
-          <textarea value={form.source_notes} onChange={e => setForm({ ...form, source_notes: e.target.value })} rows={4}
-            placeholder="Material novo (opcional): commits da semana, um resultado, uma lição de obra ou de orçamento… A IA usa isso como fonte principal."
-            style={{ ...field, gridColumn: 'span 3', resize: 'vertical' }} />
         </div>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1rem' }}>
+        <textarea value={form.source_notes} onChange={e => setForm({ ...form, source_notes: e.target.value })} rows={2}
+          placeholder="Material novo (opcional): commits da semana, um resultado, uma lição de obra ou de orçamento… A IA usa isso como fonte principal."
+          style={{ ...field, marginTop: '0.8rem', resize: 'vertical' }} />
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0.8rem' }}>
           <button className="btn btn-primary" onClick={generate} disabled={loading}><Sparkles size={16} /> {loading ? 'Gerando…' : 'Gerar'}</button>
         </div>
       </div>
-      {inspirations.length > 0 && (
-        <div className="panel">
-          <h3 style={{ marginBottom: '0.6rem' }}>📌 Temas salvos ({inspirations.length})</h3>
-          <p style={{ ...muted, marginBottom: '0.8rem' }}>
-            Posts que você salvou no feed pela extensão ou em que comentou (salvos sozinhos, com o seu comentário). "Gerar post" escreve um post seu ({MARKET_LABEL[market]}) sobre o mesmo tema, a partir da sua experiência — sem copiar o original.
-          </p>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {inspirations.map(i => (
-              <div key={i.id} style={{ display: 'flex', gap: 12, alignItems: 'center', background: 'rgba(0,0,0,0.2)', padding: '0.6rem 0.8rem', borderRadius: 10 }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <strong style={{ fontSize: '0.85rem' }}>{i.author_name || 'Autor desconhecido'}</strong>
-                  {i.used_count > 0 && <span style={{ ...muted, marginLeft: 6 }}>· usado {i.used_count}x</span>}
-                  <div style={{ ...muted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{i.post_text}</div>
-                  {i.note && <div style={{ ...muted, color: 'var(--accent, #00d4aa)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>💬 {i.note}</div>}
-                </div>
-                {i.post_url && <a className="btn btn-secondary" href={i.post_url} target="_blank" rel="noreferrer"><ExternalLink size={14} /></a>}
-                <button className="btn btn-primary" disabled={loading} onClick={() => fromInspiration(i.id)}><Sparkles size={14} /> Gerar post</button>
-                <button className="btn btn-secondary" style={{ color: 'var(--error)' }}
-                  onClick={async () => { await svc.deleteInspiration(i.id); loadInspirations(); }}><X size={14} /></button>
-              </div>
-            ))}
-          </div>
+
+      <div className="panel" style={{ minWidth: 0 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8, flexWrap: 'wrap', marginBottom: '0.4rem' }}>
+          <h3>📌 Temas salvos ({inspirations.length})</h3>
+          <span style={muted}>{inspirations.filter(i => !i.used_count).length} ainda não usados</span>
         </div>
-      )}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(480px, 1fr))', gap: '1.5rem' }}>
-        {posts.map(p => <PostCard key={`${p.id}-${p.status}-${p.body.length}`} post={p} connected={connected} onChange={load} />)}
+        <p style={{ ...muted, marginBottom: '1rem' }}>
+          Posts que você salvou (📌) ou comentou no feed. "Gerar post" escreve um post seu sobre o tema, no idioma do original, sem copiá-lo.
+          Automático: com menos de 2 rascunhos esperando, a IA escreve um a partir do tema novo mais recente.
+        </p>
+        {!inspirations.length && <p style={muted}>Nenhum tema ainda: no feed, use o 📌 da extensão ou comente em um post.</p>}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(300px, 100%), 1fr))', gap: '0.9rem' }}>
+          {themes.map(i => (
+            <ThemeCard key={i.id} i={i} busy={loading} onGenerate={() => fromInspiration(i)}
+              onDelete={async () => { await svc.deleteInspiration(i.id); loadInspirations(); }} />
+          ))}
+        </div>
+        {inspirations.length > 6 && (
+          <div style={{ display: 'flex', justifyContent: 'center', marginTop: '0.9rem' }}>
+            <button className="btn btn-secondary" onClick={() => setShowAllThemes(v => !v)}>
+              {showAllThemes ? 'Mostrar menos' : `Ver todos (${inspirations.length})`}
+            </button>
+          </div>
+        )}
       </div>
-      {!posts.length && <p style={muted}>Nenhum rascunho ainda.</p>}
+
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        {POST_FILTERS.map(f => (
+          <button key={f.id} className={`btn ${filter === f.id ? 'btn-primary' : 'btn-secondary'}`} style={{ padding: '0.45rem 0.9rem' }}
+            onClick={() => setFilter(f.id)}>{f.label} <span style={{ opacity: 0.7 }}>{count(f.id)}</span></button>
+        ))}
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(480px, 100%), 1fr))', gap: '1.5rem' }}>
+        {shown.map(p => <PostCard key={`${p.id}-${p.status}-${p.body.length}`} post={p} connected={connected} onChange={load} />)}
+      </div>
+      {!shown.length && <p style={muted}>Nada aqui ainda.</p>}
     </>
   );
 };
@@ -441,7 +499,7 @@ const LinkedInCopilot = () => {
       <div style={{ marginBottom: '1.5rem' }}>
         <h1 style={{ fontSize: '2rem', fontWeight: 700, marginBottom: '0.5rem' }}>LinkedIn Copilot</h1>
         <p style={{ color: 'var(--text-muted)' }}>
-          A IA rascunha; você aprova. Só posts aprovados são publicados pela API oficial — comentários, conexões e follows você faz no LinkedIn.
+          A IA rascunha; você aprova. Só posts aprovados são publicados pela API oficial; convites saem sem nota, um por clique em "Conectar"; comentários e follows você faz no LinkedIn.
         </p>
       </div>
       <ConnectionBar status={status} reload={loadStatus} />

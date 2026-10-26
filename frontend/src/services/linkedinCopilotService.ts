@@ -52,9 +52,11 @@ export interface Inspiration {
   id: number;
   post_url: string | null;
   author_name: string | null;
+  author_headline: string | null;
   post_text: string;
   note: string | null;
   used_count: number;
+  market: Market;
   created_at: string;
 }
 

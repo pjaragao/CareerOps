@@ -318,27 +318,43 @@
         }
     }
 
+    // Badges LinkedIn glues to names in the accessible text ("Ana Lima Verified Profile 3rd+", "Paulo … You")
+    const BADGE = /\s*(•|verified profile|premium profile|perfil verificado|perfil premium|author|autor|you|voc[eê]|1st|2nd|3rd\+?|1º|2º|3º\+?|\(he\/him\)|\(she\/her\)|\(ele\/dele\)|\(ela\/dela\))\s*$/i;
+    function personName(raw) {
+        let n = clean(raw).split('\n')[0].replace(/\s*•.*$/, '').trim();
+        for (let k = 0; k < 6 && BADGE.test(n); k++) n = n.replace(BADGE, '').trim();
+        return n;
+    }
+    const isSelf = (raw) => /(^|\s)(you|voc[eê])\s*$/i.test(clean(raw).split('\n')[0]);
+    const NOT_HEADLINE = /^(like|gostei|reply|responder|curtir|author|autor|you|voc[eê]|verified profile|premium profile|perfil verificado|edited|editado|see more|ver mais|…|\d+\s*(likes?|reactions?|curtidas|rea[cç][oõ]es|replies|respostas)?)$/i;
+
     async function harvestPeople(post, info) {
         await openComments(post);
         const seen = new Map();
-        const add = (url, name, headline) => { if (url && name && !seen.has(url)) seen.set(url, { profile_url: url, name, headline }); };
         post.querySelectorAll('a[href*="/in/"]').forEach((a) => {
             if (own(a)) return;
             const m = a.href.match(/https:\/\/www\.linkedin\.com\/in\/([^/?#]+)/);
-            if (!m || m[1] === 'me') return;
-            const box = a.closest('article, [class*="comments-comment"], [class*="comment-entity"]') || a.parentElement;
-            const lines = clean((box && box.innerText) || a.innerText).split('\n').map((l) => l.trim()).filter(Boolean)
-                .filter((l) => !META.test(l) && !/^(like|gostei|reply|responder|curtir|author|autor|you|voc[eê])$/i.test(l));
-            const name = clean(a.innerText).split('\n')[0].replace(/\s*•.*$/, '').trim();
-            if (!name || name.length > 80) return;
-            // LinkedIn repeats the name (visually hidden copy, degree badge): the headline is the first other line after it
-            const i = lines.findIndex((l) => l === name || l.startsWith(name));
-            const headline = (lines.slice(i < 0 ? 0 : i + 1).find((l) => l !== name && !l.startsWith(name) && l.length > 3) || '').slice(0, 300) || null;
-            add(m[0], name, headline);
+            if (!m || m[1] === 'me' || seen.has(m[0])) return;
+            const raw = a.innerText || a.getAttribute('aria-label') || '';
+            const name = personName(raw);
+            if (!name || name.length > 80 || /^(view|ver)\b/i.test(name)) return;
+            if (isSelf(raw)) { seen.set(m[0], null); return; }
+            const comment = a.closest('article[class*="comment"], [class*="comments-comment-entity"], [class*="comments-comment-item"], [class*="comment-entity"]');
+            let headline = null;
+            if (comment) {
+                // the headline is the first line after the name that is not the name again, a badge, a time or a count
+                const lines = clean(comment.innerText).split('\n').map((l) => l.trim()).filter(Boolean);
+                const i = lines.findIndex((l) => personName(l) === name);
+                headline = lines.slice(i < 0 ? 0 : i + 1, (i < 0 ? 0 : i + 1) + 6)
+                    .find((l) => personName(l) !== name && !META.test(l) && !NOT_HEADLINE.test(l) && l.length > 3) || null;
+            } else if (info.author_name && personName(info.author_name) === name) {
+                headline = info.author_headline;   // the post's author: postInfo already read their headline
+            }
+            seen.set(m[0], { profile_url: m[0], name, headline: headline ? headline.slice(0, 300) : null });
         });
-        const mine = [...seen.values()].filter((p) => !/^(you|voc[eê])$/i.test(p.name)).slice(0, 25);
-        if (!mine.length) return;
-        api('POST', '/prospects/batch', { people: mine, topic: info.post_text.slice(0, 500) }).then((res) => {
+        const people = [...seen.values()].filter((p) => p && p.headline).slice(0, 25);
+        if (!people.length) return;
+        api('POST', '/prospects/batch', { people, topic: info.post_text.slice(0, 500) }).then((res) => {
             if (!res.ok) return;
             const good = res.data.items.filter((i) => i.status !== 'skipped').length;
             if (good) toast(`🤝 ${good} pessoa${good > 1 ? 's' : ''} deste post para convidar — veja em Prospecção`);

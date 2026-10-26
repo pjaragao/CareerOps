@@ -1,8 +1,9 @@
 """LinkedIn Copilot: post drafts, engagement queue, prospects and weekly metrics.
 
 Human-in-the-loop by design. The only action taken on LinkedIn by the system is publishing a post the user
-explicitly approved, through the official API. Comments, follows and connection requests are drafted here and
-done by the user on LinkedIn — automating them breaks LinkedIn's User Agreement and gets accounts restricted.
+explicitly approved, through the official API. Comments and follows are drafted here and done by the user on
+LinkedIn; a connection request (no note) is sent by the extension only on the user's click, one at a time —
+batch automation breaks LinkedIn's User Agreement and gets accounts restricted.
 """
 import asyncio
 import logging
@@ -23,6 +24,13 @@ log = logging.getLogger("linkedin_copilot")
 MIN_SCORE = 40           # below this the AI recommends skipping
 DAILY_ENGAGEMENT = 10    # size of the daily engagement queue
 WEEKLY_PROSPECTS = 20    # weekly connection-request target
+AUTO_DRAFTS = 2          # drafts kept ready from saved themes (see auto_draft)
+# badges LinkedIn glues to names in the page text ("Ana Lima Verified Profile 3rd+")
+_BADGES = re.compile(r"(\s*(•.*|verified profile|premium profile|perfil verificado|perfil premium|author|autor|you|você|1st|2nd|3rd\+?|[123]º\+?))+\s*$", re.I)
+
+
+def _theme_market(theme: dict) -> str:
+    return "br" if detect_language(theme.get("post_text") or "") == "Portuguese" else "intl"
 
 
 def _local_midnight(d: date) -> datetime:
@@ -215,7 +223,25 @@ class LinkedInCopilotService:
 
     @staticmethod
     def list_inspirations() -> List[dict]:
-        return _rows("SELECT * FROM public.linkedin_inspirations ORDER BY used_count, created_at DESC LIMIT 50")
+        items = _rows("SELECT * FROM public.linkedin_inspirations ORDER BY used_count, created_at DESC LIMIT 50")
+        for i in items:   # the market a post of yours on this theme should target, from the language it was written in
+            i["market"] = _theme_market(i)
+        return items
+
+    @staticmethod
+    async def auto_draft() -> Optional[dict]:
+        """Scheduler tick: keeps AUTO_DRAFTS drafts ready, writing one from the newest unused saved theme when short.
+
+        Bounded by the themes themselves: each theme is used once, and nothing is generated while enough drafts wait.
+        """
+        waiting = _one("SELECT COUNT(*) AS n FROM public.linkedin_posts WHERE status = 'draft'")["n"]
+        if waiting >= AUTO_DRAFTS:
+            return None
+        theme = _one("SELECT * FROM public.linkedin_inspirations WHERE used_count = 0 ORDER BY created_at DESC LIMIT 1")
+        if not theme:
+            return None
+        posts = await LinkedInCopilotService.generate_posts(count=1, market=_theme_market(theme), inspiration_id=theme["id"])
+        return posts[0] if posts else None
 
     @staticmethod
     def delete_inspiration(item_id: int) -> Optional[dict]:
@@ -308,10 +334,12 @@ class LinkedInCopilotService:
             if not url or url in seen:
                 continue
             seen.add(url)
+            name = _BADGES.sub("", (person.get("name") or "").strip())[:120]
             headline = (person.get("headline") or "").strip()[:400]
-            if len(headline) < 4:   # nothing to judge by: a score would be a guess, so leave them out (can be retried later)
+            # nothing to judge by (no headline, or the name read twice): a score would be a guess, so leave them out
+            if len(headline) < 4 or (name and headline.lower().startswith(name.lower())):
                 continue
-            clean.append({"profile_url": url, "name": (person.get("name") or "").strip()[:120], "headline": headline})
+            clean.append({"profile_url": url, "name": name, "headline": headline})
         clean = clean[:25]
         known = {r["profile_url"]: r for r in _rows(
             "SELECT * FROM public.linkedin_prospects WHERE profile_url = ANY(%s)", ([c["profile_url"] for c in clean],))}

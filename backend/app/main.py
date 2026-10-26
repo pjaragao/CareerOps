@@ -41,9 +41,20 @@ async def _publish_scheduled_posts():
         await asyncio.sleep(60)
 
 
+async def _auto_drafts():
+    """Every 30 min: a draft from the newest unused saved theme when fewer than two drafts are waiting."""
+    while True:
+        await asyncio.sleep(1800)
+        try:
+            await LinkedInCopilotService.auto_draft()
+        except Exception as e:
+            logging.getLogger("linkedin_copilot").warning("auto draft failed: %s", e)
+
+
 @app.on_event("startup")
 async def start_scheduler():
     app.state.linkedin_scheduler = asyncio.create_task(_publish_scheduled_posts())
+    app.state.linkedin_drafts = asyncio.create_task(_auto_drafts())
 
 @app.get("/")
 async def root():
