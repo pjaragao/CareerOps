@@ -136,55 +136,99 @@ const ago = (iso: string) => {
 const themeLink = (i: Inspiration) => i.post_url
   || `https://www.linkedin.com/search/results/content/?keywords=${encodeURIComponent(i.post_text.split('\n')[0].slice(0, 80))}`;
 
-const ThemeCard = ({ i, busy, onGenerate, onDelete }: { i: Inspiration; busy: boolean; onGenerate: () => void; onDelete: () => void }) => (
-  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0, background: 'rgba(0,0,0,0.25)', border: '1px solid var(--border)', borderRadius: 14, padding: '0.9rem 1rem' }}>
-    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'flex-start' }}>
-      <div style={{ minWidth: 0 }}>
-        <a href={themeLink(i)} target="_blank" rel="noreferrer" style={{ color: '#fff', fontWeight: 600, fontSize: '0.9rem', textDecoration: 'none' }}>
-          {i.author_name || 'Autor desconhecido'}
-        </a>
-        {i.author_headline && <div style={{ ...muted, fontSize: '0.75rem', ...clamp(1) }}>{i.author_headline}</div>}
-      </div>
-      <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
-        <span style={chip(i.market === 'br' ? '#00b894' : '#4da3ff')}>{i.market === 'br' ? 'PT' : 'EN'}</span>
-        <span style={chip(i.used_count ? '#9aa4b2' : '#00d4aa')}>{i.used_count ? `usado ${i.used_count}x` : 'novo'}</span>
-      </div>
-    </div>
-    <div style={{ ...muted, ...clamp(4), whiteSpace: 'pre-line' }}>{i.post_text}</div>
-    {i.note && <div style={{ fontSize: '0.8rem', color: '#a29bfe', ...clamp(2) }}>💬 {i.note}</div>}
-    <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 'auto', paddingTop: 4, flexWrap: 'wrap' }}>
-      <span style={{ ...muted, fontSize: '0.75rem', marginRight: 'auto' }}>{ago(i.created_at)}</span>
-      <a className="btn btn-secondary" style={{ padding: '0.4rem 0.7rem', fontSize: '0.8rem' }} href={themeLink(i)} target="_blank" rel="noreferrer"
-        title={i.post_url ? 'Abrir o post no LinkedIn' : 'Sem link salvo: busca o post no LinkedIn'}>
-        <ExternalLink size={13} /> {i.post_url ? 'Abrir post' : 'Buscar post'}
-      </a>
-      <button className="btn btn-primary" style={{ padding: '0.4rem 0.7rem', fontSize: '0.8rem' }} disabled={busy} onClick={onGenerate}
-        title={`Escreve um post seu (${MARKET_LABEL[i.market]}) sobre este tema`}><Sparkles size={13} /> Gerar post</button>
-      <button className="btn btn-secondary" style={{ padding: '0.4rem 0.6rem', color: 'var(--error)' }} title="Remover tema" onClick={onDelete}><X size={13} /></button>
-    </div>
+// Dense tables (same look as the job list)
+const th: React.CSSProperties = { padding: '0.7rem 1rem', textAlign: 'left', color: 'var(--text-muted)', fontSize: '0.75rem', fontWeight: 600, letterSpacing: '0.04em', whiteSpace: 'nowrap' };
+const td: React.CSSProperties = { padding: '0.65rem 1rem', verticalAlign: 'middle' };
+const iconBtn: React.CSSProperties = { padding: '6px', display: 'inline-flex', alignItems: 'center' };
+const smallBtn: React.CSSProperties = { padding: '0.35rem 0.7rem', fontSize: '0.78rem' };
+const DenseTable = ({ head, children }: { head: React.ReactNode; children: React.ReactNode }) => (
+  <div className="panel" style={{ padding: 0, overflowX: 'auto', minWidth: 0 }}>
+    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.88rem' }}>
+      <thead><tr style={{ borderBottom: '1px solid var(--border)', background: 'rgba(255,255,255,0.03)' }}>{head}</tr></thead>
+      <tbody>{children}</tbody>
+    </table>
   </div>
 );
+const Pills = <T extends string>({ items, value, onChange }: { items: { id: T; label: string; count?: number }[]; value: T; onChange: (v: T) => void }) => (
+  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+    {items.map(f => (
+      <button key={f.id} className={`btn ${value === f.id ? 'btn-primary' : 'btn-secondary'}`} style={smallBtn} onClick={() => onChange(f.id)}>
+        {f.label}{f.count !== undefined && <span style={{ opacity: 0.7 }}>{f.count}</span>}
+      </button>
+    ))}
+  </div>
+);
+
+const ThemesList = () => {
+  const [items, setItems] = useState<Inspiration[]>([]);
+  const [open, setOpen] = useState<number | null>(null);
+  const [busy, setBusy] = useState<number | null>(null);
+  const [filter, setFilter] = useState<'all' | 'new' | 'used'>('all');
+  const load = useCallback(async () => setItems(await svc.inspirations()), []);
+  useEffect(() => { svc.inspirations().then(setItems).catch(() => setItems([])); }, []);
+  const generate = async (i: Inspiration) => {
+    setBusy(i.id);
+    try { await svc.generatePosts({ market: i.market, count: 1, inspiration_id: i.id }); await load(); alert('Rascunho criado: veja em "Gerar post".'); }
+    catch (e) { alert(errMsg(e)); } finally { setBusy(null); }
+  };
+  const shown = items.filter(i => filter === 'all' || (filter === 'new' ? !i.used_count : i.used_count > 0))
+    .sort((x, y) => y.created_at.localeCompare(x.created_at));
+  return (
+    <>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <Pills value={filter} onChange={setFilter} items={[
+          { id: 'all', label: 'Todos', count: items.length },
+          { id: 'new', label: 'Não usados', count: items.filter(i => !i.used_count).length },
+          { id: 'used', label: 'Já usados', count: items.filter(i => i.used_count > 0).length },
+        ]} />
+        <span style={muted}>Salvos pelo 📌 da extensão ou ao comentar. Com menos de 2 rascunhos esperando, a IA escreve um do tema novo mais recente.</span>
+      </div>
+      <DenseTable head={<>
+        <th style={th}>AUTOR & POST</th><th style={th}>IDIOMA</th><th style={th}>SALVO</th><th style={th}>STATUS</th><th style={{ ...th, textAlign: 'right' }}>AÇÕES</th>
+      </>}>
+        {shown.map(i => (
+          <tr key={i.id} className="row-hover" style={{ borderBottom: '1px solid var(--border)', cursor: 'pointer' }} onClick={() => setOpen(open === i.id ? null : i.id)}>
+            <td style={{ ...td, maxWidth: 0, width: '100%' }}>
+              <div style={{ display: 'flex', gap: 6, alignItems: 'baseline', minWidth: 0 }}>
+                <strong style={{ color: '#fff', whiteSpace: 'nowrap' }}>{i.author_name || 'Autor desconhecido'}</strong>
+                {i.author_headline && <span style={{ ...muted, fontSize: '0.75rem', ...clamp(1) }}>{i.author_headline}</span>}
+              </div>
+              <div style={{ ...muted, ...(open === i.id ? { whiteSpace: 'pre-line', overflowWrap: 'anywhere' } : clamp(1)) }}>{i.post_text}</div>
+              {i.note && <div style={{ fontSize: '0.8rem', color: '#a29bfe', ...(open === i.id ? { overflowWrap: 'anywhere' } : clamp(1)) }}>💬 {i.note}</div>}
+            </td>
+            <td style={td}><span style={chip(i.market === 'br' ? '#00b894' : '#4da3ff')}>{i.market === 'br' ? 'PT' : 'EN'}</span></td>
+            <td style={{ ...td, ...muted, whiteSpace: 'nowrap' }}>{ago(i.created_at)}</td>
+            <td style={td}><span style={chip(i.used_count ? '#9aa4b2' : '#00d4aa')}>{i.used_count ? `usado ${i.used_count}x` : 'novo'}</span></td>
+            <td style={{ ...td, textAlign: 'right' }} onClick={e => e.stopPropagation()}>
+              <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                <button className="btn btn-primary" style={{ ...smallBtn, whiteSpace: 'nowrap' }} disabled={busy !== null} onClick={() => generate(i)}
+                  title={`Escreve um post seu (${MARKET_LABEL[i.market]}) sobre este tema`}><Sparkles size={13} /> {busy === i.id ? 'Gerando…' : 'Gerar post'}</button>
+                <a className="btn btn-secondary" style={iconBtn} href={themeLink(i)} target="_blank" rel="noreferrer"
+                  title={i.post_url ? 'Abrir o post no LinkedIn' : 'Sem link salvo: buscar o post no LinkedIn'}><ExternalLink size={15} /></a>
+                <button className="btn btn-secondary" style={{ ...iconBtn, color: 'var(--error)' }} title="Remover tema"
+                  onClick={async () => { await svc.deleteInspiration(i.id); load(); }}><X size={15} /></button>
+              </div>
+            </td>
+          </tr>
+        ))}
+      </DenseTable>
+      {!shown.length && <p style={muted}>Nenhum tema aqui: no feed, use o 📌 da extensão ou comente em um post.</p>}
+    </>
+  );
+};
 
 const POST_FILTERS: { id: 'active' | PostStatus; label: string }[] = [
   { id: 'active', label: 'Pendentes' }, { id: 'draft', label: 'Rascunhos' }, { id: 'approved', label: 'Agendados' }, { id: 'published', label: 'Publicados' },
 ];
 
-const PostsTab = ({ connected }: { connected: boolean }) => {
+const GeneratePosts = ({ connected }: { connected: boolean }) => {
   const [posts, setPosts] = useState<CopilotPost[]>([]);
   const [market, setMarket] = useState<Market>('intl');
   const [form, setForm] = useState({ count: 2, pillar: '', topic: '', source_notes: '' });
   const [loading, setLoading] = useState(false);
-  const [inspirations, setInspirations] = useState<Inspiration[]>([]);
-  const [showAllThemes, setShowAllThemes] = useState(false);
   const [filter, setFilter] = useState<'active' | PostStatus>('active');
   const load = useCallback(async () => setPosts(await svc.listPosts()), []);
-  const loadInspirations = useCallback(async () => setInspirations(await svc.inspirations()), []);
-  useEffect(() => { svc.listPosts().then(setPosts); svc.inspirations().then(setInspirations).catch(() => setInspirations([])); }, []);
-  const fromInspiration = async (i: Inspiration) => {
-    setLoading(true);
-    try { await svc.generatePosts({ market: i.market, count: 1, inspiration_id: i.id }); await load(); await loadInspirations(); setFilter('draft'); }
-    catch (e) { alert(errMsg(e)); } finally { setLoading(false); }
-  };
+  useEffect(() => { svc.listPosts().then(setPosts); }, []);
   const generate = async () => {
     setLoading(true);
     try {
@@ -193,12 +237,11 @@ const PostsTab = ({ connected }: { connected: boolean }) => {
       setFilter('draft');
     } catch (e) { alert(errMsg(e)); } finally { setLoading(false); }
   };
-  const count = (f: 'active' | PostStatus) => posts.filter(p => (f === 'active' ? p.status !== 'published' : p.status === f)).length;
-  const shown = posts.filter(p => (filter === 'active' ? p.status !== 'published' : p.status === filter));
-  const themes = showAllThemes ? inspirations : inspirations.slice(0, 6);
+  const matches = (p: CopilotPost, f: 'active' | PostStatus) => (f === 'active' ? p.status !== 'published' : p.status === f);
+  const shown = posts.filter(p => matches(p, filter));
   return (
     <>
-      <div className="panel" style={{ minWidth: 0 }}>
+      <div className="panel" style={{ minWidth: 0, marginBottom: 0 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.6rem', gap: 8, flexWrap: 'wrap' }}>
           <h3 style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Sparkles size={18} /> Gerar rascunhos</h3>
           <div style={{ display: 'flex', gap: 8 }}>
@@ -230,42 +273,21 @@ const PostsTab = ({ connected }: { connected: boolean }) => {
           <button className="btn btn-primary" onClick={generate} disabled={loading}><Sparkles size={16} /> {loading ? 'Gerando…' : 'Gerar'}</button>
         </div>
       </div>
-
-      <div className="panel" style={{ minWidth: 0 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8, flexWrap: 'wrap', marginBottom: '0.4rem' }}>
-          <h3>📌 Temas salvos ({inspirations.length})</h3>
-          <span style={muted}>{inspirations.filter(i => !i.used_count).length} ainda não usados</span>
-        </div>
-        <p style={{ ...muted, marginBottom: '1rem' }}>
-          Posts que você salvou (📌) ou comentou no feed. "Gerar post" escreve um post seu sobre o tema, no idioma do original, sem copiá-lo.
-          Automático: com menos de 2 rascunhos esperando, a IA escreve um a partir do tema novo mais recente.
-        </p>
-        {!inspirations.length && <p style={muted}>Nenhum tema ainda: no feed, use o 📌 da extensão ou comente em um post.</p>}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(300px, 100%), 1fr))', gap: '0.9rem' }}>
-          {themes.map(i => (
-            <ThemeCard key={i.id} i={i} busy={loading} onGenerate={() => fromInspiration(i)}
-              onDelete={async () => { await svc.deleteInspiration(i.id); loadInspirations(); }} />
-          ))}
-        </div>
-        {inspirations.length > 6 && (
-          <div style={{ display: 'flex', justifyContent: 'center', marginTop: '0.9rem' }}>
-            <button className="btn btn-secondary" onClick={() => setShowAllThemes(v => !v)}>
-              {showAllThemes ? 'Mostrar menos' : `Ver todos (${inspirations.length})`}
-            </button>
-          </div>
-        )}
-      </div>
-
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        {POST_FILTERS.map(f => (
-          <button key={f.id} className={`btn ${filter === f.id ? 'btn-primary' : 'btn-secondary'}`} style={{ padding: '0.45rem 0.9rem' }}
-            onClick={() => setFilter(f.id)}>{f.label} <span style={{ opacity: 0.7 }}>{count(f.id)}</span></button>
-        ))}
-      </div>
+      <Pills value={filter} onChange={setFilter} items={POST_FILTERS.map(f => ({ ...f, count: posts.filter(p => matches(p, f.id)).length }))} />
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(480px, 100%), 1fr))', gap: '1.5rem' }}>
         {shown.map(p => <PostCard key={`${p.id}-${p.status}-${p.body.length}`} post={p} connected={connected} onChange={load} />)}
       </div>
       {!shown.length && <p style={muted}>Nada aqui ainda.</p>}
+    </>
+  );
+};
+
+const PostsTab = ({ connected }: { connected: boolean }) => {
+  const [sub, setSub] = useState<'themes' | 'generate'>('themes');
+  return (
+    <>
+      <Pills value={sub} onChange={setSub} items={[{ id: 'themes', label: '📌 Posts salvos' }, { id: 'generate', label: '✨ Gerar post' }]} />
+      {sub === 'themes' ? <ThemesList /> : <GeneratePosts connected={connected} />}
     </>
   );
 };
@@ -344,6 +366,9 @@ const EngagementCard = ({ item, onMark }: { item: EngagementItem; onMark: (id: n
 };
 
 // ── Prospects ─────────────────────────────────────────────────────────────
+const STATUS_LABEL: Partial<Record<ProspectStatus, string>> = {
+  to_contact: 'para conectar', invited: 'convidado', accepted: 'aceitou', replied: 'respondeu', skipped: 'pulado',
+};
 const NEXT_STATUS: Partial<Record<ProspectStatus, { to: ProspectStatus; label: string }[]>> = {
   to_contact: [{ to: 'invited', label: 'Já convidei' }, { to: 'skipped', label: 'Pular' }],
   invited: [{ to: 'accepted', label: 'Aceitou' }, { to: 'replied', label: 'Respondeu' }],
@@ -352,74 +377,63 @@ const NEXT_STATUS: Partial<Record<ProspectStatus, { to: ProspectStatus; label: s
 
 const ProspectsTab = () => {
   const [data, setData] = useState<{ items: Prospect[]; invited_this_week: number; weekly_target: number }>({ items: [], invited_this_week: 0, weekly_target: 20 });
-  const [form, setForm] = useState({ profile_text: '', profile_url: '', name: '' });
-  const [loading, setLoading] = useState(false);
+  const [filter, setFilter] = useState<'to_contact' | 'invited' | 'all'>('to_contact');
   const load = useCallback(async () => setData(await svc.prospects()), []);
   useEffect(() => { svc.prospects().then(setData); }, []);
-  const add = async () => {
-    if (form.profile_text.trim().length < 20) return;
-    setLoading(true);
-    try {
-      const p = await svc.addProspect({ profile_text: form.profile_text, profile_url: form.profile_url || undefined, name: form.name || undefined });
-      if (p.status === 'skipped') alert(`A IA sugere pular (fit ${p.fit}): ${p.reason}`);
-      setForm({ profile_text: '', profile_url: '', name: '' });
-      await load();
-    } catch (e) { alert(errMsg(e)); } finally { setLoading(false); }
-  };
   const update = async (id: number, patch: Partial<Pick<Prospect, 'status'>>) => { await svc.updateProspect(id, patch); load(); };
+  const inStatus = (p: Prospect, f: typeof filter) => f === 'all' || (f === 'invited' ? p.status !== 'to_contact' : p.status === f);
+  const shown = data.items.filter(p => inStatus(p, filter));
   return (
     <>
-      <div className="panel">
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
-          <h3 style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Plus size={18} /> Adicionar pessoa</h3>
-          <span style={muted}>Semana: <strong style={{ color: '#fff' }}>{data.invited_this_week}</strong> / {data.weekly_target} convites</span>
-        </div>
-        <p style={{ ...muted, marginBottom: '0.8rem' }}>
-          Pela extensão: abra o perfil → botão direito na página → <em>Enviar ao CareerOps Copilot</em>.
-        </p>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-          <input value={form.profile_url} onChange={e => setForm({ ...form, profile_url: e.target.value })} placeholder="Link do perfil" style={field} />
-          <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Nome (opcional)" style={field} />
-          <textarea value={form.profile_text} onChange={e => setForm({ ...form, profile_text: e.target.value })} rows={4}
-            placeholder="Headline, empresa, about… (cole o que tiver)" style={{ ...field, gridColumn: 'span 2', resize: 'vertical' }} />
-        </div>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1rem' }}>
-          <button className="btn btn-primary" onClick={add} disabled={loading}>{loading ? 'Analisando…' : 'Analisar e salvar'}</button>
-        </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <Pills value={filter} onChange={setFilter} items={[
+          { id: 'to_contact', label: 'Para conectar', count: data.items.filter(p => inStatus(p, 'to_contact')).length },
+          { id: 'invited', label: 'Convidados', count: data.items.filter(p => inStatus(p, 'invited')).length },
+          { id: 'all', label: 'Todos', count: data.items.length },
+        ]} />
+        <span style={muted}>Semana: <strong style={{ color: '#fff' }}>{data.invited_this_week}</strong> / {data.weekly_target} convites ·
+          vêm dos autores e comentaristas dos posts que você salva ou comenta</span>
       </div>
-      {data.items.map(p => <ProspectCard key={`${p.id}-${p.status}`} p={p} onUpdate={update} />)}
-      {!data.items.length && <p style={muted}>Nenhuma pessoa na lista ainda.</p>}
+      <DenseTable head={<>
+        <th style={th}>PESSOA</th><th style={th}>FIT</th><th style={th}>MERCADO</th><th style={th}>STATUS</th><th style={{ ...th, textAlign: 'right' }}>AÇÕES</th>
+      </>}>
+        {shown.map(p => <ProspectRow key={p.id} p={p} onUpdate={update} />)}
+      </DenseTable>
+      {!shown.length && <p style={muted}>Ninguém aqui. Salve (📌) ou comente posts no feed: o autor e quem comentou são avaliados.</p>}
     </>
   );
 };
 
-const ProspectCard = ({ p, onUpdate }: { p: Prospect; onUpdate: (id: number, patch: Partial<Pick<Prospect, 'status'>>) => void }) => {
+const ProspectRow = ({ p, onUpdate }: { p: Prospect; onUpdate: (id: number, patch: Partial<Pick<Prospect, 'status'>>) => void }) => {
   // The extension finishes the job on LinkedIn: it opens the profile, clicks Conectar → "Enviar sem nota" and marks it as invited here
   const connectUrl = p.profile_url ? `${p.profile_url.split('#')[0]}#careerops-connect=${p.id}` : null;
   return (
-    <div className="panel" style={{ display: 'flex', justifyContent: 'space-between', gap: '1.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
-      <div style={{ flex: '1 1 320px' }}>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6, flexWrap: 'wrap' }}>
-          <span style={chip(STATUS_COLOR[p.status])}>{p.status}</span>
-          <span style={chip('#00d4aa')}>fit {p.fit ?? '?'}</span>
-          {p.market && <span style={chip(p.market === 'br' ? '#00b894' : '#4da3ff')}>{MARKET_LABEL[p.market]}</span>}
-          {p.segment && <span style={chip('#ffb020')}>{p.segment}</span>}
+    <tr className="row-hover" style={{ borderBottom: '1px solid var(--border)' }}>
+      <td style={{ ...td, maxWidth: 0, width: '100%' }} title={p.reason || ''}>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'baseline', minWidth: 0 }}>
+          {p.profile_url
+            ? <a href={p.profile_url} target="_blank" rel="noreferrer" style={{ color: '#fff', fontWeight: 700, textDecoration: 'none', whiteSpace: 'nowrap' }}>{p.name || 'Sem nome'}</a>
+            : <strong style={{ whiteSpace: 'nowrap' }}>{p.name || 'Sem nome'}</strong>}
+          {p.segment && <span style={{ ...muted, fontSize: '0.72rem' }}>{p.segment}</span>}
         </div>
-        <strong>{p.name || 'Sem nome'}</strong>
-        <div style={muted}>{[p.headline, p.company].filter(Boolean).join(' · ')}</div>
-        {p.reason && <p style={{ ...muted, marginTop: 8 }}>{p.reason}</p>}
-      </div>
-      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-        {p.status === 'to_contact' && connectUrl && (
-          <a className="btn btn-primary" href={connectUrl} target="_blank" rel="noreferrer"
-            title="Abre o perfil e a extensão envia o convite sem nota"><UserPlus size={15} /> Conectar</a>
-        )}
-        {p.profile_url && <a className="btn btn-secondary" href={p.profile_url} target="_blank" rel="noreferrer"><ExternalLink size={15} /> Abrir perfil</a>}
-        {(NEXT_STATUS[p.status] || []).map(n => (
-          <button key={n.to} className="btn btn-secondary" onClick={() => onUpdate(p.id, { status: n.to })}>{n.label}</button>
-        ))}
-      </div>
-    </div>
+        <div style={{ ...muted, ...clamp(1) }}>{[p.headline, p.company].filter(Boolean).join(' · ')}</div>
+        {p.reason && <div style={{ ...muted, fontSize: '0.78rem', opacity: 0.75, ...clamp(1) }}>{p.reason}</div>}
+      </td>
+      <td style={td}><span style={chip((p.fit ?? 0) >= 70 ? '#00d4aa' : '#ffb020')}>{p.fit ?? '?'}</span></td>
+      <td style={td}>{p.market && <span style={chip(p.market === 'br' ? '#00b894' : '#4da3ff')}>{p.market === 'br' ? 'BR' : 'EXT'}</span>}</td>
+      <td style={td}><span style={chip(STATUS_COLOR[p.status])}>{STATUS_LABEL[p.status] || p.status}</span></td>
+      <td style={{ ...td, textAlign: 'right' }}>
+        <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+          {p.status === 'to_contact' && connectUrl && (
+            <a className="btn btn-primary" style={{ ...smallBtn, whiteSpace: 'nowrap' }} href={connectUrl} target="_blank" rel="noreferrer"
+              title="Abre o perfil e a extensão envia o convite sem nota"><UserPlus size={13} /> Conectar</a>
+          )}
+          {(NEXT_STATUS[p.status] || []).map(n => (
+            <button key={n.to} className="btn btn-secondary" style={{ ...smallBtn, whiteSpace: 'nowrap' }} onClick={() => onUpdate(p.id, { status: n.to })}>{n.label}</button>
+          ))}
+        </div>
+      </td>
+    </tr>
   );
 };
 

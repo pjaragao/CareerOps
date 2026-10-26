@@ -341,6 +341,8 @@ class LinkedInCopilotService:
                 continue
             clean.append({"profile_url": url, "name": name, "headline": headline})
         clean = clean[:25]
+        if len(clean) * 2 < len(people):   # the extension is not reading headlines: LinkedIn's markup probably changed
+            log.warning("score_people: only %d of %d people came with a usable headline", len(clean), len(people))
         known = {r["profile_url"]: r for r in _rows(
             "SELECT * FROM public.linkedin_prospects WHERE profile_url = ANY(%s)", ([c["profile_url"] for c in clean],))}
         todo = [c for c in clean if c["profile_url"] not in known]

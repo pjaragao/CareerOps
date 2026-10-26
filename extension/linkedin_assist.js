@@ -334,26 +334,34 @@
         post.querySelectorAll('a[href*="/in/"]').forEach((a) => {
             if (own(a)) return;
             const m = a.href.match(/https:\/\/www\.linkedin\.com\/in\/([^/?#]+)/);
-            if (!m || m[1] === 'me' || seen.has(m[0])) return;
+            if (!m || m[1] === 'me' || (seen.has(m[0]) && (!seen.get(m[0]) || seen.get(m[0]).headline))) return;
             const raw = a.innerText || a.getAttribute('aria-label') || '';
             const name = personName(raw);
             if (!name || name.length > 80 || /^(view|ver)\b/i.test(name)) return;
             if (isSelf(raw)) { seen.set(m[0], null); return; }
-            const comment = a.closest('article[class*="comment"], [class*="comments-comment-entity"], [class*="comments-comment-item"], [class*="comment-entity"]');
+            // LinkedIn's classes are obfuscated: climb from the link to the largest block that is still only about this
+            // person (no link to anyone else) and take the first line after the name that reads like a headline
             let headline = null;
-            if (comment) {
-                // the headline is the first line after the name that is not the name again, a badge, a time or a count
-                const lines = clean(comment.innerText).split('\n').map((l) => l.trim()).filter(Boolean);
+            for (let el = a.parentElement, k = 0; el && el !== post && k < 10 && !headline; el = el.parentElement, k++) {
+                const others = [...el.querySelectorAll('a[href*="/in/"]')].some((x) => {
+                    const id = (x.href.match(/\/in\/([^/?#]+)/) || [])[1];
+                    return id && id !== m[1];
+                });
+                if (others) break;
+                const lines = clean(el.innerText).split('\n').map((l) => l.trim()).filter(Boolean);
                 const i = lines.findIndex((l) => personName(l) === name);
-                headline = lines.slice(i < 0 ? 0 : i + 1, (i < 0 ? 0 : i + 1) + 6)
-                    .find((l) => personName(l) !== name && !META.test(l) && !NOT_HEADLINE.test(l) && l.length > 3) || null;
-            } else if (info.author_name && personName(info.author_name) === name) {
-                headline = info.author_headline;   // the post's author: postInfo already read their headline
+                if (i < 0) continue;
+                headline = lines.slice(i + 1, i + 6).find((l) => personName(l) !== name && !META.test(l) && !NOT_HEADLINE.test(l) && l.length > 3) || null;
             }
+            if (!headline && info.author_name && personName(info.author_name) === name) headline = info.author_headline;
             seen.set(m[0], { profile_url: m[0], name, headline: headline ? headline.slice(0, 300) : null });
         });
-        const people = [...seen.values()].filter((p) => p && p.headline).slice(0, 25);
-        if (!people.length) return;
+        const found = [...seen.values()].filter(Boolean);
+        const people = found.filter((p) => p.headline).slice(0, 25);
+        if (!people.length) {
+            if (found.length) toast(`Achei ${found.length} pessoa(s) neste post, mas não consegui ler o cargo delas`, false);
+            return;
+        }
         api('POST', '/prospects/batch', { people, topic: info.post_text.slice(0, 500) }).then((res) => {
             if (!res.ok) return;
             const good = res.data.items.filter((i) => i.status !== 'skipped').length;
