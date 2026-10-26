@@ -12,7 +12,8 @@ import {
   Shield,
   Building2,
   FileText,
-  Layout
+  Layout,
+  Megaphone
 } from 'lucide-react';
 
 const Sidebar = () => {
@@ -26,6 +27,7 @@ const Sidebar = () => {
     { icon: <GitPullRequest size={20} />, label: 'Pipeline', path: '/pipeline' },
     { icon: <MessageSquare size={20} />, label: 'Interview Prep', path: '/interview' },
     { icon: <Shield size={20} />, label: 'LinkedIn Optimizer', path: '/linkedin-optimizer' },
+    { icon: <Megaphone size={20} />, label: 'LinkedIn Copilot', path: '/linkedin-copilot' },
     { icon: <Settings size={20} />, label: 'Settings', path: '/settings' },
   ];
 

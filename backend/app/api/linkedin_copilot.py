@@ -1,0 +1,215 @@
+from datetime import date, datetime
+from typing import Literal, Optional
+
+from fastapi import APIRouter, HTTPException
+from urllib.parse import quote
+
+from fastapi.responses import RedirectResponse
+from pydantic import BaseModel, Field
+
+from app.core.config import settings
+from app.services.linkedin_api_service import LinkedInApiError, LinkedInApiService
+from app.services.linkedin_copilot_service import LinkedInCopilotService as Copilot
+
+router = APIRouter(prefix="/linkedin-copilot", tags=["linkedin-copilot"])
+
+
+def _found(item):
+    if not item:
+        raise HTTPException(status_code=404, detail="Not found or not in a state that allows this action")
+    return item
+
+
+# ── OAuth / connection ───────────────────────────────────────────────────
+@router.get("/status")
+async def status():
+    return LinkedInApiService.status()
+
+
+@router.get("/oauth/start")
+async def oauth_start():
+    try:
+        return {"url": LinkedInApiService.authorization_url()}
+    except LinkedInApiError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/oauth/callback")
+async def oauth_callback(code: Optional[str] = None, state: Optional[str] = None, error: Optional[str] = None,
+                         error_description: Optional[str] = None):
+    target = f"{settings.FRONTEND_URL}/linkedin-copilot"
+    if error or not code or not state:
+        return RedirectResponse(f"{target}?linkedin=error&reason={quote(error_description or error or 'missing_code')}")
+    try:
+        LinkedInApiService.handle_callback(code, state)
+    except LinkedInApiError as e:
+        return RedirectResponse(f"{target}?linkedin=error&reason={quote(str(e)[:200])}")
+    return RedirectResponse(f"{target}?linkedin=connected")
+
+
+@router.post("/disconnect")
+async def disconnect():
+    LinkedInApiService.disconnect()
+    return {"ok": True}
+
+
+# ── Posts ────────────────────────────────────────────────────────────────
+class GenerateRequest(BaseModel):
+    count: int = Field(2, ge=1, le=5)
+    pillar: Optional[str] = None
+    topic: Optional[str] = None
+    source_notes: Optional[str] = None
+
+
+class PostUpdate(BaseModel):
+    body: Optional[str] = None
+    scheduled_for: Optional[datetime] = None
+
+
+class ApproveRequest(BaseModel):
+    scheduled_for: Optional[datetime] = None
+
+
+@router.get("/posts")
+async def list_posts(status: Optional[str] = None):
+    return {"posts": Copilot.list_posts(status)}
+
+
+@router.post("/posts/generate")
+async def generate_posts(req: GenerateRequest):
+    try:
+        return {"posts": await Copilot.generate_posts(req.count, req.pillar, req.topic, req.source_notes)}
+    except RuntimeError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+@router.patch("/posts/{post_id}")
+async def update_post(post_id: int, req: PostUpdate):
+    return _found(Copilot.update_post(post_id, req.body, req.scheduled_for))
+
+
+@router.post("/posts/{post_id}/approve")
+async def approve_post(post_id: int, req: ApproveRequest):
+    return _found(Copilot.approve_post(post_id, req.scheduled_for))
+
+
+@router.post("/posts/{post_id}/unapprove")
+async def unapprove_post(post_id: int):
+    return _found(Copilot.unapprove_post(post_id))
+
+
+@router.post("/posts/{post_id}/publish")
+async def publish_post(post_id: int):
+    try:
+        return Copilot.publish_post(post_id)
+    except LinkedInApiError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/posts/{post_id}/mark-published")
+async def mark_published(post_id: int):
+    return _found(Copilot.mark_published_manually(post_id))
+
+
+@router.delete("/posts/{post_id}")
+async def discard_post(post_id: int):
+    return _found(Copilot.discard_post(post_id))
+
+
+# ── Engagement ───────────────────────────────────────────────────────────
+class EngagementIn(BaseModel):
+    post_text: str = Field(..., min_length=20)
+    post_url: Optional[str] = None
+    author_name: Optional[str] = None
+    author_headline: Optional[str] = None
+
+
+class EngagementUpdate(BaseModel):
+    status: Optional[Literal["pending", "done", "skipped"]] = None
+    comment_draft: Optional[str] = None
+
+
+@router.get("/engagement")
+async def engagement_queue():
+    return Copilot.engagement_queue()
+
+
+@router.post("/engagement")
+async def add_engagement(req: EngagementIn):
+    try:
+        return await Copilot.add_engagement(req.post_text, req.post_url, req.author_name, req.author_headline)
+    except RuntimeError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+@router.patch("/engagement/{item_id}")
+async def update_engagement(item_id: int, req: EngagementUpdate):
+    return _found(Copilot.update_engagement(item_id, req.status, req.comment_draft))
+
+
+# ── Prospects ────────────────────────────────────────────────────────────
+class ProspectIn(BaseModel):
+    profile_text: str = Field(..., min_length=20)
+    profile_url: Optional[str] = None
+    name: Optional[str] = None
+    headline: Optional[str] = None
+    company: Optional[str] = None
+
+
+class ProspectUpdate(BaseModel):
+    status: Optional[Literal["to_contact", "invited", "accepted", "replied", "skipped"]] = None
+    note_draft: Optional[str] = None
+    notes: Optional[str] = None
+
+
+@router.get("/prospects")
+async def list_prospects(status: Optional[str] = None):
+    return Copilot.list_prospects(status)
+
+
+@router.post("/prospects")
+async def add_prospect(req: ProspectIn):
+    try:
+        return await Copilot.add_prospect(req.profile_text, req.profile_url, req.name, req.headline, req.company)
+    except RuntimeError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+@router.patch("/prospects/{item_id}")
+async def update_prospect(item_id: int, req: ProspectUpdate):
+    return _found(Copilot.update_prospect(item_id, req.status, req.note_draft, req.notes))
+
+
+# ── Capture from the browser extension (user-triggered only) ─────────────
+class CaptureIn(BaseModel):
+    url: str
+    text: str = Field(..., min_length=20)
+    title: Optional[str] = None
+
+
+@router.post("/capture")
+async def capture(req: CaptureIn):
+    try:
+        return await Copilot.capture(req.url, req.text, req.title)
+    except RuntimeError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+# ── Weekly metrics ───────────────────────────────────────────────────────
+class WeeklyMetricsIn(BaseModel):
+    profile_views: Optional[int] = None
+    search_appearances: Optional[int] = None
+    post_impressions: Optional[int] = None
+    recruiter_messages: Optional[int] = None
+    interviews: Optional[int] = None
+    notes: Optional[str] = None
+
+
+@router.get("/metrics")
+async def weekly_metrics(weeks: int = 8):
+    return {"weeks": Copilot.weekly_summary(min(max(weeks, 1), 26))}
+
+
+@router.put("/metrics/{week_start}")
+async def save_weekly_metrics(week_start: date, req: WeeklyMetricsIn):
+    return Copilot.save_weekly_metrics(week_start, req.model_dump())

@@ -38,7 +38,8 @@ class SkillService:
             "knowledge": "import",
             "jobs": "optimizer",
             "interview": "interview",
-            "analytics": "optimizer"
+            "analytics": "optimizer",
+            "linkedin": "outreach"
         }
         
         target_domain = domain_mapping.get(domain, domain)

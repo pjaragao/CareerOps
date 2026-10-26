@@ -121,6 +121,16 @@ linkedin_resume/
 4. **Aggregate**: `knowledge/compile_knowledge.md` builds `user_data.md` (Knowledge Base).
 5. **Inject**: Other skills (`interview`, `jobs`, `profile`) include `common/user_context.md` which pulls from the Knowledge Base via the **Deep Context Engine**.
 
+### 3.4 LinkedIn Copilot
+
+Tables (`migrations_v7.sql`): `linkedin_posts`, `linkedin_engagement`, `linkedin_prospects`, `linkedin_auth`, `linkedin_oauth_states`, `linkedin_metrics_weekly`.
+Code: `api/linkedin_copilot.py` → `services/linkedin_copilot_service.py` (+ `services/linkedin_api_service.py` for OAuth and posting); skills in `skills/linkedin/` (posts use `ai_model_optimizer`, comments/notes `ai_model_outreach`); UI `pages/LinkedInCopilot.tsx`.
+
+1. **Posts**: generate (`linkedin/post_drafts.md`) → `draft` → user approves (optionally with a time) → `approved` → published by the API (button, or the 60-s scheduler started in `main.py`) → `published`. Editing an approved post sends it back to `draft`; publishing claims the row first (`approved → published`) so a post never goes out twice; failures go to `failed` with the error; `LINKEDIN_MAX_POSTS_PER_DAY` caps the rate.
+2. **OAuth**: `/api/linkedin-copilot/oauth/start` → LinkedIn consent (`openid profile w_member_social`) → `/oauth/callback` validates the one-time `state`, stores the 60-day token and the member URN, redirects to the UI.
+3. **Engagement / prospects**: the extension's context menu POSTs the selected text or the profile page to `/capture` (profile URL → prospect; post permalink or selection → engagement). The AI scores 0–100 (below 40 is auto-skipped) and drafts a comment or a ≤300-char note. The user acts on LinkedIn and updates the status.
+4. **Metrics**: weekly counts from the tables + manual LinkedIn analytics in `linkedin_metrics_weekly`; day/week boundaries use `APP_TIMEZONE`.
+
 ---
 
 ## 4. Feature Parity: v1 (Flask) vs v2 (FastAPI)

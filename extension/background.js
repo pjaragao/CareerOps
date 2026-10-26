@@ -134,3 +134,66 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         return true;
     }
 });
+
+// ── LinkedIn Copilot: user-triggered capture (right-click → "Enviar ao CareerOps Copilot") ──
+// Sends only what the user chose: the selected text (a post) or the current profile page.
+// Nothing is liked, commented, followed or sent on LinkedIn — the backend only drafts.
+const COPILOT_ENDPOINTS = [
+    'http://127.0.0.1:8005/api/linkedin-copilot/capture',
+    'http://localhost:8005/api/linkedin-copilot/capture',
+    'http://100.109.242.35:8005/api/linkedin-copilot/capture'
+];
+
+chrome.runtime.onInstalled.addListener(() => {
+    chrome.contextMenus.create({
+        id: 'careerops-copilot-capture',
+        title: 'Enviar ao CareerOps Copilot',
+        contexts: ['selection', 'page', 'link'],
+        documentUrlPatterns: ['https://www.linkedin.com/*']
+    });
+});
+
+function setBadge(text, color) {
+    chrome.action.setBadgeBackgroundColor({ color });
+    chrome.action.setBadgeText({ text });
+    setTimeout(() => chrome.action.setBadgeText({ text: '' }), 4000);
+}
+
+async function sendToCopilot(payload) {
+    for (const url of COPILOT_ENDPOINTS) {
+        try {
+            const res = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            if (res.ok) return await res.json();
+            console.warn('Copilot capture rejected by', url, res.status, await res.text());
+            return null;
+        } catch (e) {
+            console.warn('Copilot: failed to reach', url, e);
+        }
+    }
+    return null;
+}
+
+chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+    if (info.menuItemId !== 'careerops-copilot-capture' || !tab) return;
+    let text = (info.selectionText || '').trim();
+    let title = tab.title || '';
+    if (!text) {
+        // No selection: take the visible text of the page (used for profile pages).
+        const [{ result }] = await chrome.scripting.executeScript({
+            target: { tabId: tab.id },
+            func: () => (document.querySelector('main') || document.body).innerText.slice(0, 6000)
+        });
+        text = (result || '').trim();
+    }
+    // A right-click on a post's timestamp/link gives its permalink; otherwise use the page URL.
+    const url = info.linkUrl && info.linkUrl.includes('linkedin.com') ? info.linkUrl : tab.url;
+    if (text.length < 20) { setBadge('?', '#ff6b6b'); return; }
+    const result = await sendToCopilot({ url, text, title: title.replace(/\s*\|\s*LinkedIn\s*$/, '') });
+    if (!result) { setBadge('ERR', '#ff6b6b'); return; }
+    const skipped = result.item && (result.item.status === 'skipped');
+    setBadge(result.kind === 'prospect' ? (skipped ? 'P-' : 'P+') : (skipped ? 'E-' : 'E+'), skipped ? '#888888' : '#00d4aa');
+});

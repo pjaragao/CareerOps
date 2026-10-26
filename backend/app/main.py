@@ -1,7 +1,10 @@
+import asyncio
+import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
-from app.api import jobs, interview, profile, strategies, pipeline, dashboard, auth, actions, companies, settings as settings_api, documents
+from app.api import jobs, interview, profile, strategies, pipeline, dashboard, auth, actions, companies, settings as settings_api, documents, linkedin_copilot
+from app.services.linkedin_copilot_service import LinkedInCopilotService
 
 app = FastAPI(
     title="LinkedIn Career Ops API",
@@ -29,6 +32,22 @@ app.include_router(auth.router, prefix="/api/auth")
 app.include_router(companies.router, prefix="/api/companies")
 app.include_router(settings_api.router, prefix="/api")
 app.include_router(documents.router, prefix="/api/documents")
+app.include_router(linkedin_copilot.router, prefix="/api")
+
+
+async def _publish_scheduled_posts():
+    """Every minute: publish approved LinkedIn posts whose scheduled time has come."""
+    while True:
+        try:
+            await asyncio.to_thread(LinkedInCopilotService.publish_due)
+        except Exception as e:
+            logging.getLogger("linkedin_copilot").warning("scheduler tick failed: %s", e)
+        await asyncio.sleep(60)
+
+
+@app.on_event("startup")
+async def start_scheduler():
+    app.state.linkedin_scheduler = asyncio.create_task(_publish_scheduled_posts())
 
 @app.get("/")
 async def root():

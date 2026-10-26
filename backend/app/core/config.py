@@ -35,6 +35,16 @@ class Settings(BaseSettings):
 
     # --- LinkedIn ---
     LINKEDIN_EMAIL: str = os.getenv("LINKEDIN_EMAIL", "")
+    # Official API (developer app with "Sign In with LinkedIn using OpenID Connect" + "Share on LinkedIn")
+    LINKEDIN_CLIENT_ID: str = os.getenv("LINKEDIN_CLIENT_ID", "")
+    LINKEDIN_CLIENT_SECRET: str = os.getenv("LINKEDIN_CLIENT_SECRET", "")
+    LINKEDIN_REDIRECT_URI: str = os.getenv("LINKEDIN_REDIRECT_URI", "http://localhost:8005/api/linkedin-copilot/oauth/callback")
+    # Versioned REST API (YYYYMM). Empty = previous month, which LinkedIn always supports.
+    LINKEDIN_API_VERSION: str = os.getenv("LINKEDIN_API_VERSION", "")
+    LINKEDIN_MAX_POSTS_PER_DAY: int = int(os.getenv("LINKEDIN_MAX_POSTS_PER_DAY", "2"))
+    FRONTEND_URL: str = os.getenv("FRONTEND_URL", "http://localhost:5173")
+    # Day/week boundaries for the LinkedIn Copilot counters ("today", "this week")
+    APP_TIMEZONE: str = os.getenv("APP_TIMEZONE", "America/Sao_Paulo")
 
     # --- Paths ---
     OUTPUT_DIR: Path = PROJECT_DIR / os.getenv("OUTPUT_DIR", "./output")
