@@ -65,6 +65,7 @@ export interface CopilotStatus {
   connected: boolean;
   member_name: string | null;
   expires_at: string | null;
+  redirect_uri?: string;
 }
 
 export interface WeekMetrics {

@@ -43,29 +43,74 @@ const errMsg = (e: unknown): string => {
   return err?.response?.data?.detail || err?.message || 'Erro';
 };
 
-// ── Connection banner ─────────────────────────────────────────────────────
-const ConnectionBar = ({ status, reload }: { status: CopilotStatus | null; reload: () => void }) => {
+// ── Modal ─────────────────────────────────────────────────────────────────
+const Modal = ({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) => (
+  <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+    <div className="panel" onClick={e => e.stopPropagation()} style={{ width: 'min(640px, 100%)', maxHeight: '90vh', overflow: 'auto', marginBottom: 0 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+        <h3>{title}</h3>
+        <button className="btn btn-secondary" style={{ padding: 6 }} onClick={onClose}><X size={16} /></button>
+      </div>
+      {children}
+    </div>
+  </div>
+);
+
+// ── LinkedIn API status (header) and setup guide ──────────────────────────
+const code: React.CSSProperties = { background: 'rgba(255,255,255,0.08)', padding: '1px 6px', borderRadius: 5, fontSize: '0.82rem', overflowWrap: 'anywhere' };
+
+const ApiStatus = ({ status, reload }: { status: CopilotStatus | null; reload: () => void }) => {
+  const [open, setOpen] = useState(false);
   if (!status) return null;
+  const color = status.connected ? '#00d4aa' : status.configured ? '#ffb020' : '#ff6b6b';
+  const text = status.connected ? `API: ${status.member_name || 'conectada'}` : status.configured ? 'API não conectada' : 'API não configurada';
   const connect = async () => {
     try { window.location.href = await svc.connectUrl(); } catch (e) { alert(errMsg(e)); }
   };
   return (
-    <div className="panel" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', padding: '1rem 1.5rem' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-        <div style={{ width: 10, height: 10, borderRadius: '50%', background: status.connected ? '#00d4aa' : '#ff6b6b' }} />
-        {status.connected ? (
-          <span>Publicação conectada como <strong>{status.member_name}</strong>
-            <span style={muted}> · expira em {status.expires_at ? new Date(status.expires_at).toLocaleDateString() : '?'}</span></span>
-        ) : status.configured ? (
-          <span>API do LinkedIn não conectada. Sem conexão, você copia o post e marca como publicado.</span>
-        ) : (
-          <span>API do LinkedIn não configurada (defina <code>LINKEDIN_CLIENT_ID</code> e <code>LINKEDIN_CLIENT_SECRET</code>). Até lá, copie e publique manualmente.</span>
-        )}
-      </div>
-      {status.configured && (status.connected
-        ? <button className="btn btn-secondary" onClick={async () => { await svc.disconnect(); reload(); }}>Desconectar</button>
-        : <button className="btn btn-primary" onClick={connect}><Link2 size={16} /> Conectar LinkedIn</button>)}
-    </div>
+    <>
+      <button className="btn btn-secondary" style={{ ...smallBtn, gap: 6 }} onClick={() => setOpen(true)} title="Publicação automática pela API do LinkedIn">
+        <span style={{ width: 8, height: 8, borderRadius: '50%', background: color }} /> {text}
+      </button>
+      {open && (
+        <Modal title="Publicação pela API do LinkedIn" onClose={() => setOpen(false)}>
+          {status.connected ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <p>Conectado como <strong>{status.member_name}</strong>. Expira em {status.expires_at ? new Date(status.expires_at).toLocaleDateString() : '?'} (reconecte quando expirar).</p>
+              <p style={muted}>Posts aprovados com horário são publicados sozinhos; sem horário, use "Publicar agora".</p>
+              <div><button className="btn btn-secondary" onClick={async () => { await svc.disconnect(); reload(); setOpen(false); }}>Desconectar</button></div>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, fontSize: '0.9rem', lineHeight: 1.5 }}>
+              <p style={muted}>Sem a API, tudo funciona: você copia o post, publica no LinkedIn e clica em "Já publiquei". A API só serve para publicar e agendar daqui.</p>
+              <ol style={{ paddingLeft: '1.2rem', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <li style={status.configured ? { opacity: 0.55 } : undefined}>
+                  Em <a href="https://www.linkedin.com/developers/apps/new" target="_blank" rel="noreferrer" style={{ color: 'var(--accent)' }}>linkedin.com/developers</a>, crie um app.
+                  O LinkedIn exige uma Página vinculada: pode ser uma página simples com o seu nome.
+                </li>
+                <li style={status.configured ? { opacity: 0.55 } : undefined}>
+                  Na aba <strong>Products</strong>, adicione <em>Sign In with LinkedIn using OpenID Connect</em> e <em>Share on LinkedIn</em> (aprovação imediata).
+                </li>
+                <li style={status.configured ? { opacity: 0.55 } : undefined}>
+                  Na aba <strong>Auth</strong>, em <em>Authorized redirect URLs</em>, adicione: <code style={code}>{status.redirect_uri || '…/api/linkedin-copilot/oauth/callback'}</code>
+                  <div style={muted}>Se o app roda em outro endereço, defina <code style={code}>LINKEDIN_REDIRECT_URI</code> com a URL pública do backend e use a mesma aqui.</div>
+                </li>
+                <li style={status.configured ? { opacity: 0.55 } : undefined}>
+                  Copie <em>Client ID</em> e <em>Client Secret</em> para as variáveis <code style={code}>LINKEDIN_CLIENT_ID</code> e <code style={code}>LINKEDIN_CLIENT_SECRET</code> do backend (no Coolify: Environment Variables) e faça o redeploy.
+                </li>
+                <li>
+                  Volte aqui e clique em <strong>Conectar LinkedIn</strong>. O acesso vale 60 dias.
+                </li>
+              </ol>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                <button className="btn btn-primary" disabled={!status.configured} onClick={connect}
+                  title={status.configured ? '' : 'Configure as variáveis primeiro (passos 1 a 4)'}><Link2 size={16} /> Conectar LinkedIn</button>
+              </div>
+            </div>
+          )}
+        </Modal>
+      )}
+    </>
   );
 };
 
@@ -293,12 +338,10 @@ const PostsTab = ({ connected }: { connected: boolean }) => {
 };
 
 // ── Engagement ────────────────────────────────────────────────────────────
-const EngagementTab = () => {
-  const [data, setData] = useState<{ items: EngagementItem[]; done_today: number; daily_target: number }>({ items: [], done_today: 0, daily_target: 10 });
+const AddEngagement = ({ onAdded }: { onAdded: () => void }) => {
+  const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ post_text: '', post_url: '', author_name: '' });
   const [loading, setLoading] = useState(false);
-  const load = useCallback(async () => setData(await svc.engagementQueue()), []);
-  useEffect(() => { svc.engagementQueue().then(setData); }, []);
   const add = async () => {
     if (form.post_text.trim().length < 20) return;
     setLoading(true);
@@ -306,62 +349,98 @@ const EngagementTab = () => {
       const item = await svc.addEngagement({ post_text: form.post_text, post_url: form.post_url || undefined, author_name: form.author_name || undefined });
       if (item.status === 'skipped') alert(`A IA sugere pular (relevância ${item.relevance}): ${item.reason}`);
       setForm({ post_text: '', post_url: '', author_name: '' });
-      await load();
+      setOpen(false);
+      onAdded();
     } catch (e) { alert(errMsg(e)); } finally { setLoading(false); }
   };
+  return (
+    <>
+      <button className="btn btn-primary" style={iconBtn} title="Adicionar post à fila manualmente" onClick={() => setOpen(true)}><Plus size={16} /></button>
+      {open && (
+        <Modal title="Adicionar post à fila" onClose={() => setOpen(false)}>
+          <p style={{ ...muted, marginBottom: '0.8rem' }}>
+            Mais rápido pela extensão: o botão ✨ IA em cada post do feed, ou selecione o texto → botão direito → <em>Enviar ao CareerOps Copilot</em>.
+          </p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(220px, 100%), 1fr))', gap: '0.8rem' }}>
+            <input value={form.post_url} onChange={e => setForm({ ...form, post_url: e.target.value })} placeholder="Link do post (opcional)" style={field} />
+            <input value={form.author_name} onChange={e => setForm({ ...form, author_name: e.target.value })} placeholder="Autor (opcional)" style={field} />
+          </div>
+          <textarea value={form.post_text} onChange={e => setForm({ ...form, post_text: e.target.value })} rows={6} placeholder="Texto do post"
+            style={{ ...field, marginTop: '0.8rem', resize: 'vertical' }} autoFocus />
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0.8rem' }}>
+            <button className="btn btn-primary" onClick={add} disabled={loading}>{loading ? 'Analisando…' : 'Analisar e rascunhar comentário'}</button>
+          </div>
+        </Modal>
+      )}
+    </>
+  );
+};
+
+const EngagementTab = () => {
+  const [data, setData] = useState<{ items: EngagementItem[]; done_today: number; daily_target: number }>({ items: [], done_today: 0, daily_target: 10 });
+  const [open, setOpen] = useState<number | null>(null);
+  const load = useCallback(async () => setData(await svc.engagementQueue()), []);
+  useEffect(() => { svc.engagementQueue().then(setData); }, []);
   const mark = async (id: number, status: 'done' | 'skipped', comment?: string) => {
     await svc.updateEngagement(id, { status, ...(comment !== undefined ? { comment_draft: comment } : {}) });
     load();
   };
   return (
     <>
-      <div className="panel">
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
-          <h3 style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Plus size={18} /> Adicionar post à fila</h3>
-          <span style={muted}>Hoje: <strong style={{ color: '#fff' }}>{data.done_today}</strong> / {data.daily_target} comentários</span>
-        </div>
-        <p style={{ ...muted, marginBottom: '0.8rem' }}>
-          Mais rápido pela extensão: selecione o texto do post no LinkedIn → botão direito → <em>Enviar ao CareerOps Copilot</em>
-          (clique com o botão direito no horário do post para levar o link junto).
-        </p>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-          <input value={form.post_url} onChange={e => setForm({ ...form, post_url: e.target.value })} placeholder="Link do post (opcional)" style={field} />
-          <input value={form.author_name} onChange={e => setForm({ ...form, author_name: e.target.value })} placeholder="Autor (opcional)" style={field} />
-          <textarea value={form.post_text} onChange={e => setForm({ ...form, post_text: e.target.value })} rows={4} placeholder="Texto do post"
-            style={{ ...field, gridColumn: 'span 2', resize: 'vertical' }} />
-        </div>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1rem' }}>
-          <button className="btn btn-primary" onClick={add} disabled={loading}>{loading ? 'Analisando…' : 'Analisar e rascunhar comentário'}</button>
-        </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <span style={muted}>Hoje: <strong style={{ color: '#fff' }}>{data.done_today}</strong> / {data.daily_target} comentários ·
+          {' '}{data.items.length} na fila · clique na linha para ver o post e editar o comentário</span>
+        <AddEngagement onAdded={load} />
       </div>
-      {data.items.map(item => <EngagementCard key={item.id} item={item} onMark={mark} />)}
-      {!data.items.length && <p style={muted}>Fila vazia. Capture posts de pessoas da sua área-alvo enquanto navega.</p>}
+      <DenseTable head={<>
+        <th style={th}>REL.</th><th style={th}>AUTOR & POST</th><th style={th}>COMENTÁRIO SUGERIDO</th><th style={{ ...th, textAlign: 'right' }}>AÇÕES</th>
+      </>}>
+        {data.items.map(item => (
+          <EngagementRow key={item.id} item={item} open={open === item.id} onToggle={() => setOpen(open === item.id ? null : item.id)} onMark={mark} />
+        ))}
+      </DenseTable>
+      {!data.items.length && <p style={muted}>Fila vazia. No feed, o botão ✨ IA da extensão rascunha o comentário e coloca o post aqui.</p>}
     </>
   );
 };
 
-const EngagementCard = ({ item, onMark }: { item: EngagementItem; onMark: (id: number, s: 'done' | 'skipped', c?: string) => void }) => {
+const EngagementRow = ({ item, open, onToggle, onMark }: {
+  item: EngagementItem; open: boolean; onToggle: () => void; onMark: (id: number, s: 'done' | 'skipped', c?: string) => void;
+}) => {
   const [comment, setComment] = useState(item.comment_draft || '');
   return (
-    <div className="panel" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
-      <div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
-          <span style={chip('#00d4aa')}>{item.relevance ?? '?'}</span>
-          <strong>{item.author_name || 'Autor desconhecido'}</strong>
-        </div>
-        {item.reason && <p style={{ ...muted, marginBottom: 8 }}>{item.reason}</p>}
-        <div style={{ ...muted, maxHeight: 180, overflow: 'auto', whiteSpace: 'pre-wrap', background: 'rgba(0,0,0,0.2)', padding: '0.8rem', borderRadius: 10 }}>{item.post_text}</div>
-      </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        <textarea value={comment} onChange={e => setComment(e.target.value)} rows={6} style={{ ...field, resize: 'vertical' }} />
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-          <button className="btn btn-secondary" onClick={() => copy(comment)}><Copy size={15} /> Copiar</button>
-          {item.post_url && <a className="btn btn-secondary" href={item.post_url} target="_blank" rel="noreferrer"><ExternalLink size={15} /> Abrir post</a>}
-          <button className="btn btn-secondary" onClick={() => onMark(item.id, 'skipped')}>Pular</button>
-          <button className="btn btn-primary" onClick={() => onMark(item.id, 'done', comment)}><Check size={15} /> Comentei</button>
-        </div>
-      </div>
-    </div>
+    <>
+      <tr className="row-hover" style={{ borderBottom: open ? 'none' : '1px solid var(--border)', cursor: 'pointer' }} onClick={onToggle}>
+        <td style={td}><span style={chip((item.relevance ?? 0) >= 70 ? '#00d4aa' : '#ffb020')}>{item.relevance ?? '?'}</span></td>
+        <td style={{ ...td, maxWidth: 0, width: '50%' }}>
+          <strong style={{ color: '#fff' }}>{item.author_name || 'Autor desconhecido'}</strong>
+          <div style={{ ...muted, ...clamp(1) }}>{item.post_text}</div>
+        </td>
+        <td style={{ ...td, maxWidth: 0, width: '50%' }}><div style={{ ...muted, ...clamp(2) }}>{comment || '—'}</div></td>
+        <td style={{ ...td, textAlign: 'right' }} onClick={e => e.stopPropagation()}>
+          <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+            <button className="btn btn-secondary" style={iconBtn} title="Copiar comentário" onClick={() => copy(comment)}><Copy size={15} /></button>
+            {item.post_url && <a className="btn btn-secondary" style={iconBtn} href={item.post_url} target="_blank" rel="noreferrer" title="Abrir post"><ExternalLink size={15} /></a>}
+            <button className="btn btn-secondary" style={{ ...smallBtn, whiteSpace: 'nowrap' }} onClick={() => onMark(item.id, 'skipped')}>Pular</button>
+            <button className="btn btn-primary" style={{ ...smallBtn, whiteSpace: 'nowrap' }} onClick={() => onMark(item.id, 'done', comment)}><Check size={13} /> Comentei</button>
+          </div>
+        </td>
+      </tr>
+      {open && (
+        <tr style={{ borderBottom: '1px solid var(--border)' }}>
+          <td />
+          <td colSpan={3} style={{ ...td, paddingTop: 0 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(320px, 100%), 1fr))', gap: '1rem' }}>
+              <div>
+                {item.reason && <p style={{ ...muted, marginBottom: 6 }}>{item.reason}</p>}
+                <div style={{ ...muted, maxHeight: 220, overflow: 'auto', whiteSpace: 'pre-wrap', background: 'rgba(0,0,0,0.2)', padding: '0.7rem', borderRadius: 10 }}>{item.post_text}</div>
+              </div>
+              <textarea value={comment} onChange={e => setComment(e.target.value)} rows={7} style={{ ...field, resize: 'vertical' }} />
+            </div>
+          </td>
+        </tr>
+      )}
+    </>
   );
 };
 
@@ -509,20 +588,23 @@ const LinkedInCopilot = () => {
   }, [params, setParams]);
 
   return (
-    <div className="animate-fade-in">
-      <div style={{ marginBottom: '1.5rem' }}>
-        <h1 style={{ fontSize: '2rem', fontWeight: 700, marginBottom: '0.5rem' }}>LinkedIn Copilot</h1>
-        <p style={{ color: 'var(--text-muted)' }}>
-          A IA rascunha; você aprova. Só posts aprovados são publicados pela API oficial; convites saem sem nota, um por clique em "Conectar"; comentários e follows você faz no LinkedIn.
-        </p>
+    <div className="animate-fade-in copilot-page">
+      {/* .panel's own bottom margin doubles the gap between blocks here */}
+      <style>{'.copilot-page .panel { margin-bottom: 0; }'}</style>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem 1.5rem', flexWrap: 'wrap', marginBottom: '0.4rem' }}>
+        <h1 style={{ fontSize: '1.6rem', fontWeight: 700, whiteSpace: 'nowrap' }}>LinkedIn Copilot</h1>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          {TABS.map(t => (
+            <button key={t.id} className={`btn ${tab === t.id ? 'btn-primary' : 'btn-secondary'}`} style={{ padding: '0.45rem 0.9rem' }}
+              onClick={() => { setTab(t.id); setParams({ tab: t.id }, { replace: true }); }}>{t.icon} {t.label}</button>
+          ))}
+        </div>
+        <div style={{ marginLeft: 'auto' }}><ApiStatus status={status} reload={loadStatus} /></div>
       </div>
-      <ConnectionBar status={status} reload={loadStatus} />
-      <div style={{ display: 'flex', gap: 8, margin: '1.5rem 0' }}>
-        {TABS.map(t => (
-          <button key={t.id} className={`btn ${tab === t.id ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setTab(t.id)}>{t.icon} {t.label}</button>
-        ))}
-      </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+      <p style={{ ...muted, marginBottom: '1.2rem' }}>
+        A IA rascunha; você aprova. Posts só saem aprovados; convites saem sem nota, um por clique em "Conectar"; comentários e follows você faz no LinkedIn.
+      </p>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
         {tab === 'posts' && <PostsTab connected={!!status?.connected} />}
         {tab === 'engagement' && <EngagementTab />}
         {tab === 'prospects' && <ProspectsTab />}

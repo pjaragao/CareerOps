@@ -133,6 +133,7 @@ class LinkedInApiService:
             "member_name": auth["member_name"] if auth else None,
             "expires_at": auth["expires_at"].isoformat() if auth else None,
             "api_version": _api_version(),
+            "redirect_uri": settings.LINKEDIN_REDIRECT_URI,   # shown in the app's setup guide
         }
 
     @staticmethod
