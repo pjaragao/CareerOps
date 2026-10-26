@@ -581,10 +581,13 @@
         };
     }
 
+    const jobState = new Map();   // job id -> imported in this tab
+    const setJobButtons = (id, text) => document.querySelectorAll(`.careerops-jobbtn[data-job="${id}"]`).forEach((b) => { b.textContent = text; });
+
     async function importCurrentJob(btn, auto = false) {
         const id = currentJobId();
         if (!id) { toast('Não encontrei a vaga aberta', false); return; }
-        if (btn) btn.textContent = 'Importando…';
+        setJobButtons(id, 'Importando…');
         let job = jobFromPage(id);
         if (!job.description || !job.title) {
             const extra = await jobPosting(id);
@@ -595,39 +598,47 @@
             title: job.title, company: job.company, location: job.location, description: job.description,
             url: `https://www.linkedin.com/jobs/view/${id}/`, linkedin_job_id: id, status: 'new',
         });
-        if (btn) btn.textContent = res.ok ? '✓ No CareerOps' : '📥 CareerOps';
+        if (res.ok) jobState.set(id, true);
+        setJobButtons(id, res.ok ? '✓ No CareerOps' : '📥 CareerOps');
         toast(res.ok ? (auto ? 'Vaga salva também no CareerOps' : 'Vaga importada para o CareerOps (Vagas)') : errText(res), res.ok);
     }
 
+    // Every visible Save of the job pane gets our button — including the sticky header LinkedIn shows on scroll
     function decorateJobSave() {
-        if (!currentJobId()) return;
-        const saveBtn = [...document.querySelectorAll('main button')]
-            .find((b) => !b.closest('.careerops-card, .careerops-bar') && (SAVE.test(label(b)) || SAVED.test(label(b)))
-                && b.offsetParent !== null && !b.closest('li'));
-        if (!saveBtn || document.querySelector(`.careerops-jobbtn[data-job="${currentJobId()}"]`)) return;
-        const mine = button('📥 CareerOps', () => importCurrentJob(mine));
-        mine.classList.add('careerops-jobbtn');
-        mine.title = 'Importar esta vaga para o CareerOps';
-        // same height as LinkedIn's pill buttons, never overlapping them
-        mine.style.cssText += ';position:static;flex:0 0 auto;align-self:center;height:32px;padding:0 14px;margin:0 0 0 8px;white-space:nowrap;border-radius:16px';
-        mine.dataset.job = currentJobId();
-        // Save sits inside its own fixed-size wrapper: climb to the element that is a sibling of the Apply button's
-        // wrapper (the Apply/Save row) and add ours as a separate item of that row
-        const apply = [...document.querySelectorAll('main button, main a')].find((b) => /^(apply|candidatar|candidatar-se|easy apply|candidatura simplificada)\b/i.test(label(b)) && b.offsetParent !== null);
-        let anchor = saveBtn;
-        if (apply) {
-            while (anchor.parentElement && !anchor.parentElement.contains(apply)) anchor = anchor.parentElement;
-        } else if (saveBtn.parentElement && saveBtn.parentElement.children.length === 1) {
-            anchor = saveBtn.parentElement;
+        const id = currentJobId();
+        if (!id) return;
+        const saves = [...document.querySelectorAll('main button, header button, div[class*="sticky"] button')]
+            .filter((b) => !b.closest('.careerops-card, .careerops-bar') && (SAVE.test(label(b)) || SAVED.test(label(b)))
+                && b.offsetParent !== null && !b.closest('li') && b.__careeropsJob !== id);
+        for (const saveBtn of saves) {
+            saveBtn.__careeropsJob = id;
+            const mine = button(jobState.get(id) ? '✓ No CareerOps' : '📥 CareerOps', () => importCurrentJob(mine));
+            mine.classList.add('careerops-jobbtn');
+            mine.title = 'Importar esta vaga para o CareerOps';
+            // same height as LinkedIn's pill buttons, never overlapping them
+            mine.style.cssText += ';position:static;flex:0 0 auto;align-self:center;height:32px;padding:0 14px;margin:0 0 0 8px;white-space:nowrap;border-radius:16px';
+            mine.dataset.job = id;
+            // Save sits inside its own fixed-size wrapper: climb to the element that shares a parent with the Apply
+            // button of the same bar and add ours as a separate item of that row
+            // climb until the parent also holds an Apply button: that parent is this Save's own row
+            const isApply = (b) => /^(apply|candidatar|candidatar-se|easy apply|candidatura simplificada)\b/i.test(label(b)) && b.offsetParent !== null;
+            let anchor = saveBtn;
+            let foundRow = false;
+            for (let k = 0; k < 6 && anchor.parentElement && anchor.parentElement.tagName !== 'MAIN'; k++) {
+                const parent = anchor.parentElement;
+                if ([...parent.querySelectorAll('button, a')].some((b) => isApply(b) && !anchor.contains(b))) { foundRow = true; break; }
+                anchor = parent;
+            }
+            if (!foundRow) anchor = saveBtn.parentElement && saveBtn.parentElement.children.length === 1 ? saveBtn.parentElement : saveBtn;
+            anchor.insertAdjacentElement('afterend', mine);
+            if (anchor.parentElement && !getComputedStyle(anchor.parentElement).display.includes('flex')) {
+                mine.style.display = 'inline-flex';
+                mine.style.alignItems = 'center';
+                mine.style.verticalAlign = 'middle';
+            }
+            // clicking LinkedIn's Save (not Unsave) also imports the job
+            saveBtn.addEventListener('click', () => { if (SAVE.test(label(saveBtn))) importCurrentJob(mine, true); }, true);
         }
-        anchor.insertAdjacentElement('afterend', mine);
-        if (anchor.parentElement && getComputedStyle(anchor.parentElement).display.includes('flex') === false) {
-            mine.style.display = 'inline-flex';
-            mine.style.alignItems = 'center';
-            mine.style.verticalAlign = 'middle';
-        }
-        // clicking LinkedIn's Save (not Unsave) also imports the job
-        saveBtn.addEventListener('click', () => { if (SAVE.test(label(saveBtn))) importCurrentJob(mine, true); }, true);
     }
 
     chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
