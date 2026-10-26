@@ -136,7 +136,7 @@ class JobService:
 
     @staticmethod
     def update_job_status(job_id: int, new_status: str) -> bool:
-        VALID = {'scraped', 'new', 'applied', 'interviewing', 'offer', 'rejected', 'done', 'error'}
+        VALID = {'scraped', 'new', 'applied', 'interviewing', 'offer', 'rejected', 'archived', 'done', 'error'}
         if new_status not in VALID:
             return False
         conn = get_db_connection()

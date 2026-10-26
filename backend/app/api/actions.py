@@ -173,3 +173,60 @@ async def download_pdf(job_id: int, data: Dict[str, str]):
         headers={"Content-Disposition": f"attachment; filename=resume_{job_id}.pdf"}
     )
 
+
+
+class AutoApplyIn(BaseModel):
+    tone: Optional[str] = "semi-formal"
+    orientation: Optional[str] = ""
+    regenerate: bool = False
+
+
+@router.post("/{job_id}/auto-apply/prepare")
+async def prepare_auto_apply(job_id: int, options: AutoApplyIn):
+    """Everything the extension needs to apply: tailored resume and cover letter (generated only when missing,
+    or again with regenerate), the job context and the URL to open. Applying itself happens in the browser."""
+    job = JobService.get_job_by_id(job_id)
+    if not job:
+        raise HTTPException(status_code=404)
+    opts = ActionOptions(tone=options.tone, orientation=options.orientation)
+    generated = []
+    if options.regenerate or not job.get("resume_markdown"):
+        await generate_resume(job_id, opts)
+        generated.append("resume")
+    if options.regenerate or not job.get("cover_letter"):
+        await generate_cover_letter(job_id, opts)
+        generated.append("cover")
+    job = JobService.get_job_by_id(job_id)
+    url = job.get("url") or ""
+    if url and not url.startswith("http"):
+        url = "https://" + url
+    return {
+        "job_id": job_id, "generated": generated, "apply_url": url,
+        "is_linkedin": "linkedin.com/jobs" in url,
+        "job": {"title": job.get("job_title"), "company": job.get("company"), "location": job.get("location"),
+                "description": (job.get("description") or "")[:5000]},
+        "resume_markdown": job.get("resume_markdown") or "", "cover_letter": job.get("cover_letter") or "",
+        "language": get_job_lang(job),
+    }
+
+
+def _pdf_name(job: dict, kind: str) -> str:
+    who = "Paulo-Aragao-Jr"
+    company = re.sub(r"[^A-Za-z0-9]+", "-", job.get("company") or "").strip("-")[:40]
+    label = ("CV" if get_job_lang(job) == "Portuguese" else "Resume") if kind == "resume" else (
+        "Carta" if get_job_lang(job) == "Portuguese" else "Cover-Letter")
+    return f"{who}-{label}{'-' + company if company else ''}.pdf"
+
+
+@router.get("/{job_id}/document.pdf")
+async def job_document_pdf(job_id: int, kind: str = "resume"):
+    """The job's tailored resume (or cover letter) as a PDF — the file the extension attaches to the application."""
+    job = JobService.get_job_by_id(job_id)
+    if not job:
+        raise HTTPException(status_code=404)
+    content = job.get("resume_markdown") if kind == "resume" else job.get("cover_letter")
+    if not content:
+        raise HTTPException(status_code=404, detail="Documento ainda não gerado")
+    name = _pdf_name(job, kind)
+    return Response(content=PDFService.generate_pdf(content, name), media_type="application/pdf",
+                    headers={"Content-Disposition": f'attachment; filename="{name}"'})

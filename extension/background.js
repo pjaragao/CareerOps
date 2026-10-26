@@ -253,3 +253,59 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     callBackend(request.path, request.method, request.body).then(sendResponse);
     return true;
 });
+
+// ── Auto Apply: which tab is applying to which CareerOps job. Survives redirects and follows the tabs the job
+// page opens (LinkedIn's "Apply" on the company site). Kept in session storage: the service worker may restart.
+const APPLY_TTL = 3 * 3600 * 1000;
+async function applyTabs() { return (await chrome.storage.session.get('applyTabs')).applyTabs || {}; }
+async function setApplyTab(tabId, value) {
+    const tabs = await applyTabs();
+    if (value) tabs[tabId] = value; else delete tabs[tabId];
+    await chrome.storage.session.set({ applyTabs: tabs });
+}
+chrome.tabs.onCreated.addListener(async (tab) => {
+    const tabs = await applyTabs();
+    const from = tab.openerTabId && tabs[tab.openerTabId];
+    if (from) await setApplyTab(tab.id, { ...from, via: 'opener' });
+});
+chrome.tabs.onRemoved.addListener((tabId) => { setApplyTab(tabId, null); });
+
+// A file from the backend (the tailored resume PDF) as base64, so a content script can attach it to a form
+async function backendFile(path) {
+    const base = await apiBase();
+    if (!base) return { ok: false, detail: 'Backend do CareerOps indisponível' };
+    try {
+        const res = await fetch(base + path);
+        if (!res.ok) return { ok: false, detail: ((await res.json().catch(() => ({}))).detail) || `HTTP ${res.status}` };
+        const bytes = new Uint8Array(await res.arrayBuffer());
+        let bin = '';
+        for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+        const name = ((res.headers.get('content-disposition') || '').match(/filename="?([^";]+)/) || [])[1] || 'resume.pdf';
+        return { ok: true, b64: btoa(bin), name, type: res.headers.get('content-type') || 'application/pdf' };
+    } catch (e) {
+        return { ok: false, detail: `Falha de rede: ${e.message}` };
+    }
+}
+
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    const tabId = sender.tab && sender.tab.id;
+    if (request.action === 'applyStart') {
+        setApplyTab(tabId, { jobId: request.jobId, at: Date.now() }).then(() => sendResponse({ ok: true }));
+        return true;
+    }
+    if (request.action === 'applyPending') {
+        applyTabs().then((tabs) => {
+            const p = tabs[tabId];
+            sendResponse(p && Date.now() - p.at < APPLY_TTL ? p : null);
+        });
+        return true;
+    }
+    if (request.action === 'applyStop') {
+        setApplyTab(tabId, null).then(() => sendResponse({ ok: true }));
+        return true;
+    }
+    if (request.action === 'backendFile') {
+        backendFile(request.path).then(sendResponse);
+        return true;
+    }
+});

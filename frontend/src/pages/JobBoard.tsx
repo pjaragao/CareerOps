@@ -2,10 +2,10 @@ import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { jobService, Job } from '../services/jobService';
 import { 
   Plus, MapPin, Calendar, Trash2, Building2, 
-  LayoutDashboard, List as ListIcon, MoreHorizontal, ExternalLink
+  LayoutDashboard, List as ListIcon, MoreHorizontal, ExternalLink, Rocket, FileText, Mail, MessageSquare
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import JobDetail from '../components/JobDetail';
+import JobDetail, { JobTab, JobAction } from '../components/JobDetail';
 
 const JobBoard = () => {
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -19,7 +19,23 @@ const JobBoard = () => {
     localStorage.setItem('jobBoardViewMode', viewMode);
   }, [viewMode]);
   const [showAddModal, setShowAddModal] = useState(false);
-  const [selectedJob, setSelectedJob] = useState<Job | null>(null);
+  const [selected, setSelected] = useState<{ job: Job; tab?: JobTab; action?: JobAction } | null>(null);
+  const setSelectedJob = (job: Job) => setSelected({ job });
+
+  // Shortcuts from the list: they open the job window and run the action there (progress and results visible)
+  const QUICK: { action?: JobAction; tab?: JobTab; title: string; icon: React.ReactNode; primary?: boolean }[] = [
+    { action: 'autoapply', title: 'Auto Apply: gera CV e carta se faltarem, abre a vaga e a extensão preenche a candidatura', icon: <Rocket size={15} />, primary: true },
+    { action: 'resume', tab: 'docs', title: 'Gerar CV personalizado', icon: <FileText size={15} /> },
+    { action: 'cover', tab: 'docs', title: 'Gerar cover letter', icon: <Mail size={15} /> },
+    { tab: 'chat', title: 'Chat com a vaga', icon: <MessageSquare size={15} /> },
+  ];
+  const quickButtons = (job: Job, small = false) => QUICK.map(q => (
+    <button key={q.title} title={q.title} className={`btn ${q.primary ? 'btn-primary' : 'btn-secondary'}`}
+      onClick={(e) => { e.stopPropagation(); setSelected({ job, tab: q.tab, action: q.action }); }}
+      style={{ padding: small ? '4px' : '6px', display: 'flex', alignItems: 'center' }}>
+      {q.icon}
+    </button>
+  ));
   const [newJob, setNewJob] = useState({ job_title: '', company: '', location: '', url: '', description: '' });
 
   const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
@@ -135,6 +151,7 @@ const JobBoard = () => {
                           </td>
                           <td style={{ padding: '1rem', textAlign: 'right' }}>
                             <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+                              {quickButtons(job)}
                               {job.url && (
                                 <a href={job.url.startsWith('http') ? job.url : `https://${job.url}`} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="btn btn-secondary" style={{ padding: '6px', display: 'flex', alignItems: 'center' }} title="Acessar Vaga">
                                   <ExternalLink size={16} />
@@ -184,7 +201,8 @@ const JobBoard = () => {
                             <div style={{ fontWeight: 700, fontSize: '0.9rem', color: '#fff', marginBottom: '4px' }}>{job.job_title}</div>
                             <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '8px' }}>{job.company}</div>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '6px' }}><MapPin size={12} /> {job.location || 'Remote'}</div>
+                              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}><MapPin size={12} /> {job.location || 'Remote'}</div>
+                              <div style={{ display: 'flex', gap: 4 }} className="card-quick">{quickButtons(job, true)}</div>
                               {job.url && (
                                 <a href={job.url.startsWith('http') ? job.url : `https://${job.url}`} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} style={{ color: 'var(--text-muted)', display: 'flex', alignItems: 'center' }} title="Acessar Vaga" className="card-hover-link">
                                   <ExternalLink size={14} />
@@ -221,7 +239,8 @@ const JobBoard = () => {
         </div>
       )}
 
-      {selectedJob && <JobDetail job={selectedJob} onClose={() => setSelectedJob(null)} />}
+      {selected && <JobDetail key={`${selected.job.id}-${selected.action || selected.tab || ''}`} job={selected.job} initialTab={selected.tab} autoRun={selected.action}
+        onClose={() => setSelected(null)} onChanged={() => loadJobs()} />}
     </div>
   );
 };

@@ -592,22 +592,22 @@
 
     let applyBusy = false;
     async function fillStep(modal, panel) {
-        if (applyBusy) return;
+        if (applyBusy) return null;
         const all = collectFields(modal);
         const fields = all.filter((f) => !f.current);
         const status = panel.querySelector('.careerops-apply-status');
-        if (!fields.length) { status.textContent = 'Nada para preencher nesta etapa. Revise e clique em Avançar.'; return; }
+        if (!fields.length) { status.textContent = 'Nada para preencher nesta etapa. Revise e clique em Avançar.'; return { filled: 0, pending: 0 }; }
         const demographic = fields.filter((f) => DEMOGRAPHIC.test(f.label));
         const send = fields.filter((f) => !DEMOGRAPHIC.test(f.label));
         demographic.forEach((f) => mark(f, '#e17055'));
-        if (!send.length) { status.textContent = 'Só há perguntas pessoais/demográficas nesta etapa — responda você.'; return; }
+        if (!send.length) { status.textContent = 'Só há perguntas pessoais/demográficas nesta etapa — responda você.'; return { filled: 0, pending: demographic.length }; }
         applyBusy = true;
         status.textContent = `Preenchendo ${send.length} campo(s)…`;
         const res = await api('POST', '/easy-apply/answers', {
             job: jobContext(), fields: send.map(({ key, type, label, options, current }) => ({ key, type, label, options, current })),
         });
         applyBusy = false;
-        if (!res.ok) { status.textContent = errText(res); status.style.color = '#d63031'; return; }
+        if (!res.ok) { status.textContent = errText(res); status.style.color = '#d63031'; return null; }
         let filled = 0;
         const pending = [];
         const toConfirm = [];
@@ -624,6 +624,7 @@
         status.textContent = `${filled} preenchido(s) em verde. ` + (pending.length ? `Para você (laranja): ${pending.slice(0, 6).join(' · ')}` : 'Revise e clique em Avançar.');
         if (toConfirm.length) line(panel, `Confirme ou altere (amarelo) — sugestão de mercado estimada pela IA: ${toConfirm.join(' · ')}`, '#b7791f');
         if (res.data.notes) line(panel, res.data.notes, '#777');
+        return { filled, pending: pending.length };
     }
 
     let applyPanel = null;
@@ -678,6 +679,16 @@
         return [...jobs.values()].slice(0, 25);
     }
 
+    // Text of a parsed (not rendered) HTML block, keeping paragraphs and bullets: innerText doesn't work there
+    function htmlText(el) {
+        if (!el) return '';
+        const c = el.cloneNode(true);
+        c.querySelectorAll('br').forEach((b) => b.replaceWith('\n'));
+        c.querySelectorAll('li').forEach((li) => li.prepend('• '));
+        c.querySelectorAll('p, div, li, h1, h2, h3, h4, h5, h6, ul, ol').forEach((b) => b.append('\n'));
+        return c.textContent.replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+    }
+
     async function jobPosting(id) {
         try {
             const html = await fetch(`/jobs-guest/jobs/api/jobPosting/${id}`, { credentials: 'include' }).then((r) => (r.ok ? r.text() : ''));
@@ -688,8 +699,7 @@
                 title: q('.top-card-layout__title, .topcard__title'),
                 company: q('.topcard__org-name-link, .topcard__flavor a, .topcard__flavor'),
                 location: q('.topcard__flavor--bullet'),
-                description: clean((doc.querySelector('.show-more-less-html__markup, .description__text') || {}).innerText
-                    || (doc.querySelector('.show-more-less-html__markup, .description__text') || {}).textContent || ''),
+                description: htmlText(doc.querySelector('.show-more-less-html__markup, .description__text')),
             };
         } catch (e) { return {}; }
     }
@@ -792,6 +802,122 @@
         }
     }
 
+    // ── 7. Auto Apply (started from a job in CareerOps): drives Easy Apply step by step, or hands off to the
+    // company site (apply_copilot.js continues there). The final "Submit application" is yours unless you tick
+    // "enviar sozinho no final".
+    const message = (msg) => new Promise((resolve) => {
+        try { chrome.runtime.sendMessage(msg, (res) => { void chrome.runtime.lastError; resolve(res); }); } catch (e) { resolve(null); }
+    });
+    const EASY = /^(easy apply|candidatura simplificada)/i;
+    const APPLY_EXT = /^(apply|candidatar-se|candidatar)\b/i;
+    const NEXT = /^(next|continue|review|avançar|continuar|revisar|próximo|revisar candidatura)\b/i;
+    const SUBMIT_APP = /^(submit application|submit|enviar candidatura|enviar)$/i;
+    const SENT = /application (was )?sent|application submitted|candidatura (foi )?enviada|sua candidatura foi enviada/i;
+    let autopilot = null;
+    let applyChecked = false;
+
+    function apStatus(text, color = '#333') { if (autopilot) { autopilot.status.textContent = text; autopilot.status.style.color = color; } }
+
+    async function startAutopilot() {
+        applyChecked = true;
+        const pending = await message({ action: 'applyPending' });
+        if (!pending) return;
+        const box = card('🚀 CareerOps · Auto Apply');
+        box.style.cssText += ';position:fixed;left:16px;bottom:16px;width:330px;margin:0;z-index:2147483646';
+        const status = line(box, 'Preparando CV e carta…');
+        const opts = document.createElement('label');
+        opts.style.cssText = 'font-size:12px;color:#555;display:flex;gap:4px;align-items:center;margin:4px 0';
+        opts.innerHTML = '<input type="checkbox"> enviar sozinho no final (sem revisão)';
+        const autoSubmit = opts.querySelector('input');
+        chrome.storage.local.get('autoSubmit', (v) => { autoSubmit.checked = !!(v && v.autoSubmit); });
+        autoSubmit.addEventListener('change', () => chrome.storage.local.set({ autoSubmit: autoSubmit.checked }));
+        const stop = button('Parar', async () => { autopilot.done = true; await message({ action: 'applyStop' }); box.remove(); }, false);
+        box.append(opts, stop);
+        document.documentElement.appendChild(box);
+        autopilot = { jobId: pending.jobId, box, status, autoSubmit, prep: {}, uploaded: false, lastSig: '', running: false, done: false, steps: 0 };
+        const res = await backend('POST', `/jobs/${pending.jobId}/auto-apply/prepare`, {});
+        if (!res.ok) { apStatus(errText(res), '#d63031'); return; }
+        autopilot.prep = res.data;
+        const btn = await waitFor(() => [...document.querySelectorAll('main button, main a')].find((b) => !own(b) && b.offsetParent !== null
+            && (EASY.test(label(b)) || APPLY_EXT.test(label(b)))), 12000);
+        if (!btn) { apStatus('Não achei o botão de candidatura nesta página (vaga encerrada ou já candidatado?).', '#d63031'); return; }
+        if (EASY.test(label(btn))) {
+            apStatus('Abrindo o Easy Apply…');
+            btn.click();
+        } else {
+            apStatus('Esta vaga é no site da empresa: abrindo… o painel CareerOps continua lá (anexa o CV e preenche).');
+            btn.click();
+        }
+    }
+
+    async function uploadResume(modal) {
+        const input = modal.querySelector('input[type="file"]');
+        if (!input || autopilot.uploaded || !autopilot.prep.resume_markdown) return false;
+        if (!/resume|curr[ií]culo|\bcv\b/i.test(modal.innerText)) return false;
+        const file = await message({ action: 'backendFile', path: `/jobs/${autopilot.jobId}/document.pdf?kind=resume` });
+        if (!file || !file.ok) { apStatus(`Não consegui baixar o CV: ${(file && file.detail) || ''} — sigo com o CV já salvo no LinkedIn.`, '#b7791f'); autopilot.uploaded = true; return false; }
+        const bytes = Uint8Array.from(atob(file.b64), (c) => c.charCodeAt(0));
+        const dt = new DataTransfer();
+        dt.items.add(new File([bytes], file.name, { type: file.type }));
+        input.files = dt.files;
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+        autopilot.uploaded = true;
+        apStatus(`📎 CV personalizado enviado (${file.name}).`);
+        await wait(3000);
+        return true;
+    }
+
+    async function finishApplied() {
+        autopilot.done = true;
+        const r = await backend('PATCH', `/jobs/${autopilot.jobId}/status`, { status: 'applied' });
+        await message({ action: 'applyStop' });
+        apStatus(r.ok ? '✓ Candidatura enviada — vaga marcada como "Candidatado" no CareerOps.' : `Enviada. ${errText(r)}`, '#00b894');
+    }
+
+    async function driveAutopilot() {
+        const ap = autopilot;
+        if (!ap || ap.done || ap.running || !ap.prep.job) return;
+        if ([...document.querySelectorAll('div[role="dialog"], .artdeco-modal')].some((d) => d.offsetParent !== null && SENT.test(d.innerText))) { finishApplied(); return; }
+        const modal = easyApplyModal();
+        if (!modal) return;
+        const footer = [...modal.querySelectorAll('button')].filter((b) => !own(b) && b.offsetParent !== null && !b.disabled);
+        const sig = collectFields(modal).map((f) => f.key).join('|') + '#' + footer.map(label).join('|') + '#' + (modal.querySelector('h3, h2') || {}).innerText;
+        if (sig === ap.lastSig) return;   // same step: waiting for you or for LinkedIn
+        ap.lastSig = sig;
+        ap.running = true;
+        try {
+            await wait(800);
+            await uploadResume(modal);
+            const panel = modal.querySelector('.careerops-apply');
+            const result = panel ? await fillStep(modal, panel) : { pending: 0 };
+            const buttons = [...modal.querySelectorAll('button')].filter((b) => !own(b) && b.offsetParent !== null && !b.disabled);
+            const submit = buttons.find((b) => SUBMIT_APP.test(label(b)));
+            if (submit) {
+                if (ap.autoSubmit.checked && result && !result.pending) { apStatus('Enviando a candidatura…'); await wait(800); submit.click(); return; }
+                submit.style.outline = '3px solid #00b894';
+                apStatus('✓ Tudo preenchido. Revise e clique em "Enviar candidatura" — eu marco a vaga como candidatada.', '#00b894');
+                return;
+            }
+            if (!result || result.pending) {
+                apStatus('Complete os campos em laranja/amarelo e clique em Avançar — continuo na próxima etapa.', '#b7791f');
+                return;
+            }
+            const next = buttons.find((b) => NEXT.test(label(b)));
+            if (!next) { apStatus('Não achei o botão Avançar — siga você; continuo quando a etapa mudar.', '#b7791f'); return; }
+            ap.steps++;
+            apStatus(`Etapa ${ap.steps} preenchida — avançando…`);
+            await wait(700 + Math.random() * 600);
+            next.click();
+            await wait(1800);
+            if (modal.querySelector('.artdeco-inline-feedback--error, [data-test-form-element-error-messages]')) {
+                // same step stays marked: wait for you (no retry loop); the next step changes the signature
+                apStatus('O LinkedIn marcou campos nesta etapa: corrija e clique em Avançar — continuo depois.', '#b7791f');
+            }
+        } finally {
+            ap.running = false;
+        }
+    }
+
     chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         if (request.action !== 'importSavedJobs') return;
         importSavedJobs(savedBtn).then(sendResponse);
@@ -801,19 +927,43 @@
     // ── Floating buttons, re-evaluated as LinkedIn navigates (single-page app) ─────────────────────────
     const fab = document.createElement('div');
     fab.style.cssText = 'position:fixed;right:16px;bottom:16px;z-index:2147483645;display:flex;gap:6px';
+    // Invite button: placed in the profile's own action row (next to Connect/Message); if that row is not found it
+    // floats at the top right, below LinkedIn's nav — the bottom right is covered by the messaging dock
     const inviteBtn = button('🤝 Convite IA', draftInvite);
+    inviteBtn.style.cssText += ';font-size:14px;padding:8px 16px;border-radius:20px;margin:0 0 0 8px;white-space:nowrap;flex:0 0 auto';
+    const inviteFloat = 'position:fixed;top:72px;right:16px;z-index:2147483646;margin:0;box-shadow:0 4px 14px rgba(0,0,0,.3)';
+    function placeInvite() {
+        if (!isProfilePage()) { inviteBtn.remove(); return; }
+        const main = document.querySelector('main');
+        const isAction = (b) => /^(conectar|connect|mensagem|message|seguir|follow|pendente|pending)\b/i.test(label(b)) && b.offsetParent !== null;
+        const anchor = main && [...main.querySelectorAll('button, a')].find(isAction);
+        if (anchor) {
+            // climb to the item that sits in the row holding several actions
+            let item = anchor;
+            while (item.parentElement && item.parentElement !== main && item.parentElement.children.length < 2) item = item.parentElement;
+            if (inviteBtn.previousElementSibling !== item) item.insertAdjacentElement('afterend', inviteBtn);
+            inviteBtn.style.position = 'static';
+            inviteBtn.style.boxShadow = 'none';
+            inviteBtn.style.margin = '0 0 0 8px';
+        } else if (inviteBtn.parentElement !== document.documentElement) {
+            document.documentElement.appendChild(inviteBtn);
+            inviteBtn.style.cssText += ';' + inviteFloat;
+        }
+    }
     const scoreBtn = button('⭐ Avaliar pessoas da página', () => scorePage(scoreBtn));
     const savedBtn = button('📥 Importar vagas salvas', () => importSavedJobs(savedBtn));
-    fab.append(inviteBtn, scoreBtn, savedBtn);
+    fab.append(scoreBtn, savedBtn);
     document.documentElement.appendChild(fab);
 
     function refresh() {
         decoratePosts();
         decorateEasyApply();
         decorateJobSave();
+        if (!applyChecked && currentJobId()) startAutopilot();
+        driveAutopilot();
         // the job pane is reused when another job is opened: reset our button for the new job
         document.querySelectorAll('.careerops-jobbtn').forEach((b) => { if (b.dataset.job !== String(currentJobId())) b.remove(); });
-        inviteBtn.style.display = isProfilePage() ? '' : 'none';
+        placeInvite();
         const listPage = /\/search\/results\/people|\/mynetwork/.test(location.pathname);
         scoreBtn.style.display = listPage ? '' : 'none';
         savedBtn.style.display = isSavedJobsPage() ? '' : 'none';
