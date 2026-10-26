@@ -249,6 +249,28 @@ class CaptureIn(BaseModel):
     title: Optional[str] = None
 
 
+class EasyApplyField(BaseModel):
+    key: str
+    type: Literal["text", "textarea", "number", "select", "radio", "checkbox"] = "text"
+    label: str = ""
+    options: List[str] = []
+    current: Optional[str] = None
+
+
+class EasyApplyIn(BaseModel):
+    job: dict = {}
+    fields: List[EasyApplyField] = Field(..., max_length=40)
+
+
+@router.post("/easy-apply/answers")
+async def easy_apply_answers(req: EasyApplyIn):
+    """Answers for one step of a LinkedIn Easy Apply form. The extension fills them in; the user reviews and submits."""
+    try:
+        return await Copilot.easy_apply_answers(req.job, [f.model_dump() for f in req.fields])
+    except RuntimeError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
 @router.post("/capture")
 async def capture(req: CaptureIn):
     try:

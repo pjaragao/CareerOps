@@ -285,6 +285,150 @@
         toast(`${top} de ${res.data.items.length} pessoas com bom encaixe — salvas em Prospecção com a nota pronta`);
     }
 
+    // ── 4. Easy Apply: "✨ Preencher com IA" (fills each step; you review, click Next and Submit) ────────
+    const DEMOGRAPHIC = /gender|g[eê]nero|sexo|race|ra[cç]a|etnia|ethnic|veteran|disab|defici[eê]ncia|pcd|orienta[cç][aã]o sexual|sexual orientation|pronoun|pronome|religi/i;
+    const PLACEHOLDER = /^(selecione|select|escolha|choose)/i;
+
+    function easyApplyModal() {
+        return [...document.querySelectorAll('.jobs-easy-apply-modal, div[role="dialog"]')]
+            .find((d) => d.offsetParent !== null && (d.classList.contains('jobs-easy-apply-modal')
+                || /candidatura simplificada|easy apply|apply to |candidatar-se/i.test(d.innerText.slice(0, 400))));
+    }
+
+    function labelFor(el, modal) {
+        if (el.id) { const l = modal.querySelector(`label[for="${CSS.escape(el.id)}"]`); if (l) return clean(l.innerText); }
+        const fs = el.closest('fieldset');
+        if (fs && fs.querySelector('legend')) return clean(fs.querySelector('legend').innerText);
+        if (el.getAttribute('aria-label')) return el.getAttribute('aria-label');
+        const wrap = el.closest('.fb-dash-form-element, .jobs-easy-apply-form-element, .artdeco-text-input, div');
+        return wrap ? clean(wrap.innerText).split('\n')[0] : '';
+    }
+
+    function collectFields(modal) {
+        const fields = [];
+        const seen = new Set();
+        modal.querySelectorAll('input, textarea, select').forEach((el, i) => {
+            if (el.closest('.careerops-card') || el.offsetParent === null || el.disabled) return;
+            const type = el.tagName === 'SELECT' ? 'select' : el.tagName === 'TEXTAREA' ? 'textarea'
+                : el.type === 'radio' ? 'radio' : el.type === 'checkbox' ? 'checkbox' : el.type === 'number' ? 'number'
+                : ['text', 'tel', 'email', 'url', ''].includes(el.type) ? 'text' : null;
+            if (!type) return;
+            const key = type === 'radio' ? `radio:${el.name || i}` : (el.id || el.name || `f${i}`);
+            if (seen.has(key)) return;
+            seen.add(key);
+            const label = labelFor(el, modal).slice(0, 300);
+            const f = { key, type, label, options: [], current: null, els: [el] };
+            if (type === 'select') {
+                f.options = [...el.options].map((o) => o.text.trim()).filter((t) => t && !PLACEHOLDER.test(t));
+                const sel = el.options[el.selectedIndex];
+                f.current = sel && !PLACEHOLDER.test(sel.text.trim()) ? sel.text.trim() : null;
+            } else if (type === 'radio') {
+                f.els = [...modal.querySelectorAll(`input[type="radio"][name="${CSS.escape(el.name)}"]`)];
+                f.options = f.els.map((r) => clean((modal.querySelector(`label[for="${CSS.escape(r.id)}"]`) || r.parentElement).innerText) || r.value);
+                const on = f.els.find((r) => r.checked);
+                f.current = on ? f.options[f.els.indexOf(on)] : null;
+            } else if (type === 'checkbox') {
+                f.current = el.checked ? 'true' : null;
+            } else {
+                f.current = el.value ? el.value : null;
+            }
+            fields.push(f);
+        });
+        return fields;
+    }
+
+    function applyAnswer(f, value) {
+        if (f.type === 'select') {
+            const el = f.els[0];
+            const opt = [...el.options].find((o) => o.text.trim().toLowerCase() === value.toLowerCase());
+            if (!opt) return false;
+            el.value = opt.value;
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+        } else if (f.type === 'radio') {
+            const idx = f.options.findIndex((o) => o.toLowerCase() === value.toLowerCase());
+            if (idx < 0) return false;
+            f.els[idx].click();
+        } else if (f.type === 'checkbox') {
+            if ((value === 'true') !== f.els[0].checked) f.els[0].click();
+        } else {
+            fill(f.els[0], value);
+        }
+        return true;
+    }
+
+    const mark = (f, color) => f.els.forEach((el) => { (el.type === 'radio' || el.type === 'checkbox' ? el.parentElement : el).style.outline = `2px solid ${color}`; });
+
+    function jobContext() {
+        const q = (sel) => clean((document.querySelector(sel) || {}).innerText || '');
+        return {
+            title: q('.job-details-jobs-unified-top-card__job-title, .jobs-unified-top-card__job-title, .t-24.job-details-jobs-unified-top-card__job-title, h1'),
+            company: q('.job-details-jobs-unified-top-card__company-name, .jobs-unified-top-card__company-name'),
+            location: q('.job-details-jobs-unified-top-card__primary-description-container, .jobs-unified-top-card__bullet'),
+            description: q('#job-details, .jobs-description__content, .jobs-description-content__text').slice(0, 5000),
+        };
+    }
+
+    let applyBusy = false;
+    async function fillStep(modal, panel) {
+        if (applyBusy) return;
+        const all = collectFields(modal);
+        const fields = all.filter((f) => !f.current);
+        const status = panel.querySelector('.careerops-apply-status');
+        if (!fields.length) { status.textContent = 'Nada para preencher nesta etapa. Revise e clique em Avançar.'; return; }
+        const demographic = fields.filter((f) => DEMOGRAPHIC.test(f.label));
+        const send = fields.filter((f) => !DEMOGRAPHIC.test(f.label));
+        demographic.forEach((f) => mark(f, '#e17055'));
+        if (!send.length) { status.textContent = 'Só há perguntas pessoais/demográficas nesta etapa — responda você.'; return; }
+        applyBusy = true;
+        status.textContent = `Preenchendo ${send.length} campo(s)…`;
+        const res = await api('POST', '/easy-apply/answers', {
+            job: jobContext(), fields: send.map(({ key, type, label, options, current }) => ({ key, type, label, options, current })),
+        });
+        applyBusy = false;
+        if (!res.ok) { status.textContent = errText(res); status.style.color = '#d63031'; return; }
+        let filled = 0;
+        const pending = [];
+        for (const f of send) {
+            const v = res.data.answers[f.key];
+            if (v !== undefined && applyAnswer(f, v)) { mark(f, '#00b894'); filled++; } else { mark(f, '#e17055'); pending.push(f.label || f.key); }
+        }
+        demographic.forEach((f) => pending.push(f.label));
+        status.style.color = '#555';
+        status.textContent = `${filled} preenchido(s) em verde. ` + (pending.length ? `Para você (laranja): ${pending.slice(0, 6).join(' · ')}` : 'Revise e clique em Avançar.');
+        if (res.data.notes) line(panel, res.data.notes, '#777');
+    }
+
+    let applyPanel = null;
+    function decorateEasyApply() {
+        const modal = easyApplyModal();
+        if (!modal) { applyPanel = null; return; }
+        if (!modal.querySelector('.careerops-apply')) {
+            applyPanel = card('CareerOps · Easy Apply');
+            applyPanel.classList.add('careerops-apply');
+            line(applyPanel, 'A IA preenche com seus dados (config/easy_apply.yml + CV). Perguntas demográficas e salário ficam com você.', '#777');
+            const status = line(applyPanel, '');
+            status.className = 'careerops-apply-status';
+            const auto = document.createElement('label');
+            auto.style.cssText = 'font-size:12px;color:#555;display:flex;gap:4px;align-items:center;margin:4px 0';
+            auto.innerHTML = '<input type="checkbox" checked> preencher cada nova etapa automaticamente';
+            applyPanel.__auto = auto.querySelector('input');
+            const fillBtn = button('✨ Preencher com IA', () => fillStep(modal, applyPanel));
+            fillBtn.classList.add('careerops-fill');
+            applyPanel.append(fillBtn, auto);
+            modal.insertAdjacentElement('afterbegin', applyPanel);
+        }
+        // Auto: when a new step shows empty fields, fill them (the user still clicks Next/Submit)
+        const panel = modal.querySelector('.careerops-apply');
+        const signature = collectFields(modal).map((f) => f.key).join('|');
+        if (panel.__auto && panel.__auto.checked && panel.__filledOnce && signature && signature !== panel.__lastStep) {
+            panel.__lastStep = signature;
+            fillStep(modal, panel);
+        }
+        if (!panel.__filledOnce) {
+            panel.querySelector('.careerops-fill').addEventListener('click', () => { panel.__filledOnce = true; panel.__lastStep = signature; }, { once: true });
+        }
+    }
+
     // ── Floating buttons, re-evaluated as LinkedIn navigates (single-page app) ─────────────────────────
     const fab = document.createElement('div');
     fab.style.cssText = 'position:fixed;right:16px;bottom:16px;z-index:2147483645;display:flex;gap:6px';
@@ -295,6 +439,7 @@
 
     function refresh() {
         decoratePosts();
+        decorateEasyApply();
         inviteBtn.style.display = isProfilePage() ? '' : 'none';
         const listPage = /\/search\/results\/people|\/mynetwork/.test(location.pathname);
         scoreBtn.style.display = listPage ? '' : 'none';

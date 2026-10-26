@@ -1,0 +1,46 @@
+# Answers the Easy Apply assistant uses. REVIEW AND EDIT — everything here goes to recruiters.
+# After editing, commit and redeploy (config/ is baked into the backend image).
+
+contact:
+  name: Paulo José Aragão Júnior
+  email: pjaragaojr@gmail.com
+  phone: "+55 00 00000-0000"
+  city: Florianópolis, Santa Catarina, Brazil
+  linkedin: linkedin.com/in/paulojrarj
+  github: github.com/pjaragao
+
+work_authorization:
+  citizenship: Brazilian (no other citizenship)
+  authorized_to_work: [Brazil]
+  needs_sponsorship_elsewhere: true          # US, EU, UK and any country other than Brazil
+  willing_to_relocate: [Europe, United States]
+  open_to_remote: true
+  notice_period: ""                          # e.g. "2 weeks" — empty = the assistant leaves it for you
+
+languages:
+  Portuguese: native
+  English: fluent (C1)
+  Spanish: intermediate (B1)
+
+salary_expectation:                          # empty = the assistant leaves salary questions for you
+  brazil_brl_monthly: ""
+  abroad_usd_yearly: ""
+  abroad_eur_yearly: ""
+
+# Years of experience — SUGGESTED STARTING VALUES derived from the CV/knowledge base. Confirm each one.
+years_of_experience:
+  total_professional: 15                     # engineering since 2011 (18 including the 2008 internship)
+  engineering_sanitation_water_infrastructure: 15
+  project_management: 12
+  environmental_management_licensing: 12
+  financial_modeling_feasibility_dcf: 15
+  proposals_and_pricing: 15
+  corporate_finance_fpa_budgeting: 3         # as CFO
+  people_management: 3                       # finance team of 5
+  excel: 15
+  power_bi_bi: 6
+  sql: 5
+  python: 2
+  ai_llm_applications: 1
+  web_development_typescript: 1
+  statistics_forecasting: 1

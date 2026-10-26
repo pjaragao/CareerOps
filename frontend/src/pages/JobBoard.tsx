@@ -97,7 +97,7 @@ const JobBoard = () => {
 
       {/* 2. Filtros */}
       <div style={{ display: 'flex', gap: '0.5rem', overflowX: 'auto', padding: '2px 0' }}>
-        {['all', 'new', 'scraped', 'applied', 'interviewing', 'offer', 'rejected'].map((f) => (
+        {['all', 'new', 'scraped', 'applied', 'interviewing', 'offer', 'rejected', 'archived'].map((f) => (
           <button key={f} onClick={() => setFilter(f)} className={`btn ${filter === f ? 'btn-primary' : 'btn-secondary'}`} style={{ textTransform: 'capitalize', fontSize: '0.7rem', height: '28px', padding: '0 10px', whiteSpace: 'nowrap' }}>
             {f}
           </button>

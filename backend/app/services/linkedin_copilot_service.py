@@ -6,6 +6,7 @@ done by the user on LinkedIn — automating them breaks LinkedIn's User Agreemen
 """
 import asyncio
 import logging
+import re
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 from zoneinfo import ZoneInfo
@@ -306,6 +307,59 @@ class LinkedInCopilotService:
                SET status = COALESCE(%s, status), note_draft = COALESCE(%s, note_draft), notes = COALESCE(%s, notes), updated_at = NOW()
              WHERE id = %s RETURNING *
         """, (status, note_draft[:300] if note_draft else None, notes, item_id))
+
+    # ── Easy Apply assistant (fills the form; the user reviews and submits) ──
+    DEMOGRAPHIC = re.compile(r"gender|g[eê]nero|sexo|race|ra[cç]a|etnia|ethnic|veteran|disab|defici[eê]ncia|pcd|orienta[cç][aã]o sexual|sexual orientation|pronoun|pronome|religi", re.I)
+    PT_HINTS = (" requisitos", " experiência", " sobre a vaga", " benefícios", " responsabilidades", " você ", " vaga ")
+
+    @staticmethod
+    def _facts_text() -> str:
+        path = settings.CONFIG_DIR / "easy_apply.yml"
+        return path.read_text(encoding="utf-8") if path.exists() else ""
+
+    @staticmethod
+    def _coerce(field: Dict[str, Any], value: Any) -> Optional[str]:
+        if value is None:
+            return None
+        text = str(value).strip()
+        if not text:
+            return None
+        kind = field.get("type")
+        if kind in ("select", "radio"):
+            options = field.get("options") or []
+            return next((o for o in options if o.strip().lower() == text.lower()), None)
+        if kind == "checkbox":
+            return "true" if text.lower() in ("true", "yes", "sim", "1") else "false"
+        if kind == "number":
+            digits = re.findall(r"\d+(?:[.,]\d+)?", text)
+            return digits[0].replace(",", ".") if digits else None
+        return text
+
+    @staticmethod
+    async def easy_apply_answers(job: Dict[str, Any], fields: List[Dict[str, Any]]) -> dict:
+        """Answers for the fields of one Easy Apply step. Demographic questions are never answered."""
+        from app.services.profile_service import ProfileService
+        usable = [f for f in fields if f.get("key") and not LinkedInCopilotService.DEMOGRAPHIC.search(f.get("label") or "")]
+        skipped = [f["key"] for f in fields if f.get("key") and f not in usable]
+        if not usable:
+            return {"answers": {}, "needs_user": skipped, "notes": ""}
+        desc = (job.get("description") or "")[:5000]
+        lang = "Portuguese" if sum(h in f" {desc.lower()} " for h in LinkedInCopilotService.PT_HINTS) >= 2 else "English"
+        ai = await _skill("linkedin/easy_apply.md", {
+            "job_title": job.get("title"), "company": job.get("company"), "location": job.get("location"),
+            "job_description": desc, "lang_name": lang, "facts": LinkedInCopilotService._facts_text(),
+            "resume_base": ProfileService.get_resume_base("pt" if lang == "Portuguese" else "en"),
+            "fields": usable,
+        }, model_key="ai_model_optimizer")
+        raw = ai.get("answers") or {}
+        answers = {}
+        for f in usable:
+            v = LinkedInCopilotService._coerce(f, raw.get(f["key"]))
+            if v is not None:
+                answers[f["key"]] = v
+        needs = [k for k in (ai.get("needs_user") or []) if k not in answers] + skipped
+        needs += [f["key"] for f in usable if f["key"] not in answers and f["key"] not in needs]
+        return {"answers": answers, "needs_user": needs, "notes": ai.get("notes") or "", "language": lang}
 
     # ── Capture (browser extension) ──────────────────────────────────────
     @staticmethod

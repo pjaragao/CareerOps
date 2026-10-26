@@ -22,7 +22,7 @@ class JobService:
                     query += " WHERE j.status = %s"
                     params.append(status)
                 else:
-                    query += " WHERE j.status != 'removed'"
+                    query += " WHERE j.status NOT IN ('removed', 'archived')"
                 
                 query += " ORDER BY j.created_at DESC LIMIT %s"
                 params.append(limit)
