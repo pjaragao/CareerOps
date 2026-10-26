@@ -98,6 +98,7 @@ async def extension_download():
 # ── Posts ────────────────────────────────────────────────────────────────
 class GenerateRequest(BaseModel):
     market: Literal["br", "intl"] = "intl"
+    inspiration_id: Optional[int] = None
     count: int = Field(2, ge=1, le=5)
     pillar: Optional[str] = None
     topic: Optional[str] = None
@@ -121,7 +122,7 @@ async def list_posts(status: Optional[str] = None):
 @router.post("/posts/generate")
 async def generate_posts(req: GenerateRequest):
     try:
-        return {"posts": await Copilot.generate_posts(req.count, req.pillar, req.topic, req.source_notes, req.market)}
+        return {"posts": await Copilot.generate_posts(req.count, req.pillar, req.topic, req.source_notes, req.market, req.inspiration_id)}
     except RuntimeError as e:
         raise HTTPException(status_code=502, detail=str(e))
 
@@ -157,6 +158,30 @@ async def mark_published(post_id: int):
 @router.delete("/posts/{post_id}")
 async def discard_post(post_id: int):
     return _found(Copilot.discard_post(post_id))
+
+
+# ── Inspirations (topics of interest saved from the feed) ────────────────
+class InspirationIn(BaseModel):
+    post_text: str = Field(..., min_length=20)
+    post_url: Optional[str] = None
+    author_name: Optional[str] = None
+    author_headline: Optional[str] = None
+    note: Optional[str] = None
+
+
+@router.get("/inspirations")
+async def list_inspirations():
+    return {"items": Copilot.list_inspirations()}
+
+
+@router.post("/inspirations")
+async def add_inspiration(req: InspirationIn):
+    return Copilot.add_inspiration(req.post_text, req.post_url, req.author_name, req.author_headline, req.note)
+
+
+@router.delete("/inspirations/{item_id}")
+async def delete_inspiration(item_id: int):
+    return _found(Copilot.delete_inspiration(item_id))
 
 
 # ── Engagement ───────────────────────────────────────────────────────────

@@ -84,11 +84,16 @@ class LinkedInCopilotService:
 
     @staticmethod
     async def generate_posts(count: int = 2, pillar: Optional[str] = None, topic: Optional[str] = None,
-                             source_notes: Optional[str] = None, market: str = "intl") -> List[dict]:
+                             source_notes: Optional[str] = None, market: str = "intl",
+                             inspiration_id: Optional[int] = None) -> List[dict]:
         """market: "br" = Brazil (Portuguese, engineering/sanitation first) or "intl" = abroad (English, data/finance/modeling)."""
         recent = _rows("SELECT topic FROM public.linkedin_posts WHERE topic IS NOT NULL AND market = %s ORDER BY created_at DESC LIMIT 15", (market,))
+        inspiration = None
+        if inspiration_id:
+            inspiration = _one("UPDATE public.linkedin_inspirations SET used_count = used_count + 1 WHERE id = %s RETURNING *", (inspiration_id,))
         result = await _skill("linkedin/post_drafts.md", {
             "market": market, "count": max(1, min(count, 5)), "pillar": pillar, "topic": topic, "source_notes": source_notes,
+            "inspiration": inspiration,
             "recent_posts": [r["topic"] for r in recent],
         }, model_key="ai_model_optimizer")  # public text: use the stronger model
         created = []
@@ -189,6 +194,27 @@ class LinkedInCopilotService:
             except Exception as e:
                 log.warning("scheduled publish of post %s failed: %s", row["id"], e)
         return done
+
+    # ── Inspirations (posts saved from the feed as topics of interest) ───
+    @staticmethod
+    def add_inspiration(post_text: str, post_url: Optional[str] = None, author_name: Optional[str] = None,
+                        author_headline: Optional[str] = None, note: Optional[str] = None) -> dict:
+        if post_url:
+            existing = _one("SELECT * FROM public.linkedin_inspirations WHERE post_url = %s", (post_url,))
+            if existing:
+                return existing
+        return _one("""
+            INSERT INTO public.linkedin_inspirations (post_url, author_name, author_headline, post_text, note)
+            VALUES (%s, %s, %s, %s, %s) RETURNING *
+        """, (post_url, author_name, author_headline, post_text[:6000], note))
+
+    @staticmethod
+    def list_inspirations() -> List[dict]:
+        return _rows("SELECT * FROM public.linkedin_inspirations ORDER BY used_count, created_at DESC LIMIT 50")
+
+    @staticmethod
+    def delete_inspiration(item_id: int) -> Optional[dict]:
+        return _one("DELETE FROM public.linkedin_inspirations WHERE id = %s RETURNING id", (item_id,))
 
     # ── Engagement queue ─────────────────────────────────────────────────
     @staticmethod
@@ -309,8 +335,20 @@ class LinkedInCopilotService:
         """, (status, note_draft[:300] if note_draft else None, notes, item_id))
 
     # ── Easy Apply assistant (fills the form; the user reviews and submits) ──
-    DEMOGRAPHIC = re.compile(r"gender|g[eê]nero|sexo|race|ra[cç]a|etnia|ethnic|veteran|disab|defici[eê]ncia|pcd|orienta[cç][aã]o sexual|sexual orientation|pronoun|pronome|religi", re.I)
+    # Demographic questions are never sent to the AI. Gender is answered only from config/easy_apply.yml (self_identification).
+    DEMOGRAPHIC = re.compile(r"race|ra[cç]a|etnia|ethnic|veteran|disab|defici[eê]ncia|pcd|orienta[cç][aã]o sexual|sexual orientation|pronoun|pronome|religi", re.I)
+    GENDER = re.compile(r"\bgender\b|g[eê]nero|\bsexo\b", re.I)
+    MALE = re.compile(r"^(male|man|masculino|homem|m)$|\bmale\b|mascul", re.I)
     PT_HINTS = (" requisitos", " experiência", " sobre a vaga", " benefícios", " responsabilidades", " você ", " vaga ")
+
+    @staticmethod
+    def _gender_answer(field: Dict[str, Any], gender: str, lang: str) -> Optional[str]:
+        if gender.lower() not in ("male", "masculino", "homem", "man"):
+            return None
+        if field.get("type") in ("select", "radio"):
+            return next((o for o in field.get("options") or [] if LinkedInCopilotService.MALE.search(o.strip())
+                         and not re.search(r"female|feminino|mulher", o, re.I)), None)
+        return "Masculino" if lang == "Portuguese" else "Male"
 
     @staticmethod
     def _facts_text() -> str:
@@ -338,13 +376,27 @@ class LinkedInCopilotService:
     @staticmethod
     async def easy_apply_answers(job: Dict[str, Any], fields: List[Dict[str, Any]]) -> dict:
         """Answers for the fields of one Easy Apply step. Demographic questions are never answered."""
+        import yaml
         from app.services.profile_service import ProfileService
-        usable = [f for f in fields if f.get("key") and not LinkedInCopilotService.DEMOGRAPHIC.search(f.get("label") or "")]
-        skipped = [f["key"] for f in fields if f.get("key") and f not in usable]
-        if not usable:
-            return {"answers": {}, "needs_user": skipped, "notes": ""}
         desc = (job.get("description") or "")[:5000]
         lang = "Portuguese" if sum(h in f" {desc.lower()} " for h in LinkedInCopilotService.PT_HINTS) >= 2 else "English"
+        facts = yaml.safe_load(LinkedInCopilotService._facts_text() or "{}") or {}
+        gender = str((facts.get("self_identification") or {}).get("gender") or "")
+        answers: Dict[str, str] = {}
+        usable, skipped = [], []
+        for f in fields:
+            if not f.get("key"):
+                continue
+            label = f.get("label") or ""
+            if LinkedInCopilotService.GENDER.search(label):
+                g = LinkedInCopilotService._gender_answer(f, gender, lang) if gender else None
+                (answers.__setitem__(f["key"], g) if g else skipped.append(f["key"]))
+            elif LinkedInCopilotService.DEMOGRAPHIC.search(label):
+                skipped.append(f["key"])
+            else:
+                usable.append(f)
+        if not usable:
+            return {"answers": answers, "suggestions": {}, "needs_user": skipped, "notes": "", "language": lang}
         ai = await _skill("linkedin/easy_apply.md", {
             "job_title": job.get("title"), "company": job.get("company"), "location": job.get("location"),
             "job_description": desc, "lang_name": lang, "facts": LinkedInCopilotService._facts_text(),
@@ -352,14 +404,21 @@ class LinkedInCopilotService:
             "fields": usable,
         }, model_key="ai_model_optimizer")
         raw = ai.get("answers") or {}
-        answers = {}
+        raw_sugg = ai.get("salary_suggestions") or {}
+        suggestions: Dict[str, dict] = {}
         for f in usable:
             v = LinkedInCopilotService._coerce(f, raw.get(f["key"]))
             if v is not None:
                 answers[f["key"]] = v
-        needs = [k for k in (ai.get("needs_user") or []) if k not in answers] + skipped
-        needs += [f["key"] for f in usable if f["key"] not in answers and f["key"] not in needs]
-        return {"answers": answers, "needs_user": needs, "notes": ai.get("notes") or "", "language": lang}
+                continue
+            s = raw_sugg.get(f["key"])
+            sv = LinkedInCopilotService._coerce(f, s.get("value") if isinstance(s, dict) else s)
+            if sv is not None:
+                suggestions[f["key"]] = {"value": sv, "basis": (s.get("basis") if isinstance(s, dict) else "") or ""}
+        done = set(answers) | set(suggestions)
+        needs = [k for k in (ai.get("needs_user") or []) if k not in done] + skipped
+        needs += [f["key"] for f in usable if f["key"] not in done and f["key"] not in needs]
+        return {"answers": answers, "suggestions": suggestions, "needs_user": needs, "notes": ai.get("notes") or "", "language": lang}
 
     # ── Capture (browser extension) ──────────────────────────────────────
     @staticmethod

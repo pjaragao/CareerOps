@@ -22,7 +22,10 @@ languages:
   English: fluent (C1)
   Spanish: intermediate (B1)
 
-salary_expectation:                          # empty = the assistant leaves salary questions for you
+self_identification:                         # only what you chose to share; other demographic questions are left for you
+  gender: Male                               # Masculino
+
+salary_expectation:                          # empty = the assistant SUGGESTS a market value (yellow) for you to confirm or change
   brazil_brl_monthly: ""
   abroad_usd_yearly: ""
   abroad_eur_yearly: ""

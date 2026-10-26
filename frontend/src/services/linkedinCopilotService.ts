@@ -48,6 +48,15 @@ export interface Prospect {
   status: ProspectStatus;
 }
 
+export interface Inspiration {
+  id: number;
+  post_url: string | null;
+  author_name: string | null;
+  post_text: string;
+  used_count: number;
+  created_at: string;
+}
+
 export interface CopilotStatus {
   configured: boolean;
   connected: boolean;
@@ -77,7 +86,7 @@ export const linkedinCopilotService = {
   disconnect: async () => (await api.post(`${base}/disconnect`)).data,
 
   listPosts: async () => (await api.get<{ posts: CopilotPost[] }>(`${base}/posts`)).data.posts,
-  generatePosts: async (req: { market: Market; count: number; pillar?: string; topic?: string; source_notes?: string }) =>
+  generatePosts: async (req: { market: Market; count: number; pillar?: string; topic?: string; source_notes?: string; inspiration_id?: number }) =>
     (await api.post<{ posts: CopilotPost[] }>(`${base}/posts/generate`, req)).data.posts,
   updatePost: async (id: number, body: string) => (await api.patch<CopilotPost>(`${base}/posts/${id}`, { body })).data,
   approvePost: async (id: number, scheduled_for?: string) =>
@@ -86,6 +95,9 @@ export const linkedinCopilotService = {
   publishPost: async (id: number) => (await api.post<CopilotPost>(`${base}/posts/${id}/publish`)).data,
   markPublished: async (id: number) => (await api.post<CopilotPost>(`${base}/posts/${id}/mark-published`)).data,
   discardPost: async (id: number) => (await api.delete(`${base}/posts/${id}`)).data,
+
+  inspirations: async () => (await api.get<{ items: Inspiration[] }>(`${base}/inspirations`)).data.items,
+  deleteInspiration: async (id: number) => (await api.delete(`${base}/inspirations/${id}`)).data,
 
   engagementQueue: async () =>
     (await api.get<{ items: EngagementItem[]; done_today: number; daily_target: number }>(`${base}/engagement`)).data,

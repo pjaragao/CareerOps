@@ -4,7 +4,7 @@ import {
   Megaphone, Sparkles, Send, Check, X, Copy, ExternalLink, Calendar, Users, MessageCircle, BarChart3, Link2, Plus, Undo2,
 } from 'lucide-react';
 import {
-  linkedinCopilotService as svc, CopilotPost, CopilotStatus, Market, EngagementItem, Prospect, ProspectStatus, WeekMetrics,
+  linkedinCopilotService as svc, CopilotPost, CopilotStatus, Market, Inspiration, EngagementItem, Prospect, ProspectStatus, WeekMetrics,
 } from '../services/linkedinCopilotService';
 
 type Tab = 'posts' | 'engagement' | 'prospects' | 'metrics';
@@ -130,8 +130,15 @@ const PostsTab = ({ connected }: { connected: boolean }) => {
   const [market, setMarket] = useState<Market>('intl');
   const [form, setForm] = useState({ count: 2, pillar: '', topic: '', source_notes: '' });
   const [loading, setLoading] = useState(false);
+  const [inspirations, setInspirations] = useState<Inspiration[]>([]);
   const load = useCallback(async () => setPosts(await svc.listPosts()), []);
-  useEffect(() => { svc.listPosts().then(setPosts); }, []);
+  const loadInspirations = useCallback(async () => setInspirations(await svc.inspirations()), []);
+  useEffect(() => { svc.listPosts().then(setPosts); svc.inspirations().then(setInspirations).catch(() => setInspirations([])); }, []);
+  const fromInspiration = async (id: number) => {
+    setLoading(true);
+    try { await svc.generatePosts({ market, count: 1, inspiration_id: id }); await load(); await loadInspirations(); }
+    catch (e) { alert(errMsg(e)); } finally { setLoading(false); }
+  };
   const generate = async () => {
     setLoading(true);
     try {
@@ -173,6 +180,29 @@ const PostsTab = ({ connected }: { connected: boolean }) => {
           <button className="btn btn-primary" onClick={generate} disabled={loading}><Sparkles size={16} /> {loading ? 'Gerando…' : 'Gerar'}</button>
         </div>
       </div>
+      {inspirations.length > 0 && (
+        <div className="panel">
+          <h3 style={{ marginBottom: '0.6rem' }}>📌 Temas salvos ({inspirations.length})</h3>
+          <p style={{ ...muted, marginBottom: '0.8rem' }}>
+            Posts que você salvou no feed pela extensão. "Gerar post" escreve um post seu ({MARKET_LABEL[market]}) sobre o mesmo tema, a partir da sua experiência — sem copiar o original.
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {inspirations.map(i => (
+              <div key={i.id} style={{ display: 'flex', gap: 12, alignItems: 'center', background: 'rgba(0,0,0,0.2)', padding: '0.6rem 0.8rem', borderRadius: 10 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <strong style={{ fontSize: '0.85rem' }}>{i.author_name || 'Autor desconhecido'}</strong>
+                  {i.used_count > 0 && <span style={{ ...muted, marginLeft: 6 }}>· usado {i.used_count}x</span>}
+                  <div style={{ ...muted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{i.post_text}</div>
+                </div>
+                {i.post_url && <a className="btn btn-secondary" href={i.post_url} target="_blank" rel="noreferrer"><ExternalLink size={14} /></a>}
+                <button className="btn btn-primary" disabled={loading} onClick={() => fromInspiration(i.id)}><Sparkles size={14} /> Gerar post</button>
+                <button className="btn btn-secondary" style={{ color: 'var(--error)' }}
+                  onClick={async () => { await svc.deleteInspiration(i.id); loadInspirations(); }}><X size={14} /></button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(480px, 1fr))', gap: '1.5rem' }}>
         {posts.map(p => <PostCard key={`${p.id}-${p.status}-${p.body.length}`} post={p} connected={connected} onChange={load} />)}
       </div>

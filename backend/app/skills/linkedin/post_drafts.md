@@ -34,6 +34,14 @@ PILLARS (rotate; use the requested one if given):
 FRESH MATERIAL FROM THE CANDIDATE (commits, notes, results — the main source for these posts):
 {{ source_notes }}
 {% endif %}
+{% if inspiration %}
+INSPIRATION — a post by someone else ({{ inspiration.author_name or "unknown author" }}) that the candidate saved as a topic of interest:
+"""
+{{ inspiration.post_text }}
+"""
+Write about the SAME THEME from the candidate's own experience and point of view (agree, disagree or add a missing angle).
+Never copy or paraphrase its sentences, never quote it, never mention the author by name.
+{% endif %}
 {% if recent_posts %}
 ALREADY WRITTEN — do not repeat these angles:
 {% for p in recent_posts %}- {{ p }}

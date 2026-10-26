@@ -176,6 +176,12 @@
             bar.className = 'careerops-bar';
             bar.style.cssText = 'padding:4px 12px 0';
             bar.appendChild(button('✨ Comentário IA', () => draftComment(post, bar)));
+            bar.appendChild(button('📌 Salvar tema', async () => {
+                const info = postInfo(post);
+                if (info.post_text.length < 20) { toast('Não encontrei o texto deste post', false); return; }
+                const res = await api('POST', '/inspirations', info);
+                toast(res.ok ? 'Tema salvo — gere um post seu sobre ele no Copilot' : errText(res), res.ok);
+            }, false));
             post.insertAdjacentElement('afterbegin', bar);
         });
     }
@@ -286,7 +292,8 @@
     }
 
     // ── 4. Easy Apply: "✨ Preencher com IA" (fills each step; you review, click Next and Submit) ────────
-    const DEMOGRAPHIC = /gender|g[eê]nero|sexo|race|ra[cç]a|etnia|ethnic|veteran|disab|defici[eê]ncia|pcd|orienta[cç][aã]o sexual|sexual orientation|pronoun|pronome|religi/i;
+    // Gender goes to the backend, which answers it only from config/easy_apply.yml; these stay with the user
+    const DEMOGRAPHIC = /race|ra[cç]a|etnia|ethnic|veteran|disab|defici[eê]ncia|pcd|orienta[cç][aã]o sexual|sexual orientation|pronoun|pronome|religi/i;
     const PLACEHOLDER = /^(selecione|select|escolha|choose)/i;
 
     function easyApplyModal() {
@@ -388,13 +395,19 @@
         if (!res.ok) { status.textContent = errText(res); status.style.color = '#d63031'; return; }
         let filled = 0;
         const pending = [];
+        const toConfirm = [];
+        const sugg = res.data.suggestions || {};
         for (const f of send) {
             const v = res.data.answers[f.key];
-            if (v !== undefined && applyAnswer(f, v)) { mark(f, '#00b894'); filled++; } else { mark(f, '#e17055'); pending.push(f.label || f.key); }
+            if (v !== undefined && applyAnswer(f, v)) { mark(f, '#00b894'); filled++; continue; }
+            const sg = sugg[f.key];
+            if (sg && applyAnswer(f, sg.value)) { mark(f, '#fdcb6e'); toConfirm.push(`${f.label || f.key}: ${sg.value}${sg.basis ? ` (${sg.basis})` : ''}`); continue; }
+            mark(f, '#e17055'); pending.push(f.label || f.key);
         }
         demographic.forEach((f) => pending.push(f.label));
         status.style.color = '#555';
         status.textContent = `${filled} preenchido(s) em verde. ` + (pending.length ? `Para você (laranja): ${pending.slice(0, 6).join(' · ')}` : 'Revise e clique em Avançar.');
+        if (toConfirm.length) line(panel, `Confirme ou altere (amarelo) — sugestão de mercado estimada pela IA: ${toConfirm.join(' · ')}`, '#b7791f');
         if (res.data.notes) line(panel, res.data.notes, '#777');
     }
 
@@ -405,7 +418,7 @@
         if (!modal.querySelector('.careerops-apply')) {
             applyPanel = card('CareerOps · Easy Apply');
             applyPanel.classList.add('careerops-apply');
-            line(applyPanel, 'A IA preenche com seus dados (config/easy_apply.yml + CV). Perguntas demográficas e salário ficam com você.', '#777');
+            line(applyPanel, 'A IA preenche com seus dados (config/easy_apply.yml + CV). Verde: preenchido · Amarelo: salário sugerido, confirme · Laranja: com você.', '#777');
             const status = line(applyPanel, '');
             status.className = 'careerops-apply-status';
             const auto = document.createElement('label');
