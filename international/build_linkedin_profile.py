@@ -30,7 +30,7 @@ Em finanças e modelagem: estudos de viabilidade (fluxo de caixa descontado) e m
 
 Em dados e IA: desenvolvo sistemas próprios em Python, SQL e PostgreSQL — um ERP com contabilidade, fiscal e agente de IA (CentralOps), um modelo estatístico de projeção da apuração eleitoral, previsão de séries temporais e automações com IA.
 
-Hoje presto consultoria a grandes grupos empresariais em projetos de infraestrutura: coordenação de projetos de saneamento e modelagem técnico-financeira de resíduos sólidos.
+Hoje presto consultoria a grandes grupos empresariais em projetos de infraestrutura: coordenação de projetos de saneamento e modelagem técnico-financeira de projetos de infraestrutura.
 
 Busco posições e projetos em engenharia e saneamento, concessões e PPPs, modelagem técnico-financeira, e dados e IA aplicados à infraestrutura.
 
@@ -62,10 +62,10 @@ POSITIONS = [
         "location": "Florianópolis, Santa Catarina, Brazil", "employment_type": "Freelance", "workplace": "Hybrid",
         "en": {"title": "Independent Consultant — Infrastructure Project Finance & Modeling", "description": """• Advise large Brazilian corporate groups (names under NDA) on major infrastructure projects.
 • General coordination of sanitation engineering projects: scope, schedule, multidisciplinary team and client deliverables.
-• Engineering-financial models for solid-waste infrastructure projects: CAPEX/OPEX, cash flow and economic feasibility."""},
+• Engineering-financial models for infrastructure projects: CAPEX/OPEX, cash flow and economic feasibility."""},
         "pt": {"title": "Consultor Independente — Engenharia de Saneamento e Modelagem Técnico-Financeira", "description": """• Consultoria a grandes grupos empresariais brasileiros (sob NDA) em projetos de infraestrutura de grande porte.
 • Coordenação geral de projetos de engenharia de saneamento: escopo, cronograma, equipe multidisciplinar e entregas ao cliente.
-• Modelagem técnico-financeira de projetos de infraestrutura de resíduos sólidos: CAPEX/OPEX, fluxo de caixa e viabilidade econômica."""},
+• Modelagem técnico-financeira de projetos de infraestrutura: CAPEX/OPEX, fluxo de caixa e viabilidade econômica."""},
     },
     {
         "id": "mpb-cfo", "company": "MPB Engenharia", "start": "2023-02", "end": "2026-01",
@@ -185,7 +185,7 @@ PROFILE = {
                "TypeScript", "Next.js", "React", "FastAPI", "Supabase", "Docker", "CI/CD", "GitHub Actions", "REST APIs",
                "Linux", "n8n", "Time-Series Forecasting", "Bayesian Statistics", "Financial Analysis",
                "Discounted Cash Flow (DCF)", "Feasibility Studies", "Budgeting", "Power BI", "SQL", "Project Management",
-               "Public Procurement", "Water & Wastewater", "Solid Waste Management", "ERP Implementation", "BIM"],
+               "Public Procurement", "Water & Wastewater", "ERP Implementation", "BIM"],
     "remove": [
         {"en": "Delete the old “International Business Operations (J-1 Program)” entry (replaced by the P.F. Chang's entry, or drop both).",
          "pt": "Apague a experiência antiga “International Business Operations (J-1 Program)” (substituída pela do P.F. Chang's, ou apague as duas)."},

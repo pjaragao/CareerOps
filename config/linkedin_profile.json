@@ -5,7 +5,7 @@
   },
   "pt": {
     "headline": "Engenheiro Sanitarista e Ambiental | Modelagem Técnico-Financeira, Dados e IA | Saneamento, Concessões e Infraestrutura | ex-Diretor Financeiro",
-    "about": "Engenheiro sanitarista e ambiental com quase 18 anos em projetos de saneamento e infraestrutura — de estagiário a diretor financeiro — e hoje dedicado a unir engenharia, modelagem técnico-financeira, dados e IA.\n\nNa engenharia: coordenador geral e responsável técnico do Programa Lagoas do Norte, em Teresina, financiado pelo Banco Mundial — esgotamento sanitário para 312 mil habitantes, drenagem, abastecimento de água, sistema viário, biogás e projeto urbanístico em BIM. Responsável técnico em 46 ARTs: planos diretores de drenagem (Bacia do Rio Mearim, 99 mil km²), sistemas de água para CASAN, Sanepar e autarquias municipais, aterro sanitário e gestão ambiental de rodovias (BR-470/DNIT).\n\nEm finanças e modelagem: estudos de viabilidade (fluxo de caixa descontado) e modelagem tarifária de concessões de água e esgoto, análise de processos de concessão em quatro municípios, propostas financeiras das ~90 licitações por ano da empresa (técnica e preço) e, como diretor financeiro, orçamento anual, KPIs, BI e contabilidade de custos com uma equipe de 5 pessoas.\n\nEm dados e IA: desenvolvo sistemas próprios em Python, SQL e PostgreSQL — um ERP com contabilidade, fiscal e agente de IA (CentralOps), um modelo estatístico de projeção da apuração eleitoral, previsão de séries temporais e automações com IA.\n\nHoje presto consultoria a grandes grupos empresariais em projetos de infraestrutura: coordenação de projetos de saneamento e modelagem técnico-financeira de resíduos sólidos.\n\nBusco posições e projetos em engenharia e saneamento, concessões e PPPs, modelagem técnico-financeira, e dados e IA aplicados à infraestrutura.\n\nPortuguês (nativo) · Inglês (fluente, C1 — morei e trabalhei nos EUA) · Espanhol (intermediário)"
+    "about": "Engenheiro sanitarista e ambiental com quase 18 anos em projetos de saneamento e infraestrutura — de estagiário a diretor financeiro — e hoje dedicado a unir engenharia, modelagem técnico-financeira, dados e IA.\n\nNa engenharia: coordenador geral e responsável técnico do Programa Lagoas do Norte, em Teresina, financiado pelo Banco Mundial — esgotamento sanitário para 312 mil habitantes, drenagem, abastecimento de água, sistema viário, biogás e projeto urbanístico em BIM. Responsável técnico em 46 ARTs: planos diretores de drenagem (Bacia do Rio Mearim, 99 mil km²), sistemas de água para CASAN, Sanepar e autarquias municipais, aterro sanitário e gestão ambiental de rodovias (BR-470/DNIT).\n\nEm finanças e modelagem: estudos de viabilidade (fluxo de caixa descontado) e modelagem tarifária de concessões de água e esgoto, análise de processos de concessão em quatro municípios, propostas financeiras das ~90 licitações por ano da empresa (técnica e preço) e, como diretor financeiro, orçamento anual, KPIs, BI e contabilidade de custos com uma equipe de 5 pessoas.\n\nEm dados e IA: desenvolvo sistemas próprios em Python, SQL e PostgreSQL — um ERP com contabilidade, fiscal e agente de IA (CentralOps), um modelo estatístico de projeção da apuração eleitoral, previsão de séries temporais e automações com IA.\n\nHoje presto consultoria a grandes grupos empresariais em projetos de infraestrutura: coordenação de projetos de saneamento e modelagem técnico-financeira de projetos de infraestrutura.\n\nBusco posições e projetos em engenharia e saneamento, concessões e PPPs, modelagem técnico-financeira, e dados e IA aplicados à infraestrutura.\n\nPortuguês (nativo) · Inglês (fluente, C1 — morei e trabalhei nos EUA) · Espanhol (intermediário)"
   },
   "positions": [
     {
@@ -35,11 +35,11 @@
       "workplace": "Hybrid",
       "en": {
         "title": "Independent Consultant — Infrastructure Project Finance & Modeling",
-        "description": "• Advise large Brazilian corporate groups (names under NDA) on major infrastructure projects.\n• General coordination of sanitation engineering projects: scope, schedule, multidisciplinary team and client deliverables.\n• Engineering-financial models for solid-waste infrastructure projects: CAPEX/OPEX, cash flow and economic feasibility."
+        "description": "• Advise large Brazilian corporate groups (names under NDA) on major infrastructure projects.\n• General coordination of sanitation engineering projects: scope, schedule, multidisciplinary team and client deliverables.\n• Engineering-financial models for infrastructure projects: CAPEX/OPEX, cash flow and economic feasibility."
       },
       "pt": {
         "title": "Consultor Independente — Engenharia de Saneamento e Modelagem Técnico-Financeira",
-        "description": "• Consultoria a grandes grupos empresariais brasileiros (sob NDA) em projetos de infraestrutura de grande porte.\n• Coordenação geral de projetos de engenharia de saneamento: escopo, cronograma, equipe multidisciplinar e entregas ao cliente.\n• Modelagem técnico-financeira de projetos de infraestrutura de resíduos sólidos: CAPEX/OPEX, fluxo de caixa e viabilidade econômica."
+        "description": "• Consultoria a grandes grupos empresariais brasileiros (sob NDA) em projetos de infraestrutura de grande porte.\n• Coordenação geral de projetos de engenharia de saneamento: escopo, cronograma, equipe multidisciplinar e entregas ao cliente.\n• Modelagem técnico-financeira de projetos de infraestrutura: CAPEX/OPEX, fluxo de caixa e viabilidade econômica."
       }
     },
     {
@@ -321,7 +321,6 @@
     "Project Management",
     "Public Procurement",
     "Water & Wastewater",
-    "Solid Waste Management",
     "ERP Implementation",
     "BIM"
   ],
