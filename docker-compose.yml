@@ -1,21 +1,24 @@
+# CareerOps — deployed by Coolify (Docker Compose) or locally with `docker compose up -d --build`.
+# No fixed container names, so a Coolify deployment never collides by name with a local stack.
+# Host ports default to 8005 / 5173 / 3002 (the nginx on :5174 proxies to them); override with
+# CAREEROPS_BACKEND_PORT, CAREEROPS_FRONTEND_PORT and GOTENBERG_PORT if two stacks must run at once.
 services:
   # ── CareerOps Backend (FastAPI) ─────────────────────────────
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: careerops-backend
     restart: unless-stopped
     ports:
-      - "8005:8000"
+      - "${CAREEROPS_BACKEND_PORT:-8005}:8000"
+    # Local secrets file (git-ignored). On Coolify, set the same variables in the app's Environment Variables.
     env_file:
-      - ./linkedin-jobs/.env
+      - path: ./linkedin-jobs/.env
+        required: false
     volumes:
       - ./backend/app:/app/app
-      - ./backend/main.py:/app/main.py
       - ./output:/app/output
       - ./config:/app/config
-      - linkedin_jobs_auth:/app/auth
     depends_on:
       - gotenberg
     networks:
@@ -31,16 +34,19 @@ services:
       paulojr.type: "application"
       paulojr.origin: "github"
       paulojr.ssl_port: "5174"
+      coolify.managed: "true"
+      coolify.applicationId: "1"
+      coolify.type: "application"
+      coolify.name: "slqfhcgt1uvhpqned6me9map"
 
   # ── CareerOps Frontend (React + Vite) ───────────────────────
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    container_name: careerops-frontend
     restart: unless-stopped
     ports:
-      - "5173:5173"
+      - "${CAREEROPS_FRONTEND_PORT:-5173}:5173"
     volumes:
       - ./frontend:/app
       - /app/node_modules
@@ -62,23 +68,22 @@ services:
   # ── Gotenberg (HTML → PDF) ─────────────────────────────────
   gotenberg:
     image: gotenberg/gotenberg:8
-    container_name: gotenberg-v2
     restart: unless-stopped
     ports:
-      - "3002:3000"
+      - "${GOTENBERG_PORT:-3002}:3000"
     networks:
       supabase_network:
         aliases:
           - gotenberg-jobs
+          - gotenberg-v2
     labels:
       paulojr.stack: "careerops"
       paulojr.type: "application"
       paulojr.origin: "dockerhub"
-
-volumes:
-  linkedin_jobs_auth:
-    external: true
-    name: linkedin_resume_linkedin_jobs_auth
+      coolify.managed: "true"
+      coolify.applicationId: "1"
+      coolify.type: "application"
+      coolify.name: "slqfhcgt1uvhpqned6me9map"
 
 networks:
   supabase_network:
