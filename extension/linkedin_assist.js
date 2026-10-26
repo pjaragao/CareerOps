@@ -95,16 +95,70 @@
 
     // ── 1. Posts: "✨ Comentário IA" ──────────────────────────────────────────────────────────────────
     const POST_SELECTOR = 'div[data-urn^="urn:li:activity"], div[data-id^="urn:li:activity"], article[data-urn^="urn:li:activity"]';
+    // LinkedIn's feed markup changes often; every post, however, has an action bar with Repost/Compartilhar.
+    const REPOST = /^(repost|republicar|compartilhar|share)$/i;
+    const label = (el) => clean(el.innerText || el.getAttribute('aria-label') || '').split('\n')[0];
+    const CONTROL_MENU = /control menu for post|menu de controle|op[cç][oõ]es da publica[cç][aã]o|more actions for post/i;
+    const isRepostButton = (b) => REPOST.test(label(b)) || /^(repost|republicar|compartilhar)\b/i.test(b.getAttribute('aria-label') || '')
+        || CONTROL_MENU.test(b.getAttribute('aria-label') || '');
+
+    const anchorKind = (b) => (CONTROL_MENU.test(b.getAttribute('aria-label') || '') ? 'menu' : 'repost');
+
+    function findPosts() {
+        const posts = new Set(document.querySelectorAll(POST_SELECTOR));
+        for (const btn of document.querySelectorAll('main button, main [role="button"]')) {
+            if (btn.closest('.careerops-card, .careerops-bar') || !isRepostButton(btn)) continue;
+            // climb until the parent holds more than one post (i.e. the feed list): the current element is the post
+            const kind = anchorKind(btn);
+            let el = btn;
+            while (el.parentElement && el.parentElement.tagName !== 'MAIN' && el.parentElement !== document.body) {
+                const parent = el.parentElement;
+                const count = [...parent.querySelectorAll('button, [role="button"]')].filter((b) => isRepostButton(b) && anchorKind(b) === kind).length;
+                if (count > 1) break;
+                el = parent;
+            }
+            if (el !== btn && (el.innerText || '').length > 40) posts.add(el);
+        }
+        return [...posts].filter((p) => ![...posts].some((o) => o !== p && o.contains(p)));
+    }
+
+    const CUT = /\n(add a comment|adicionar um coment[aá]rio|most relevant|mais relevantes|\d[\d.,]*\s*(reactions?|rea[cç][oõ]es|comments?|coment[aá]rios)\b|like\ncomment|gostei\ncomentar)/i;
 
     function postInfo(post) {
-        const urn = post.getAttribute('data-urn') || post.getAttribute('data-id') || '';
+        const urnHolder = [post, ...post.querySelectorAll('[data-urn], [data-id], a[href*="urn:li:"]')]
+            .map((el) => (el.getAttribute('data-urn') || el.getAttribute('data-id') || el.getAttribute('href') || ''))
+            .concat(Array.from({ length: 6 }, (_, k) => { let a = post; for (let n = 0; n <= k && a; n++) a = a.parentElement; return a ? (a.getAttribute('data-urn') || '') : ''; }))
+            .map((v) => (v.match(/urn:li:(activity|ugcPost|share):\d+/) || [])[0]).find(Boolean);
         const textEl = post.querySelector('.update-components-text, .feed-shared-inline-show-more-text, .feed-shared-update-v2__description, [data-test-id="main-feed-activity-card__commentary"]');
-        const authorEl = post.querySelector('.update-components-actor__title span[aria-hidden="true"], .update-components-actor__name, .feed-shared-actor__name');
+        const authorEl = post.querySelector('.update-components-actor__title span[aria-hidden="true"], .update-components-actor__name, .feed-shared-actor__name')
+            || post.querySelector('a[href*="/in/"] span[aria-hidden="true"], a[href*="/in/"], a[href*="/company/"]');
         const headlineEl = post.querySelector('.update-components-actor__description span[aria-hidden="true"], .update-components-actor__description');
+        let text;
+        if (textEl) {
+            text = textEl.innerText;
+        } else {
+            // read the post without our own bar/cards, cut before reactions/comments, drop the author header
+            const copy = post.cloneNode(true);
+            copy.querySelectorAll('.careerops-bar, .careerops-card, .careerops-badge').forEach((el) => el.remove());
+            document.body.appendChild(copy);
+            copy.style.cssText = 'position:absolute;left:-99999px;top:0;width:600px';
+            text = copy.innerText || '';
+            copy.remove();
+            const m = text.match(CUT);
+            if (m) text = text.slice(0, m.index);
+            const HEADER = /^(\d+\s*(s|m|min|h|d|w|sem|mo|y|a)\b.*|(following|seguindo|follow|seguir)\b.*|…|\.\.\.|•.*|.*•\s*(1st|2nd|3rd\+?|1º|2º|3º\+?)|promoted|promovido|edited|editado)$/i;
+            let lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
+            let last = -1;
+            lines.slice(0, 8).forEach((l, k) => { if (HEADER.test(l)) last = k; });
+            if (last >= 0) lines = lines.slice(last + 1);
+            lines = lines.map((l) => l.replace(/\s*…\s*(see more|ver mais|more|mais)$/i, '')).filter((l) => l && !HEADER.test(l));
+            text = lines.join('\n');
+        }
+        const author = authorEl ? clean(authorEl.innerText).split('\n')[0] : null;
         return {
-            post_url: urn ? `https://www.linkedin.com/feed/update/${urn}/` : null,
-            post_text: clean(textEl ? textEl.innerText : post.innerText).slice(0, 6000),
-            author_name: authorEl ? clean(authorEl.innerText) : null,
+            post_url: urnHolder ? `https://www.linkedin.com/feed/update/${urnHolder}/` : null,
+            post_text: clean(text).slice(0, 6000),
+            author_name: author,
             author_headline: headlineEl ? clean(headlineEl.innerText).slice(0, 300) : null,
         };
     }
@@ -169,7 +223,7 @@
     }
 
     function decoratePosts() {
-        document.querySelectorAll(POST_SELECTOR).forEach((post) => {
+        findPosts().forEach((post) => {
             if (post.__careeropsBtn || post.closest('.careerops-card')) return;
             post.__careeropsBtn = true;
             const bar = document.createElement('div');
