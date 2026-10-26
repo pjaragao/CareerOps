@@ -32,7 +32,7 @@ const Step = ({ n, title, children }: { n: number; title: string; children: Reac
 const InstallExtension = () => {
   const [version, setVersion] = useState<string | null>(null);
   useEffect(() => {
-    fetch('/careerops-extension.json').then(r => (r.ok ? r.json() : null)).then(d => setVersion(d?.version ?? null)).catch(() => setVersion(null));
+    fetch('/api/linkedin-copilot/extension/info').then(r => (r.ok ? r.json() : null)).then(d => setVersion(d?.version ?? null)).catch(() => setVersion(null));
   }, []);
 
   return (
@@ -50,13 +50,13 @@ const InstallExtension = () => {
       <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
         <Step n={1} title="Baixe o pacote">
           <div>
-            <a className="btn btn-primary" href="/careerops-extension.zip" download style={{ display: 'inline-flex' }}>
+            <a className="btn btn-primary" href="/api/linkedin-copilot/extension/download" download style={{ display: 'inline-flex' }}>
               <Download size={16} /> Baixar extensão {version ? `v${version}` : ''}
             </a>
           </div>
           {version === null && (
             <span style={{ color: 'var(--error)' }}>
-              Pacote ainda não gerado no servidor: rode <code style={code}>python3 extension/package.py</code> na pasta do projeto.
+              Backend indisponível: o pacote é gerado por ele.
             </span>
           )}
         </Step>

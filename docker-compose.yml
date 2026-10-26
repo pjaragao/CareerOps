@@ -1,5 +1,7 @@
 # CareerOps — deployed by Coolify (Docker Compose) or locally with `docker compose up -d --build`.
 # No fixed container names, so a Coolify deployment never collides by name with a local stack.
+# No source bind mounts: Coolify rewrites relative paths to empty folders, so code and config live in the images
+# (rebuild with `docker compose up -d --build` after changing them).
 # Host ports default to 8005 / 5173 / 3002 (the nginx on :5174 proxies to them); override with
 # CAREEROPS_BACKEND_PORT, CAREEROPS_FRONTEND_PORT and GOTENBERG_PORT if two stacks must run at once.
 services:
@@ -8,6 +10,10 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+      # config/ (CVs, LinkedIn texts, settings) and the extension are baked into the image
+      additional_contexts:
+        config: ./config
+        extension: ./extension
     restart: unless-stopped
     ports:
       - "${CAREEROPS_BACKEND_PORT:-8005}:8000"
@@ -19,9 +25,7 @@ services:
       - path: ./linkedin-jobs/.env
         required: false
     volumes:
-      - ./backend/app:/app/app
-      - ./output:/app/output
-      - ./config:/app/config
+      - careerops_output:/app/output
     depends_on:
       - gotenberg
     networks:
@@ -50,9 +54,6 @@ services:
     restart: unless-stopped
     ports:
       - "${CAREEROPS_FRONTEND_PORT:-5173}:5173"
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
     depends_on:
       - backend
     networks:
@@ -87,6 +88,9 @@ services:
       coolify.applicationId: "1"
       coolify.type: "application"
       coolify.name: "slqfhcgt1uvhpqned6me9map"
+
+volumes:
+  careerops_output:
 
 networks:
   supabase_network:

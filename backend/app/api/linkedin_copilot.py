@@ -1,11 +1,13 @@
+import io
 import json
+import zipfile
 from datetime import date, datetime
 from typing import Literal, Optional
 
 from fastapi import APIRouter, HTTPException
 from urllib.parse import quote
 
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, Response
 from pydantic import BaseModel, Field
 
 from app.core.config import settings
@@ -61,6 +63,36 @@ async def profile_copy():
     if not path.exists():
         raise HTTPException(status_code=404, detail="config/linkedin_profile.json not found — run international/build_linkedin_profile.py")
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+# ── Browser extension download (zip built from the extension folder baked into the image) ──
+EXTENSION_FILES = ["manifest.json", "background.js", "content.js", "content.css", "profile_filler.js", "popup.html", "popup.js"]
+
+
+def _extension_dir():
+    path = settings.PROJECT_DIR / "extension"
+    if not (path / "manifest.json").exists():
+        raise HTTPException(status_code=404, detail="Extension folder not found in the backend image")
+    return path
+
+
+@router.get("/extension/info")
+async def extension_info():
+    return {"version": json.loads((_extension_dir() / "manifest.json").read_text(encoding="utf-8"))["version"]}
+
+
+@router.get("/extension/download")
+async def extension_download():
+    root = _extension_dir()
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        # one top-level folder, so "Extract here" gives the folder to select in chrome://extensions
+        for name in EXTENSION_FILES:
+            z.write(root / name, f"careerops-extension/{name}")
+        for icon in sorted((root / "icons").iterdir()):
+            z.write(icon, f"careerops-extension/icons/{icon.name}")
+    return Response(buf.getvalue(), media_type="application/zip",
+                    headers={"Content-Disposition": 'attachment; filename="careerops-extension.zip"'})
 
 
 # ── Posts ────────────────────────────────────────────────────────────────

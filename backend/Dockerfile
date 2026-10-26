@@ -10,6 +10,9 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
+# Extra build contexts from docker-compose: master CVs, LinkedIn texts and settings; the browser extension (served as a zip)
+COPY --from=config . /app/config
+COPY --from=extension . /app/extension
 RUN mkdir -p /app/output /app/auth
 
 EXPOSE 8000

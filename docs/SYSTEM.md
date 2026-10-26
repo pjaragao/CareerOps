@@ -91,7 +91,7 @@ linkedin_resume/
 │   ├── profile_filler.js       # "CareerOps · Perfil" panel on linkedin.com
 │   ├── background.js           # Sync to backend + "Enviar ao CareerOps Copilot" menu
 │   ├── popup.html              # Import button
-│   └── package.py              # Builds the download zip
+│   (download zip is built on the fly by GET /api/linkedin-copilot/extension/download)
 │
 ├── linkedin-jobs/.env(.example) # Environment file used by docker-compose (the legacy Flask app was removed)
 ```
