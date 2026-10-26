@@ -8,7 +8,11 @@ TWO MARKETS:
 - br (Brazil): leaders, managers and recruiters at sanitation utilities and municipal services, concessionaires, engineering consultancies, contractors, infrastructure funds and development banks, regulators — engineering, sanitation, concessions/PPPs, technical-financial modeling. Note in Portuguese; lead with engineering and modeling.
 - intl (US/Europe): hiring managers and recruiters for financial modeling, data science/analytics, FP&A and finance automation, AI for finance, fintech, infrastructure/energy finance and advisory. Note in English; lead with data, finance and modeling (engineering only as background).
 
-PEOPLE (index, name, headline/context as shown on the page):
+{% if topic %}WHERE THEY WERE FOUND: the author or a commenter of a LinkedIn post on a topic the professional follows and saved:
+"""{{ topic }}"""
+Being engaged in this topic is a plus for fit (shared interest); the note may mention it naturally, in one short clause.
+
+{% endif %}PEOPLE (index, name, headline/context as shown on the page):
 {% for p in people %}{{ loop.index0 }}. {{ p.name or "unknown" }} — {{ p.headline or "" }}
 {% endfor %}
 

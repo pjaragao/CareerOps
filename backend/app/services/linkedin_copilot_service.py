@@ -297,10 +297,11 @@ class LinkedInCopilotService:
               market, ai.get("segment"), fit, ai.get("reason"), note, "to_contact" if fit >= MIN_SCORE else "skipped"))
 
     @staticmethod
-    async def score_people(people: List[Dict[str, Any]]) -> List[dict]:
+    async def score_people(people: List[Dict[str, Any]], topic: Optional[str] = None) -> List[dict]:
         """Scores the people visible on a LinkedIn list page in one AI call and stores them as prospects.
 
-        people: [{"profile_url", "name", "headline"}]. Already-known profiles are returned as they are (no new AI cost).
+        people: [{"profile_url", "name", "headline"}]. topic: the saved post they were found on (author/commenters).
+        Already-known profiles are returned as they are (no new AI cost).
         """
         clean, seen = [], set()
         for person in people:
@@ -316,7 +317,7 @@ class LinkedInCopilotService:
         todo = [c for c in clean if c["profile_url"] not in known]
         results = {url: row for url, row in known.items()}
         if todo:
-            ai = await _skill("linkedin/prospect_batch.md", {"people": todo})
+            ai = await _skill("linkedin/prospect_batch.md", {"people": todo, "topic": (topic or "").strip()[:600]})
             for item in ai.get("people", []):
                 try:
                     person = todo[int(item.get("i"))]

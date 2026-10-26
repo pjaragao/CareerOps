@@ -255,13 +255,14 @@ class PersonIn(BaseModel):
 
 class PeopleBatchIn(BaseModel):
     people: List[PersonIn] = Field(..., min_length=1, max_length=40)
+    topic: Optional[str] = Field(None, max_length=600)   # the saved post they were found on
 
 
 @router.post("/prospects/batch")
 async def score_people(req: PeopleBatchIn):
     """Scores the people visible on a LinkedIn list page (search, My Network) and stores them as prospects."""
     try:
-        return {"items": await Copilot.score_people([p.model_dump() for p in req.people])}
+        return {"items": await Copilot.score_people([p.model_dump() for p in req.people], req.topic)}
     except RuntimeError as e:
         raise HTTPException(status_code=502, detail=str(e))
 

@@ -298,6 +298,52 @@
     // ── Posts you comment on become saved topics (📌) automatically, with your comment as your angle ──
     const SUBMIT = /^(post|publicar|comment|comentar|reply|responder)$/i;
 
+    // People around a saved post (its author and the commenters in view) are scored and queued as prospects:
+    // whoever engages with a topic you follow is a natural person to invite
+    const COMMENTS = '.comments-comments-list, .comments-comment-list, [class*="comments-list"], article[class*="comments-comment"]';
+    const MORE = /^(load more comments|ver mais coment[aá]rios|carregar mais coment[aá]rios|show more comments|see previous comments|ver coment[aá]rios anteriores)/i;
+
+    // Commenters only exist in the page once the comments are open: open them and load a few more batches
+    async function openComments(post) {
+        if (!post.querySelector(COMMENTS)) {
+            const btn = [...post.querySelectorAll('button')].find((b) => !own(b) && COMMENT_BTN.test((b.getAttribute('aria-label') || b.innerText || '').trim()));
+            if (btn) btn.click();
+            await waitFor(() => post.querySelector(COMMENTS));
+        }
+        for (let k = 0; k < 3; k++) {
+            const more = [...post.querySelectorAll('button')].find((b) => !own(b) && MORE.test(label(b)));
+            if (!more) break;
+            more.click();
+            await new Promise((r) => setTimeout(r, 1200));
+        }
+    }
+
+    async function harvestPeople(post, info) {
+        await openComments(post);
+        const seen = new Map();
+        const add = (url, name, headline) => { if (url && name && !seen.has(url)) seen.set(url, { profile_url: url, name, headline }); };
+        post.querySelectorAll('a[href*="/in/"]').forEach((a) => {
+            if (own(a)) return;
+            const m = a.href.match(/https:\/\/www\.linkedin\.com\/in\/([^/?#]+)/);
+            if (!m || m[1] === 'me') return;
+            const box = a.closest('article, [class*="comments-comment"], [class*="comment-entity"]') || a.parentElement;
+            const lines = clean((box && box.innerText) || a.innerText).split('\n').map((l) => l.trim()).filter(Boolean)
+                .filter((l) => !META.test(l) && !/^(like|gostei|reply|responder|curtir|author|autor|you|voc[eê])$/i.test(l));
+            const name = clean(a.innerText).split('\n')[0].replace(/\s*•.*$/, '').trim();
+            if (!name || name.length > 80) return;
+            const i = lines.indexOf(name);
+            const headline = i < 0 ? null : (lines[i + 1] || '').slice(0, 300) || null;
+            add(m[0], name, headline);
+        });
+        const mine = [...seen.values()].filter((p) => !/^(you|voc[eê])$/i.test(p.name)).slice(0, 25);
+        if (!mine.length) return;
+        api('POST', '/prospects/batch', { people: mine, topic: info.post_text.slice(0, 500) }).then((res) => {
+            if (!res.ok) return;
+            const good = res.data.items.filter((i) => i.status !== 'skipped').length;
+            if (good) toast(`🤝 ${good} pessoa${good > 1 ? 's' : ''} deste post para convidar — veja em Prospecção`);
+        });
+    }
+
     function saveCommented(post, comment) {
         if (post.__careeropsSaved) return;
         const info = postInfo(post);
@@ -305,7 +351,7 @@
         post.__careeropsSaved = true;
         const note = comment ? `Você comentou: ${comment}`.slice(0, 2000) : null;
         api('POST', '/inspirations', { ...info, note }).then((res) => {
-            if (res.ok) toast('📌 Tema salvo — você comentou neste post'); else post.__careeropsSaved = false;
+            if (res.ok) { toast('📌 Tema salvo — você comentou neste post'); harvestPeople(post, info); } else post.__careeropsSaved = false;
         });
     }
 
@@ -342,6 +388,7 @@
             if (info.post_text.length < 20) { toast('Não encontrei o texto deste post', false); return; }
             const res = await api('POST', '/inspirations', info);
             toast(res.ok ? 'Tema salvo — gere um post seu sobre ele no Copilot' : errText(res), res.ok);
+            if (res.ok) harvestPeople(post, info);
         };
     }
 
