@@ -220,11 +220,13 @@ class LinkedInCopilotService:
     # ── Engagement queue ─────────────────────────────────────────────────
     @staticmethod
     async def add_engagement(post_text: str, post_url: Optional[str] = None, author_name: Optional[str] = None,
-                             author_headline: Optional[str] = None, other_comments: Optional[str] = None) -> dict:
-        if post_url:
-            existing = _one("SELECT * FROM public.linkedin_engagement WHERE post_url = %s", (post_url,))
-            if existing:
-                return existing
+                             author_headline: Optional[str] = None, other_comments: Optional[str] = None,
+                             instruction: Optional[str] = None, regenerate: bool = False) -> dict:
+        """Drafts a comment. A post already in the queue returns its draft, unless the user asks for a new one
+        (regenerate) or gives an instruction — then the same row gets the new draft."""
+        existing = _one("SELECT * FROM public.linkedin_engagement WHERE post_url = %s", (post_url,)) if post_url else None
+        if existing and not (regenerate or instruction):
+            return existing
         own_recent = [r["comment_draft"][:220] for r in _rows("""
             SELECT comment_draft FROM public.linkedin_engagement
              WHERE comment_draft IS NOT NULL AND status IN ('done', 'pending') ORDER BY created_at DESC LIMIT 8
@@ -232,13 +234,23 @@ class LinkedInCopilotService:
         ai = await _skill("linkedin/engagement_comment.md", {
             "post_text": post_text[:6000], "post_url": post_url, "author_name": author_name, "author_headline": author_headline,
             "lang_name": detect_language(post_text), "other_comments": (other_comments or "")[:3000], "own_recent": own_recent,
+            "instruction": (instruction or "")[:1000],
+            "previous_draft": existing.get("comment_draft") if existing else None,
         })
         relevance = _score(ai.get("relevance"))
+        comment = (ai.get("comment") or "").strip() or None
+        if existing:
+            # with an instruction the user wants a comment regardless of the relevance score
+            status = "pending" if (instruction or relevance >= MIN_SCORE) and comment else "skipped"
+            return _one("""
+                UPDATE public.linkedin_engagement SET relevance = %s, reason = %s, comment_draft = %s, status = %s
+                 WHERE id = %s RETURNING *
+            """, (relevance, ai.get("reason"), comment, status, existing["id"]))
         return _one("""
             INSERT INTO public.linkedin_engagement (post_url, author_name, author_headline, post_text, relevance, reason, comment_draft, status)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING *
         """, (post_url, author_name, author_headline, post_text, relevance, ai.get("reason"),
-              (ai.get("comment") or "").strip() or None, "pending" if relevance >= MIN_SCORE else "skipped"))
+              comment, "pending" if (instruction or relevance >= MIN_SCORE) and comment else "skipped"))
 
     @staticmethod
     def engagement_queue() -> dict:

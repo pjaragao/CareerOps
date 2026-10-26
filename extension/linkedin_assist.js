@@ -113,7 +113,7 @@
     function findPosts() {
         const posts = new Set(document.querySelectorAll(POST_SELECTOR));
         for (const btn of document.querySelectorAll('main button, main [role="button"]')) {
-            if (btn.closest('.careerops-card, .careerops-bar') || !isRepostButton(btn)) continue;
+            if (btn.closest('.careerops-card, .careerops-bar, .careerops-actions') || !isRepostButton(btn)) continue;
             // climb until the parent holds more than one post (i.e. the feed list): the current element is the post
             const kind = anchorKind(btn);
             let el = btn;
@@ -148,7 +148,7 @@
         } else {
             // read the post without our own bar/cards, cut before reactions/comments, drop the author header
             const copy = post.cloneNode(true);
-            copy.querySelectorAll('.careerops-bar, .careerops-card, .careerops-badge').forEach((el) => el.remove());
+            copy.querySelectorAll('.careerops-bar, .careerops-actions, .careerops-card, .careerops-badge').forEach((el) => el.remove());
             document.body.appendChild(copy);
             copy.style.cssText = 'position:absolute;left:-99999px;top:0;width:600px';
             text = copy.innerText || '';
@@ -179,26 +179,29 @@
     async function openCommentBox(post) {
         const open = visibleEditor(post);
         if (open) return open;
-        const btn = [...post.querySelectorAll('button')].find((b) => !b.closest('.careerops-card') && !b.closest('.careerops-bar')
+        const btn = [...post.querySelectorAll('button')].find((b) => !own(b)
             && ['comentar', 'comment'].includes((b.getAttribute('aria-label') || b.innerText || '').trim().toLowerCase()));
         if (btn) btn.click();
         return waitFor(() => visibleEditor(post));
     }
 
-    async function draftComment(post, anchor) {
+    // Draft card under the anchor (the post's action bar). opts.instruction = your request for this comment;
+    // opts.regenerate = a new draft even if this post already has one.
+    async function draftComment(post, anchor, opts = {}) {
         post.querySelectorAll('.careerops-card').forEach((c) => c.remove());
         const box = card('CareerOps · comentário');
         anchor.insertAdjacentElement('afterend', box);
-        const status = line(box, 'Analisando o post…');
+        const status = line(box, opts.instruction ? `Gerando com o seu pedido: “${opts.instruction}”…` : 'Analisando o post…');
         const info = postInfo(post);
         if (info.post_text.length < 20) { status.textContent = 'Não encontrei o texto deste post.'; return; }
-        const res = await api('POST', '/engagement', info);
+        const res = await api('POST', '/engagement', { ...info, instruction: opts.instruction || null, regenerate: !!opts.regenerate });
         if (!res.ok) { status.textContent = errText(res); status.style.color = '#d63031'; return; }
         const item = res.data;
         status.textContent = `Relevância ${item.relevance ?? '?'} — ${item.reason || ''}`;
+        const again = (instruction) => draftComment(post, anchor, { instruction, regenerate: true });
         if (item.status === 'skipped' || !item.comment_draft) {
             line(box, 'A IA sugere não comentar este post (pouco ligado aos seus mercados).', '#999');
-            box.appendChild(button('Comentar mesmo assim', () => api('PATCH', `/engagement/${item.id}`, { status: 'pending' }).then(() => toast('Volta para a fila: rascunhe à mão')), false));
+            box.appendChild(button('Gerar mesmo assim', () => again('Write the comment anyway.'), false));
             return;
         }
         const ta = editor(box, item.comment_draft);
@@ -211,9 +214,34 @@
             watchCommentSubmit(post, item.id, ta);
         }));
         actions.appendChild(button('Copiar', () => navigator.clipboard.writeText(ta.value).then(() => toast('Copiado')), false));
+        actions.appendChild(button('🔄 Gerar outro', () => again(opts.instruction), false));
         actions.appendChild(button('Já comentei', () => api('PATCH', `/engagement/${item.id}`, { status: 'done', comment_draft: ta.value }).then(() => { toast('Registrado'); box.remove(); }), false));
         actions.appendChild(button('Pular', () => api('PATCH', `/engagement/${item.id}`, { status: 'skipped' }).then(() => box.remove()), false));
         box.appendChild(actions);
+        promptRow(box, 'Refazer com um pedido (ex.: mais curto, discorde com educação)', again);
+    }
+
+    // Text field + "Gerar": your own request for the comment
+    function promptRow(box, placeholder, onGo) {
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex;gap:4px;align-items:center;margin-top:6px';
+        const inp = document.createElement('input');
+        inp.placeholder = placeholder;
+        inp.style.cssText = 'flex:1;min-width:0;font:13px system-ui,sans-serif;border:1px solid #ccc;border-radius:8px;padding:6px';
+        const go = () => { const v = inp.value.trim(); if (v) onGo(v); };
+        inp.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter') { e.preventDefault(); go(); } });
+        row.appendChild(inp);
+        row.appendChild(button('✨ Gerar', go));
+        box.appendChild(row);
+        return inp;
+    }
+
+    function promptCard(post, anchor) {
+        post.querySelectorAll('.careerops-card').forEach((c) => c.remove());
+        const box = card('CareerOps · comentário com pedido');
+        anchor.insertAdjacentElement('afterend', box);
+        line(box, 'Diga o que quer no comentário: ângulo, tom, um ponto a citar, concordar ou discordar…');
+        promptRow(box, 'Ex.: concorde e cite a experiência com concessões de saneamento', (v) => draftComment(post, anchor, { instruction: v, regenerate: true })).focus();
     }
 
     // When you click LinkedIn's own submit button in this post, the queue item is marked as done
@@ -232,20 +260,74 @@
         }, true);
     }
 
+    const COMMENT_BTN = /^(comment|comentar)$/i;
+    const own = (el) => el.closest('.careerops-card, .careerops-bar, .careerops-actions');
+
+    // The post's action bar (Like · Comment · Repost · Send): the smallest element holding its Comment and Repost buttons
+    function actionBar(post) {
+        const btns = [...post.querySelectorAll('button, [role="button"]')].filter((b) => !own(b));
+        const repost = btns.find((b) => isRepostButton(b) && anchorKind(b) === 'repost');
+        if (!repost) return null;
+        for (let el = repost.parentElement; el && el !== post; el = el.parentElement) {
+            if ([...el.querySelectorAll('button, [role="button"]')].some((b) => COMMENT_BTN.test(label(b)) || COMMENT_BTN.test(b.getAttribute('aria-label') || ''))) return el;
+        }
+        return null;
+    }
+
+    function savePost(post) {
+        return async () => {
+            const info = postInfo(post);
+            if (info.post_text.length < 20) { toast('Não encontrei o texto deste post', false); return; }
+            const res = await api('POST', '/inspirations', info);
+            toast(res.ok ? 'Tema salvo — gere um post seu sobre ele no Copilot' : errText(res), res.ok);
+        };
+    }
+
+    // Compact buttons for the action bar: [✨ IA | ▾] split button + 📌
+    function barButton(text, title, onClick, css) {
+        const b = button(text, onClick);
+        b.title = title;
+        b.style.cssText = `font:600 13px system-ui,sans-serif;cursor:pointer;border:1px solid ${ACCENT};height:30px;margin:0;${css}`;
+        return b;
+    }
+
+    function postActions(post, bar) {
+        const g = document.createElement('div');
+        g.className = 'careerops-actions';
+        g.style.cssText = 'display:inline-flex;align-items:center;gap:6px;margin-left:auto;padding:0 6px;flex:0 0 auto';
+        const split = document.createElement('div');
+        split.style.cssText = 'display:inline-flex';
+        split.appendChild(barButton('✨ IA', 'Gerar comentário com IA', () => draftComment(post, bar),
+            `background:${ACCENT};color:#fff;border-radius:15px 0 0 15px;padding:0 10px`));
+        split.appendChild(barButton('▾', 'Gerar com um pedido seu (ângulo, tom, ponto a citar)', () => promptCard(post, bar),
+            `background:${ACCENT};color:#fff;border-left:1px solid rgba(255,255,255,.45);border-radius:0 15px 15px 0;padding:0 7px`));
+        g.appendChild(split);
+        g.appendChild(barButton('📌', 'Salvar tema deste post (para um post seu no Copilot)', savePost(post),
+            `background:#fff;color:${ACCENT};border-radius:15px;padding:0 9px`));
+        return g;
+    }
+
     function decoratePosts() {
         findPosts().forEach((post) => {
-            if (post.__careeropsBtn || post.closest('.careerops-card')) return;
+            if (post.closest('.careerops-card')) return;
+            const bar = actionBar(post);
+            if (bar) {
+                // LinkedIn re-renders the bar; put the buttons back when they disappear
+                if (bar.querySelector(':scope > .careerops-actions')) return;
+                post.querySelectorAll('.careerops-bar, .careerops-actions').forEach((el) => el.remove());
+                bar.appendChild(postActions(post, bar));
+                post.__careeropsBtn = true;
+                return;
+            }
+            if (post.__careeropsBtn) return;
             post.__careeropsBtn = true;
-            const bar = document.createElement('div');
-            bar.className = 'careerops-bar';
-            bar.style.cssText = 'padding:8px 16px 0;display:flex;gap:4px;flex-wrap:wrap';
-            bar.appendChild(button('✨ Comentário IA', () => draftComment(post, bar)));
-            bar.appendChild(button('📌 Salvar tema', async () => {
-                const info = postInfo(post);
-                if (info.post_text.length < 20) { toast('Não encontrei o texto deste post', false); return; }
-                const res = await api('POST', '/inspirations', info);
-                toast(res.ok ? 'Tema salvo — gere um post seu sobre ele no Copilot' : errText(res), res.ok);
-            }, false));
+            // fallback (no recognizable action bar): a row at the top of the card
+            const top = document.createElement('div');
+            top.className = 'careerops-bar';
+            top.style.cssText = 'padding:8px 16px 0;display:flex;gap:4px;flex-wrap:wrap';
+            top.appendChild(button('✨ Comentário IA', () => draftComment(post, top)));
+            top.appendChild(button('✍️ Com pedido', () => promptCard(post, top), false));
+            top.appendChild(button('📌 Salvar tema', savePost(post), false));
             // LinkedIn wraps each card in zero-height containers: put the bar inside the visible card itself
             let host = post;
             for (let k = 0; k < 6; k++) {
@@ -253,7 +335,7 @@
                 const h = host.getBoundingClientRect().height;
                 if (kids.length === 1 && (h < 2 || kids[0].getBoundingClientRect().height >= h - 2)) host = kids[0]; else break;
             }
-            host.insertAdjacentElement('afterbegin', bar);
+            host.insertAdjacentElement('afterbegin', top);
         });
     }
 
@@ -615,7 +697,7 @@
         const id = currentJobId();
         if (!id) return;
         const saves = [...document.querySelectorAll('main button, header button, div[class*="sticky"] button')]
-            .filter((b) => !b.closest('.careerops-card, .careerops-bar') && (SAVE.test(label(b)) || SAVED.test(label(b)))
+            .filter((b) => !b.closest('.careerops-card, .careerops-bar, .careerops-actions') && (SAVE.test(label(b)) || SAVED.test(label(b)))
                 && b.offsetParent !== null && !b.closest('li') && b.__careeropsJob !== id);
         for (const saveBtn of saves) {
             saveBtn.__careeropsJob = id;

@@ -24,6 +24,19 @@ THE PROFESSIONAL'S OWN RECENT COMMENTS (vary from these — different opening wo
 {% endfor %}
 {% endif %}
 
+{% if instruction %}
+THE PROFESSIONAL'S REQUEST FOR THIS COMMENT (follow it; it overrides the style and the relevance threshold — always write a comment):
+"""
+{{ instruction }}
+"""
+{% endif %}
+{% if previous_draft %}
+PREVIOUS DRAFT (the professional wants a different one — new angle, new opening, not a rewording):
+"""
+{{ previous_draft }}
+"""
+{% endif %}
+
 RELEVANCE (0–100): how useful it is for this professional to be seen commenting here — author is a hiring manager, recruiter or practitioner in the target areas, the topic overlaps one of the two markets (sanitation, infrastructure, concessions, engineering design, cost estimating, construction management, utilities; or financial modeling, forecasting, data, FP&A, AI for finance, AI engineering), and the professional has real experience to add. Below 40 means skip.
 
 COMMENT (only if relevance ≥ 40):
