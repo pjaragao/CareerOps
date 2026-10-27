@@ -405,9 +405,15 @@
         // a reply goes under the comment whose "Responder" you clicked last; anything else is a comment on the post
         const target = lastReply && lastReply.post === post && lastReply.block.isConnected && ed
             && (threadOf(lastReply.block, post).contains(ed) || lastReply.block.parentElement.contains(ed)) ? lastReply.block : null;
+        const draft = target && lastReply.draft;
         lastReply = null;
         if (likeOnComment) setTimeout(() => likeAfterSend(post, target), 700);
         if (!target) saveCommented(post, text);
+        // a reply you sent joins your line of thought, with your request and the AI's reading when it came from a draft
+        else api('POST', '/voice', {
+            kind: 'reply', text, context: textOf(target).slice(0, 2000), post_url: postInfo(post).post_url || null,
+            instruction: (draft && draft.instruction) || null, topic: (draft && draft.topic) || null, stance: (draft && draft.stance) || null,
+        });
     }, true);
 
     // ── 👍 Like what you answer (pre-checked; remembered per browser) ────────────────────────────────────
@@ -427,9 +433,22 @@
     const LIKE_LABEL = /^(like|gostei|curtir)$/i;
     const LIKE_ARIA = /^(react like|reagir com gostei|like |gostei |curtir )/i;
     const LIKED = /unlike|remover|desfazer|liked|curtido/i;
-    const isLike = (b) => !own(b) && (LIKE_LABEL.test(label(b)) || LIKE_ARIA.test(b.getAttribute('aria-label') || ''));
+    // Current markup (2026-10): no "Like" text; the button (post) or its icon (comment, a div role=button) carries
+    // "Reaction button state: no reaction" before you react and "Reaction button state: Like" (or another reaction) after
+    const STATE = /(reaction button state|estado do bot[aã]o de rea[cç][aã]o|bot[aã]o de rea[cç][aã]o)\s*:\s*(.*)$/i;
+    const NO_REACTION = /^(no reaction|sem rea[cç][aã]o|nenhuma rea[cç][aã]o|none)\b/i;
+    const reactionState = (b) => {
+        for (const el of [b, ...b.querySelectorAll('[aria-label]')]) {
+            const m = (el.getAttribute('aria-label') || '').match(STATE);
+            if (m) return m[2].trim();
+        }
+        return null;
+    };
+    const isLike = (b) => !own(b) && (reactionState(b) !== null || LIKE_LABEL.test(label(b)) || LIKE_ARIA.test(b.getAttribute('aria-label') || ''));
     function pressLike(btn) {
         if (!btn) return false;
+        const state = reactionState(btn);
+        if (state !== null && !NO_REACTION.test(state)) return false;   // already reacted
         if (btn.getAttribute('aria-pressed') === 'true' || LIKED.test(btn.getAttribute('aria-label') || '')) return false;
         btn.click();
         return true;
@@ -450,7 +469,7 @@
     // the comment's own "Responder" (opens the reply box), not the send button of a reply box
     const isReplyAction = (b) => !own(b) && REPLY.test(label(b)) && !b.closest('form')
         && !(b.parentElement && b.parentElement.parentElement && b.parentElement.parentElement.querySelector(EDITOR));
-    let lastReply = null;   // { post, block }: the comment you are answering
+    let lastReply = null;   // { post, block, draft? }: the comment you are answering (draft = the AI reply you inserted)
     document.addEventListener('click', (e) => {
         const b = e.target.closest && e.target.closest('button, [role="button"]');
         if (!b || !isReplyAction(b)) return;
@@ -511,7 +530,7 @@
         const actions = document.createElement('div');
         actions.appendChild(button('Inserir na resposta', async () => {
             replyBtn.click();
-            lastReply = { post, block };
+            lastReply = { post, block, draft: { instruction: opts.instruction, topic: r.topic, stance: r.stance } };
             const ed = await waitFor(() => [...thread.querySelectorAll(EDITOR)].find((el) => el.offsetParent !== null && !own(el))
                 || [...block.parentElement.querySelectorAll(EDITOR)].find((el) => el.offsetParent !== null && !own(el)));
             if (!ed) { toast('Não achei a caixa de resposta — use Copiar', false); return; }

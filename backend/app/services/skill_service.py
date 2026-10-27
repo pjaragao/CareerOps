@@ -27,6 +27,17 @@ class SkillService:
 
     _env.globals["writing_style"] = _writing_style.__func__
 
+    # {{ line_of_thought(text) }}: the professional's positions and what they already said on topics close to text
+    @staticmethod
+    def _line_of_thought(text: str = "") -> str:
+        from app.services.linkedin_voice_service import VoiceService
+        try:
+            return VoiceService.prompt_block(text or "")
+        except Exception:
+            return ""
+
+    _env.globals["line_of_thought"] = _line_of_thought.__func__
+
     # Skills that write text people will read use the "writing" model; the rest use the default one
     WRITING_SKILLS = {"jobs/resume.md", "jobs/cover_letter.md", "jobs/outreach.md", "interview/stories.md", "interview/simulate.md"}
 

@@ -46,9 +46,11 @@ COMMENT (only if relevance ≥ 40):
 
 {{ writing_style("comment") }}
 
+{{ line_of_thought(post_text ~ " " ~ (instruction or "")) }}
+
 KNOWLEDGE BASE:
 {% include 'common/user_context.md' %}
 
 {% include 'common/output_format.md' %}
 Return JSON:
-{"relevance": 0, "reason": "one sentence", "comment": "comment text or empty string if below 40"}
+{"relevance": 0, "reason": "one sentence", "comment": "comment text or empty string if below 40", "topic": "the subject in 2–5 words, in the post's language", "stance": "the position the comment takes, one sentence in the post's language (empty if no comment)"}

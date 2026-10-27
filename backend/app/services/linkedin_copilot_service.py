@@ -78,12 +78,15 @@ def _week_start(d: date) -> date:
     return d - timedelta(days=d.weekday())
 
 
-def _rows(sql: str, params: tuple = ()) -> List[dict]:
+def _rows(sql: str, params: tuple = (), commit: bool = False) -> List[dict]:
     conn = get_db_connection()
     try:
         with get_db_cursor(conn) as cur:
             cur.execute(sql, params)
-            return [dict(r) for r in cur.fetchall()]
+            rows = [dict(r) for r in cur.fetchall()]
+        if commit:   # UPDATE … RETURNING of many rows
+            conn.commit()
+        return rows
     finally:
         conn.close()
 
@@ -114,6 +117,24 @@ def _score(value: Any) -> int:
         return max(0, min(100, int(value)))
     except (TypeError, ValueError):
         return 0
+
+
+def _voice():
+    from app.services.linkedin_voice_service import VoiceService   # imports this module: loaded on first use
+    return VoiceService
+
+
+def _record_comment(item: Optional[dict]) -> None:
+    """A comment you sent goes into the line of thought, with the AI's reading of it and your request."""
+    if item and item.get("status") == "done" and item.get("comment_draft"):
+        _voice().record("comment", item["comment_draft"], context=item.get("post_text"), topic=item.get("topic"),
+                        stance=item.get("stance"), instruction=item.get("instruction"), post_url=item.get("post_url"),
+                        ref=_voice().comment_ref(item.get("post_url"), item.get("post_text")))
+
+
+def _record_post(post: Optional[dict]) -> None:
+    if post and post.get("status") == "published":
+        _voice().record("post", post["body"], topic=post.get("topic"), ref=f"post:{post['id']}")
 
 
 class LinkedInCopilotService:
@@ -190,10 +211,12 @@ class LinkedInCopilotService:
     @staticmethod
     def mark_published_manually(post_id: int) -> Optional[dict]:
         """For users without API access: they paste the text on LinkedIn themselves and record it here."""
-        return _one("""
+        post = _one("""
             UPDATE public.linkedin_posts SET status = 'published', published_at = NOW(), updated_at = NOW()
              WHERE id = %s AND status IN ('draft', 'approved', 'failed') RETURNING *
         """, (post_id,))
+        _record_post(post)
+        return post
 
     @staticmethod
     def _published_today() -> int:
@@ -217,7 +240,9 @@ class LinkedInCopilotService:
             _one("UPDATE public.linkedin_posts SET status = 'failed', published_at = NULL, error = %s, updated_at = NOW() WHERE id = %s",
                  (str(e)[:500], post_id))
             raise
-        return _one("UPDATE public.linkedin_posts SET linkedin_urn = %s, error = NULL WHERE id = %s RETURNING *", (urn, post_id))
+        post = _one("UPDATE public.linkedin_posts SET linkedin_urn = %s, error = NULL WHERE id = %s RETURNING *", (urn, post_id))
+        _record_post(post)
+        return post
 
     @staticmethod
     def publish_due() -> int:
@@ -260,6 +285,10 @@ class LinkedInCopilotService:
         item = LinkedInCopilotService._save_inspiration(post_text, post_url, author_name, author_headline, note)
         if note:   # a comment you just posted closes the matching queue item
             LinkedInCopilotService.reconcile_engagement()
+        if note and note.startswith("Você comentou: "):
+            # also comments written without a draft; with a draft, the same key keeps its topic, stance and request
+            _voice().record("comment", note[len("Você comentou: "):], context=post_text, post_url=post_url,
+                            ref=_voice().comment_ref(post_url, post_text))
         return item
 
     @staticmethod
@@ -310,18 +339,22 @@ class LinkedInCopilotService:
         })
         relevance = _score(ai.get("relevance"))
         comment = (ai.get("comment") or "").strip() or None
+        topic, stance = ai.get("topic") or None, ai.get("stance") or None
+        instruction = (instruction or "").strip()[:1000] or None
         if existing:
             # with an instruction the user wants a comment regardless of the relevance score
             status = "pending" if (instruction or relevance >= MIN_SCORE) and comment else "skipped"
             return _one("""
-                UPDATE public.linkedin_engagement SET relevance = %s, reason = %s, comment_draft = %s, status = %s
+                UPDATE public.linkedin_engagement SET relevance = %s, reason = %s, comment_draft = %s, status = %s,
+                       topic = %s, stance = %s, instruction = COALESCE(%s, instruction)
                  WHERE id = %s RETURNING *
-            """, (relevance, ai.get("reason"), comment, status, existing["id"]))
+            """, (relevance, ai.get("reason"), comment, status, topic, stance, instruction, existing["id"]))
         return _one("""
-            INSERT INTO public.linkedin_engagement (post_url, author_name, author_headline, post_text, relevance, reason, comment_draft, status)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING *
+            INSERT INTO public.linkedin_engagement (post_url, author_name, author_headline, post_text, relevance, reason, comment_draft, status,
+                                                    topic, stance, instruction)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING *
         """, (post_url, author_name, author_headline, post_text, relevance, ai.get("reason"),
-              comment, "pending" if (instruction or relevance >= MIN_SCORE) and comment else "skipped"))
+              comment, "pending" if (instruction or relevance >= MIN_SCORE) and comment else "skipped", topic, stance, instruction))
 
     @staticmethod
     async def draft_reply(post_text: str, target_text: str, thread: Optional[str] = None, target_author: Optional[str] = None,
@@ -337,7 +370,8 @@ class LinkedInCopilotService:
         reply = (ai.get("reply") or "").strip()
         if not reply:
             raise RuntimeError("A IA não devolveu uma resposta")
-        return {"kind": "close" if ai.get("kind") == "close" else "continue", "reason": ai.get("reason"), "reply": reply}
+        return {"kind": "close" if ai.get("kind") == "close" else "continue", "reason": ai.get("reason"), "reply": reply,
+                "topic": ai.get("topic") or None, "stance": ai.get("stance") or None}
 
     @staticmethod
     def reconcile_engagement() -> int:
@@ -346,17 +380,18 @@ class LinkedInCopilotService:
         The extension saves every post you comment on as a theme with "Você comentou: <your text>"; a pending item for
         the same post (by link, or by its opening text when there is no link) is done, with what you really wrote.
         """
-        return _one("""
-            WITH closed AS (
+        closed = _rows("""
             UPDATE public.linkedin_engagement e
                SET status = 'done', comment_draft = regexp_replace(i.note, '^Você comentou: ', ''),
                    done_at = COALESCE(e.done_at, i.created_at)
               FROM public.linkedin_inspirations i
              WHERE e.status = 'pending' AND i.note LIKE 'Você comentou: %%'
                AND (e.post_url = i.post_url OR (e.post_url IS NULL AND left(e.post_text, 200) = left(i.post_text, 200)))
-         RETURNING e.id)
-            SELECT COUNT(*) AS n FROM closed
-        """)["n"]
+         RETURNING e.*
+        """, commit=True)
+        for item in closed:
+            _record_comment(item)
+        return len(closed)
 
     @staticmethod
     def engagement_queue() -> dict:
@@ -372,12 +407,15 @@ class LinkedInCopilotService:
 
     @staticmethod
     def update_engagement(item_id: int, status: Optional[str] = None, comment_draft: Optional[str] = None) -> Optional[dict]:
-        return _one("""
+        item = _one("""
             UPDATE public.linkedin_engagement
                SET status = COALESCE(%s, status), comment_draft = COALESCE(%s, comment_draft),
                    done_at = CASE WHEN %s = 'done' THEN NOW() ELSE done_at END
              WHERE id = %s RETURNING *
         """, (status, comment_draft, status, item_id))
+        if status == "done":
+            _record_comment(item)
+        return item
 
     # ── Prospects ────────────────────────────────────────────────────────
     @staticmethod

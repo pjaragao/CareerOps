@@ -13,6 +13,8 @@ from pydantic import BaseModel, Field
 from app.core.config import settings
 from app.services.linkedin_api_service import LinkedInApiError, LinkedInApiService
 from app.services.linkedin_copilot_service import LinkedInCopilotService as Copilot
+from app.services.linkedin_networking_service import NetworkingService
+from app.services.linkedin_voice_service import VoiceService
 
 router = APIRouter(prefix="/linkedin-copilot", tags=["linkedin-copilot"])
 
@@ -311,6 +313,116 @@ async def check_prospects(req: ProspectCheckIn):
 @router.patch("/prospects/{item_id}")
 async def update_prospect(item_id: int, req: ProspectUpdate):
     return _found(Copilot.update_prospect(item_id, req.status, req.note_draft, req.notes))
+
+
+class MessageIn(BaseModel):
+    instruction: Optional[str] = Field(None, max_length=1000)
+
+
+class MessageSentIn(BaseModel):
+    text: str = Field(..., min_length=3, max_length=3000)
+    instruction: Optional[str] = None
+    topic: Optional[str] = None
+    stance: Optional[str] = None
+
+
+@router.post("/prospects/{item_id}/message")
+async def draft_message(item_id: int, req: MessageIn):
+    """First direct message to a connection, from their profile, the related jobs and your line of thought."""
+    try:
+        return _found(await NetworkingService.draft_message(item_id, req.instruction))
+    except RuntimeError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+@router.post("/prospects/{item_id}/message/sent")
+async def message_sent(item_id: int, req: MessageSentIn):
+    """You sent the message on LinkedIn: stored on the prospect and in the line of thought."""
+    return _found(NetworkingService.message_sent(item_id, req.text, req.instruction, req.topic, req.stance))
+
+
+# ── Line of thought (what you already said, so new texts stay consistent) ─
+class VoiceIn(BaseModel):
+    kind: Literal["comment", "reply", "message", "post", "position"] = "position"
+    text: str = Field(..., min_length=3, max_length=3000)
+    context: Optional[str] = Field(None, max_length=4000)
+    topic: Optional[str] = Field(None, max_length=200)
+    stance: Optional[str] = Field(None, max_length=500)
+    instruction: Optional[str] = Field(None, max_length=1000)
+    post_url: Optional[str] = None
+    pinned: bool = True   # positions you write are fixed by default
+
+
+class VoiceUpdate(BaseModel):
+    topic: Optional[str] = Field(None, max_length=200)
+    stance: Optional[str] = Field(None, max_length=500)
+    text: Optional[str] = Field(None, min_length=3, max_length=3000)
+    pinned: Optional[bool] = None
+
+
+class VoiceProfileIn(BaseModel):
+    text: str = Field(..., max_length=6000)
+
+
+@router.get("/voice")
+async def list_voice(kind: Optional[str] = None, q: Optional[str] = None):
+    return {"items": VoiceService.list(kind, q), **VoiceService.status()}
+
+
+@router.post("/voice")
+async def add_voice(req: VoiceIn):
+    """A position you write (kind=position), or a text the extension saw you send (a reply in a comment thread)."""
+    if req.kind == "position":
+        return _found(VoiceService.add_position(req.text, req.topic, req.pinned))
+    return _found(VoiceService.record(req.kind, req.text, req.context, req.topic, req.stance, req.instruction, req.post_url))
+
+
+@router.patch("/voice/{item_id}")
+async def update_voice(item_id: int, req: VoiceUpdate):
+    return _found(VoiceService.update(item_id, req.model_dump()))
+
+
+@router.delete("/voice/{item_id}")
+async def delete_voice(item_id: int):
+    return _found(VoiceService.delete(item_id))
+
+
+@router.put("/voice-profile")
+async def save_voice_profile(req: VoiceProfileIn):
+    return VoiceService.save_profile(req.text)
+
+
+@router.post("/voice-profile/consolidate")
+async def consolidate_voice_profile():
+    try:
+        return await VoiceService.consolidate()
+    except RuntimeError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+# ── Networking from the jobs (companies, people, posts, messages) ────────
+class PlanMark(BaseModel):
+    key: str = Field(..., pattern=r"^(companies|people|posts|messages):\d+$")
+    done: bool = True
+
+
+@router.get("/networking")
+async def networking_plan():
+    return {"plan": NetworkingService.latest()}
+
+
+@router.post("/networking/generate")
+async def generate_networking_plan():
+    try:
+        return {"plan": await NetworkingService.build()}
+    except RuntimeError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+@router.patch("/networking/{plan_id}")
+async def mark_networking_item(plan_id: int, req: PlanMark):
+    _found(NetworkingService.mark(plan_id, req.key, req.done))
+    return {"plan": NetworkingService.latest()}
 
 
 # ── Capture from the browser extension (user-triggered only) ─────────────

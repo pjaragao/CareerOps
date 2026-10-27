@@ -1,13 +1,15 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useSearchParams } from 'react-router-dom';
 import {
-  Megaphone, Sparkles, Send, Check, X, Copy, ExternalLink, Calendar, Users, BarChart3, Link2, Plus, Undo2, UserPlus,
+  Megaphone, Sparkles, Send, Check, X, Copy, ExternalLink, Calendar, Users, BarChart3, Link2, Plus, Undo2, UserPlus, Compass, Brain, MessageSquare, Pin, Trash2,
 } from 'lucide-react';
 import {
   linkedinCopilotService as svc, CopilotPost, PostStatus, CopilotStatus, Market, Inspiration, EngagementItem, Prospect, ProspectStatus, WeekMetrics,
+  NetworkingPlan, VoiceData, VoiceItem, VoiceKind,
 } from '../services/linkedinCopilotService';
 
-type Tab = 'posts' | 'prospects' | 'metrics';
+type Tab = 'posts' | 'prospects' | 'networking' | 'voice' | 'metrics';
 
 const field: React.CSSProperties = {
   width: '100%', padding: '0.7rem', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border)',
@@ -44,7 +46,8 @@ const errMsg = (e: unknown): string => {
 };
 
 // ── Modal ─────────────────────────────────────────────────────────────────
-const Modal = ({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) => (
+// Portal to <body>: the page's fade-in animation (transform) would otherwise pin "fixed" to the page, not the window
+const Modal = ({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) => createPortal(
   <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
     <div className="panel" onClick={e => e.stopPropagation()} style={{ width: 'min(640px, 100%)', maxHeight: '90vh', overflow: 'auto', marginBottom: 0 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
@@ -53,7 +56,8 @@ const Modal = ({ title, onClose, children }: { title: string; onClose: () => voi
       </div>
       {children}
     </div>
-  </div>
+  </div>,
+  document.body,
 );
 
 // ── LinkedIn API status (header) and setup guide ──────────────────────────
@@ -533,6 +537,7 @@ const ProspectsTab = () => {
 const ProspectRow = ({ p, onUpdate }: { p: Prospect; onUpdate: (id: number, patch: Partial<Pick<Prospect, 'status'>>) => void }) => {
   // The extension finishes the job on LinkedIn: it opens the profile, clicks Conectar → "Enviar sem nota" and marks it as invited here
   const connectUrl = p.profile_url ? `${p.profile_url.split('#')[0]}#careerops-connect=${p.id}` : null;
+  const [writing, setWriting] = useState(false);
   return (
     <tr className="row-hover" style={{ borderBottom: '1px solid var(--border)' }}>
       <td style={{ ...td, maxWidth: 0, width: '100%' }} title={p.reason || ''}>
@@ -554,12 +559,270 @@ const ProspectRow = ({ p, onUpdate }: { p: Prospect; onUpdate: (id: number, patc
             <a className="btn btn-primary" style={{ ...smallBtn, whiteSpace: 'nowrap' }} href={connectUrl} target="_blank" rel="noreferrer"
               title="Abre o perfil e a extensão envia o convite sem nota"><UserPlus size={13} /> Conectar</a>
           )}
+          {(p.status === 'accepted' || p.status === 'replied') && (
+            <button className={`btn ${p.message_sent_at ? 'btn-secondary' : 'btn-primary'}`} style={{ ...smallBtn, whiteSpace: 'nowrap' }} onClick={() => setWriting(true)}
+              title={p.message_sent_at ? `Mensagem enviada em ${new Date(p.message_sent_at).toLocaleDateString()}` : 'Primeira mensagem depois do aceite'}>
+              <MessageSquare size={13} /> {p.message_sent_at ? 'Enviada' : 'Mensagem'}
+            </button>
+          )}
           {(NEXT_STATUS[p.status] || []).map(n => (
             <button key={n.to} className="btn btn-secondary" style={{ ...smallBtn, whiteSpace: 'nowrap' }} onClick={() => onUpdate(p.id, { status: n.to })}>{n.label}</button>
           ))}
         </div>
+        {writing && <MessageModal p={p} onClose={() => setWriting(false)} onSent={() => { setWriting(false); onUpdate(p.id, {}); }} />}
       </td>
     </tr>
+  );
+};
+
+// Direct message to a connection: drafted from their profile, the related jobs and your line of thought; you send it on LinkedIn
+const MessageModal = ({ p, initial, onClose, onSent }: { p: Prospect; initial?: string; onClose: () => void; onSent: () => void }) => {
+  const [text, setText] = useState(initial ?? p.message_draft ?? '');
+  const [instruction, setInstruction] = useState('');
+  const [meta, setMeta] = useState<{ topic?: string; stance?: string; instruction?: string }>({});
+  const firstDraft = !initial && !p.message_draft;   // nothing to show yet: write one on open
+  const [busy, setBusy] = useState(firstDraft);
+  const request = useCallback((req?: string) => svc.draftMessage(p.id, req)
+    .then(r => { setText(r.message_draft || ''); setMeta({ topic: r.topic, stance: r.stance, instruction: req }); })
+    .catch(e => alert(errMsg(e))).finally(() => setBusy(false)), [p.id]);
+  const draft = (req?: string) => { setBusy(true); request(req); };
+  useEffect(() => { if (firstDraft) request(); }, [firstDraft, request]);
+  const sent = async () => { await svc.messageSent(p.id, { text, ...meta }); onSent(); };
+  return (
+    <Modal title={`Mensagem para ${p.name || 'a conexão'}`} onClose={onClose}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, textAlign: 'left' }}>
+        <div style={muted}>{[p.headline, p.company].filter(Boolean).join(' · ')}</div>
+        <textarea value={busy ? 'Escrevendo…' : text} onChange={e => setText(e.target.value)} rows={7} style={field} disabled={busy} />
+        <div style={{ display: 'flex', gap: 6 }}>
+          <input value={instruction} onChange={e => setInstruction(e.target.value)} placeholder="Refazer com um pedido (ex.: cite a vaga, pergunte sobre o time)"
+            style={{ ...field, padding: '0.45rem 0.6rem' }} onKeyDown={e => { if (e.key === 'Enter' && instruction.trim()) draft(instruction.trim()); }} />
+          <button className="btn btn-secondary" style={smallBtn} disabled={busy} onClick={() => draft(instruction.trim() || undefined)}><Sparkles size={13} /> Refazer</button>
+        </div>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          <button className="btn btn-secondary" style={smallBtn} disabled={!text} onClick={() => copy(text)}><Copy size={13} /> Copiar</button>
+          {p.profile_url && <a className="btn btn-secondary" style={smallBtn} href={p.profile_url} target="_blank" rel="noreferrer"
+            onClick={() => copy(text)} title="Copia a mensagem e abre o perfil: clique em Mensagem e cole"><ExternalLink size={13} /> Copiar e abrir perfil</a>}
+          <button className="btn btn-primary" style={smallBtn} disabled={busy || !text.trim()} onClick={sent}
+            title="Registra a mensagem no prospect e na sua linha de pensamento"><Check size={13} /> Enviei</button>
+        </div>
+      </div>
+    </Modal>
+  );
+};
+
+// ── Networking (from the jobs in the system) ──────────────────────────────
+const marketChip = (m: Market | null) => m && <span style={chip(m === 'br' ? '#00b894' : '#4da3ff')}>{m === 'br' ? 'BR' : 'EXT'}</span>;
+
+const PlanSection = ({ title, hint, count, children }: { title: string; hint: string; count: number; children: React.ReactNode }) => (
+  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+    <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}><h3 style={{ fontSize: '1rem' }}>{title}</h3><span style={muted}>{count} · {hint}</span></div>
+    <DenseTable head={<><th style={th}>SUGESTÃO</th><th style={{ ...th, textAlign: 'right' }}>AÇÕES</th></>}>{children}</DenseTable>
+  </div>
+);
+
+const PlanRow = ({ done, onToggle, children, actions }: { done: boolean; onToggle: () => void; children: React.ReactNode; actions: React.ReactNode }) => (
+  <tr className="row-hover" style={{ borderBottom: '1px solid var(--border)', opacity: done ? 0.5 : 1 }}>
+    <td style={{ ...td, maxWidth: 0, width: '100%' }}>{children}</td>
+    <td style={{ ...td, textAlign: 'right' }}><div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+      {actions}
+      <button className={`btn ${done ? 'btn-primary' : 'btn-secondary'}`} style={{ ...smallBtn, whiteSpace: 'nowrap' }} onClick={onToggle}
+        title={done ? 'Desmarcar' : 'Marcar como feito'}><Check size={13} />{done ? ' Feito' : ''}</button>
+    </div></td>
+  </tr>
+);
+
+const NetworkingTab = () => {
+  const [plan, setPlan] = useState<NetworkingPlan | null>(null);
+  const [loaded, setLoaded] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [prospects, setProspects] = useState<Prospect[]>([]);
+  const [writing, setWriting] = useState<{ p: Prospect; text: string; key: string } | null>(null);
+  useEffect(() => {
+    svc.networking().then(setPlan).finally(() => setLoaded(true));
+    svc.prospects().then(d => setProspects(d.items)).catch(() => setProspects([]));
+  }, []);
+  const generate = async () => {
+    setBusy(true);
+    try { setPlan(await svc.generateNetworking()); } catch (e) { alert(errMsg(e)); } finally { setBusy(false); }
+  };
+  const done = (key: string) => !!plan?.done.includes(key);
+  const toggle = async (key: string) => { if (plan) setPlan(await svc.markNetworking(plan.id, key, !done(key))); };
+  const jobLabel = (id: number | null) => {
+    const j = plan?.jobs.find(x => x.id === id);
+    return j ? `${j.job_title} · ${j.company}` : null;
+  };
+  const p = plan?.plan;
+  return (
+    <>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <span style={muted}>
+          {plan ? <>Plano de {new Date(plan.created_at).toLocaleString()} a partir de {plan.jobs.length} vagas
+            ({plan.jobs.filter(j => ['applied', 'interviewing', 'offer'].includes(j.status)).length} em andamento).</>
+            : 'Empresas para seguir, pessoas para conectar, conversas para entrar e mensagens, a partir das vagas do sistema.'}
+          {' '}Tudo é link de busca ou texto para copiar: você age no LinkedIn.
+        </span>
+        <button className="btn btn-primary" style={{ ...smallBtn, whiteSpace: 'nowrap' }} disabled={busy} onClick={generate}>
+          <Sparkles size={13} /> {busy ? 'Gerando (≈1 min)…' : plan ? 'Gerar novo plano' : 'Gerar plano'}
+        </button>
+      </div>
+      {loaded && !plan && !busy && <p style={muted}>Nenhum plano ainda.</p>}
+      {p && <>
+        <PlanSection title="Empresas para seguir" hint="abra a busca e clique em Seguir na página da empresa" count={p.companies.length}>
+          {p.companies.map((c, i) => (
+            <PlanRow key={i} done={done(`companies:${i}`)} onToggle={() => toggle(`companies:${i}`)} actions={<a className="btn btn-secondary" style={{ ...smallBtn, whiteSpace: 'nowrap' }} href={c.url} target="_blank" rel="noreferrer"><ExternalLink size={13} /> Abrir</a>}>
+              <div style={{ display: 'flex', gap: 6, alignItems: 'baseline' }}><strong>{c.company}</strong>{marketChip(c.market)}{c.similar && <span style={chip('#c38bff')}>similar</span>}</div>
+              {c.why && <div style={{ ...muted, ...clamp(2) }}>{c.why}</div>}
+              {!!c.job_ids.length && <div style={{ ...muted, fontSize: '0.75rem', opacity: 0.7, ...clamp(1) }}>{c.job_ids.map(jobLabel).filter(Boolean).join(' · ')}</div>}
+            </PlanRow>
+          ))}
+        </PlanSection>
+        <PlanSection title="Pessoas para conectar e seguir" hint="na busca, use ⭐ Avaliar pessoas da página: os bons perfis entram em Prospecção" count={p.people.length}>
+          {p.people.map((x, i) => (
+            <PlanRow key={i} done={done(`people:${i}`)} onToggle={() => toggle(`people:${i}`)} actions={<a className="btn btn-secondary" style={{ ...smallBtn, whiteSpace: 'nowrap' }} href={x.url} target="_blank" rel="noreferrer"><ExternalLink size={13} /> Buscar</a>}>
+              <div style={{ display: 'flex', gap: 6, alignItems: 'baseline', flexWrap: 'wrap' }}>
+                <span style={chip(x.action === 'follow' ? '#ffb020' : '#00d4aa')}>{x.action === 'follow' ? 'seguir' : 'conectar'}</span>
+                <strong>{x.role}</strong>{x.company && <span style={muted}>· {x.company}</span>}{marketChip(x.market)}
+              </div>
+              {x.why && <div style={{ ...muted, ...clamp(2) }}>{x.why}</div>}
+              <div style={{ ...muted, fontSize: '0.75rem', opacity: 0.7 }}>busca: {x.search}{jobLabel(x.job_id) ? ` · vaga: ${jobLabel(x.job_id)}` : ''}</div>
+            </PlanRow>
+          ))}
+        </PlanSection>
+        <PlanSection title="Posts para interagir" hint="posts recentes do tema; use ✨ Comentário IA com o ângulo abaixo" count={p.posts.length}>
+          {p.posts.map((x, i) => (
+            <PlanRow key={i} done={done(`posts:${i}`)} onToggle={() => toggle(`posts:${i}`)} actions={<>
+              {x.angle && <button className="btn btn-secondary" style={smallBtn} title="Copiar o ângulo (cole como pedido no ✨ Comentário IA)" onClick={() => copy(x.angle || '')}><Copy size={13} /></button>}
+              <a className="btn btn-secondary" style={{ ...smallBtn, whiteSpace: 'nowrap' }} href={x.url} target="_blank" rel="noreferrer"><ExternalLink size={13} /> Posts</a>
+            </>}>
+              <div style={{ display: 'flex', gap: 6, alignItems: 'baseline' }}><strong>{x.topic}</strong>{marketChip(x.market)}</div>
+              {x.angle && <div style={{ fontSize: '0.85rem', ...clamp(3) }}>{x.angle}</div>}
+              {x.why && <div style={{ ...muted, fontSize: '0.78rem', opacity: 0.75, ...clamp(1) }}>{x.why}</div>}
+            </PlanRow>
+          ))}
+        </PlanSection>
+        <PlanSection title="Mensagens para conexões" hint="para quem aceitou e ainda não recebeu mensagem" count={p.messages.length}>
+          {p.messages.map((m, i) => {
+            const person = prospects.find(x => x.id === m.prospect_id);
+            return (
+              <PlanRow key={i} done={done(`messages:${i}`)} onToggle={() => toggle(`messages:${i}`)} actions={<>
+                <button className="btn btn-secondary" style={smallBtn} onClick={() => copy(m.text)}><Copy size={13} /></button>
+                {person && <button className="btn btn-secondary" style={{ ...smallBtn, whiteSpace: 'nowrap' }} onClick={() => setWriting({ p: person, text: m.text, key: `messages:${i}` })}>Editar</button>}
+              </>}>
+                <div style={{ display: 'flex', gap: 6, alignItems: 'baseline' }}>
+                  {person?.profile_url ? <a href={person.profile_url} target="_blank" rel="noreferrer" style={{ color: '#fff', fontWeight: 700, whiteSpace: 'nowrap' }}>{m.name}</a> : <strong style={{ whiteSpace: 'nowrap' }}>{m.name}</strong>}
+                  <span style={{ ...muted, ...clamp(1) }}>{m.headline}</span>
+                </div>
+                <div style={{ fontSize: '0.85rem', whiteSpace: 'pre-wrap' }}>{m.text}</div>
+                {m.why && <div style={{ ...muted, fontSize: '0.78rem', opacity: 0.75 }}>{m.why}</div>}
+              </PlanRow>
+            );
+          })}
+        </PlanSection>
+      </>}
+      {writing && <MessageModal p={writing.p} initial={writing.text} onClose={() => setWriting(null)}
+        onSent={async () => { const key = writing.key; setWriting(null); if (plan && !done(key)) setPlan(await svc.markNetworking(plan.id, key, true)); }} />}
+    </>
+  );
+};
+
+// ── Line of thought (what you already said: new texts stay consistent with it) ─
+const KIND_LABEL: Record<VoiceKind, string> = { comment: 'comentário', reply: 'resposta', message: 'mensagem', post: 'post', position: 'posição' };
+
+const VoiceTab = () => {
+  const [data, setData] = useState<VoiceData | null>(null);
+  const [profile, setProfile] = useState('');
+  const [q, setQ] = useState('');
+  const [kind, setKind] = useState<'all' | VoiceKind>('all');
+  const [busy, setBusy] = useState(false);
+  const [newPos, setNewPos] = useState({ topic: '', text: '' });
+  const [open, setOpen] = useState<number | null>(null);
+  const load = useCallback(async (query?: string) => {
+    const d = await svc.voice(query);
+    setData(d);
+    return d;
+  }, []);
+  useEffect(() => { svc.voice().then(d => { setData(d); setProfile(d.text); }); }, []);
+  const consolidate = async () => {
+    setBusy(true);
+    try { const r = await svc.consolidateVoice(); setProfile(r.text); await load(q); if (r.changes) alert(r.changes); }
+    catch (e) { alert(errMsg(e)); } finally { setBusy(false); }
+  };
+  const addPosition = async () => {
+    if (newPos.text.trim().length < 3) return;
+    await svc.addPosition(newPos.text.trim(), newPos.topic.trim());
+    setNewPos({ topic: '', text: '' });
+    load(q);
+  };
+  const patch = async (v: VoiceItem, change: Partial<Pick<VoiceItem, 'topic' | 'stance' | 'text' | 'pinned'>>) => { await svc.updateVoice(v.id, change); load(q); };
+  const remove = async (v: VoiceItem) => { if (confirm('Apagar este registro da linha de pensamento?')) { await svc.deleteVoice(v.id); load(q); } };
+  const items = (data?.items || []).filter(v => kind === 'all' || v.kind === kind);
+  const count = (k: VoiceKind) => (data?.items || []).filter(v => v.kind === k).length;
+  return (
+    <>
+      <div className="panel" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <h3 style={{ fontSize: '1rem' }}>Suas posições</h3>
+          <span style={muted}>
+            {data?.updated_at ? `consolidado em ${new Date(data.updated_at).toLocaleDateString()}` : 'ainda não consolidado'}
+            {data && data.new_since_profile > 0 && ` · ${data.new_since_profile} registro(s) novo(s) desde então`}
+          </span>
+        </div>
+        <p style={muted}>Vai em todo comentário, resposta, post e mensagem que a IA escreve, junto com os registros mais parecidos com o assunto. Edite à vontade: o texto é seu.</p>
+        <textarea value={profile} onChange={e => setProfile(e.target.value)} rows={10} style={{ ...field, fontSize: '0.85rem' }}
+          placeholder="Ex.:&#10;IA em finanças:&#10;- Todo número vem do banco de dados, nunca do modelo — …" />
+        <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+          <button className="btn btn-secondary" style={smallBtn} disabled={busy || !data?.total} onClick={consolidate}
+            title="A IA reescreve as posições a partir de tudo o que você já disse e dos seus pedidos"><Sparkles size={13} /> {busy ? 'Consolidando…' : 'Consolidar com IA'}</button>
+          <button className="btn btn-primary" style={smallBtn} disabled={profile === (data?.text ?? '')} onClick={async () => { await svc.saveVoiceProfile(profile); load(q); }}><Check size={13} /> Salvar</button>
+        </div>
+      </div>
+      <div className="panel" style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+        <input value={newPos.topic} onChange={e => setNewPos({ ...newPos, topic: e.target.value })} placeholder="Tema (ex.: concessões de saneamento)" style={{ ...field, width: 220, flex: '0 1 220px', padding: '0.45rem 0.6rem' }} />
+        <input value={newPos.text} onChange={e => setNewPos({ ...newPos, text: e.target.value })} placeholder="Sua posição, em uma frase — entra fixa em todos os textos"
+          style={{ ...field, flex: '1 1 300px', padding: '0.45rem 0.6rem' }} onKeyDown={e => { if (e.key === 'Enter') addPosition(); }} />
+        <button className="btn btn-primary" style={smallBtn} onClick={addPosition}><Plus size={13} /> Posição</button>
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <Pills value={kind} onChange={setKind} items={[
+          { id: 'all', label: 'Tudo', count: data?.items.length ?? 0 },
+          ...(['position', 'comment', 'reply', 'message', 'post'] as VoiceKind[]).map(k => ({ id: k, label: KIND_LABEL[k], count: count(k) })),
+        ]} />
+        <input value={q} onChange={e => setQ(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') load(q); }} placeholder="Buscar por assunto (Enter)"
+          style={{ ...field, width: 240, padding: '0.4rem 0.6rem' }} />
+      </div>
+      <DenseTable head={<><th style={th}>O QUE VOCÊ DISSE</th><th className="hide-sm" style={th}>TIPO</th><th style={{ ...th, textAlign: 'right' }}>AÇÕES</th></>}>
+        {items.map(v => (
+          <React.Fragment key={v.id}>
+            <tr className="row-hover" style={{ borderBottom: '1px solid var(--border)', cursor: 'pointer' }} onClick={() => setOpen(open === v.id ? null : v.id)}>
+              <td style={{ ...td, maxWidth: 0, width: '100%' }}>
+                {(v.topic || v.stance) && <div style={{ fontWeight: 600, ...clamp(1) }}>{v.topic}{v.topic && v.stance && v.kind !== 'position' ? ' — ' : ''}{v.kind !== 'position' && <span style={{ fontWeight: 400 }}>{v.stance}</span>}</div>}
+                <div style={{ ...muted, ...clamp(open === v.id ? 20 : 2) }}>{v.text}</div>
+                {v.instruction && <div style={{ fontSize: '0.78rem', color: '#ffb020', ...clamp(1) }}>seu pedido: {v.instruction}</div>}
+              </td>
+              <td className="hide-sm" style={td}><span style={chip(v.kind === 'position' ? '#c38bff' : '#9aa4b2')}>{KIND_LABEL[v.kind]}</span></td>
+              <td style={{ ...td, textAlign: 'right' }} onClick={e => e.stopPropagation()}>
+                <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                  <button className={`btn ${v.pinned ? 'btn-primary' : 'btn-secondary'}`} style={smallBtn} onClick={() => patch(v, { pinned: !v.pinned })}
+                    title={v.pinned ? 'Fixo: vai em todos os textos. Clique para soltar' : 'Fixar: vai em todos os textos, qualquer que seja o assunto'}><Pin size={13} /></button>
+                  <button className="btn btn-secondary" style={smallBtn} title="Apagar" onClick={() => remove(v)}><Trash2 size={13} /></button>
+                </div>
+              </td>
+            </tr>
+            {open === v.id && v.kind !== 'position' && (
+              <tr style={{ borderBottom: '1px solid var(--border)' }}><td colSpan={3} style={{ ...td, background: 'rgba(0,0,0,0.15)' }}>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  <input defaultValue={v.topic || ''} placeholder="Tema" style={{ ...field, flex: '0 1 220px', padding: '0.4rem 0.6rem' }} onBlur={e => e.target.value !== (v.topic || '') && patch(v, { topic: e.target.value })} />
+                  <input defaultValue={v.stance || ''} placeholder="Posição que este texto toma" style={{ ...field, flex: '1 1 300px', padding: '0.4rem 0.6rem' }} onBlur={e => e.target.value !== (v.stance || '') && patch(v, { stance: e.target.value })} />
+                </div>
+                {v.context && <div style={{ ...muted, fontSize: '0.78rem', marginTop: 6, ...clamp(4) }}>em resposta a: {v.context}</div>}
+                {v.post_url && <a href={v.post_url} target="_blank" rel="noreferrer" style={{ color: 'var(--accent)', fontSize: '0.8rem' }}>abrir o post</a>}
+              </td></tr>
+            )}
+          </React.Fragment>
+        ))}
+      </DenseTable>
+      {!items.length && <p style={muted}>Nada aqui ainda. Comentários e respostas que você envia pelo LinkedIn (com a extensão), posts publicados e mensagens marcadas como enviadas entram sozinhos.</p>}
+    </>
   );
 };
 
@@ -616,6 +879,8 @@ const MetricsTab = () => {
 const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
   { id: 'posts', label: 'Posts', icon: <Megaphone size={16} /> },
   { id: 'prospects', label: 'Prospecção', icon: <Users size={16} /> },
+  { id: 'networking', label: 'Networking', icon: <Compass size={16} /> },
+  { id: 'voice', label: 'Linha de pensamento', icon: <Brain size={16} /> },
   { id: 'metrics', label: 'Métricas', icon: <BarChart3 size={16} /> },
 ];
 
@@ -655,6 +920,8 @@ const LinkedInCopilot = () => {
       <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
         {tab === 'posts' && <PostsTab connected={!!status?.connected} initial={postsSub} />}
         {tab === 'prospects' && <ProspectsTab />}
+        {tab === 'networking' && <NetworkingTab />}
+        {tab === 'voice' && <VoiceTab />}
         {tab === 'metrics' && <MetricsTab />}
       </div>
     </div>

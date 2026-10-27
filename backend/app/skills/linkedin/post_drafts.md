@@ -63,6 +63,8 @@ WRITING RULES:
 
 {{ writing_style("post") }}
 
+{{ line_of_thought((topic or "") ~ " " ~ (pillar or "") ~ " " ~ (source_notes or "") ~ " " ~ (inspiration.post_text if inspiration else "")) }}
+
 CANDIDATE KNOWLEDGE BASE:
 {% include 'common/user_context.md' %}
 

@@ -48,9 +48,11 @@ RULES:
 
 {{ writing_style("comment") }}
 
+{{ line_of_thought(post_text ~ " " ~ target_text ~ " " ~ (instruction or "")) }}
+
 KNOWLEDGE BASE:
 {% include 'common/user_context.md' %}
 
 {% include 'common/output_format.md' %}
 Return JSON:
-{"kind": "continue|close", "reason": "one short sentence on why", "reply": "reply text"}
+{"kind": "continue|close", "reason": "one short sentence on why", "reply": "reply text", "topic": "the subject in 2–5 words", "stance": "the position the reply takes, one sentence (empty for a plain thank-you)"}

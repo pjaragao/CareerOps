@@ -53,6 +53,11 @@ async def _auto_drafts():
 
 @app.on_event("startup")
 async def start_scheduler():
+    try:
+        from app.services.linkedin_voice_service import ensure_schema
+        await asyncio.to_thread(ensure_schema)   # migrations_v12: line of thought and networking plans
+    except Exception as e:
+        logging.getLogger("linkedin_copilot").warning("migrations_v12 not applied: %s", e)
     app.state.linkedin_scheduler = asyncio.create_task(_publish_scheduled_posts())
     app.state.linkedin_drafts = asyncio.create_task(_auto_drafts())
 

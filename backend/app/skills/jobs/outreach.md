@@ -15,4 +15,6 @@ Job Description: {{ job_description }}
 
 {{ writing_style("message") }}
 
+{{ line_of_thought(job_title ~ " " ~ company ~ " " ~ job_description[:1500]) }}
+
 Return ONLY the message text.
