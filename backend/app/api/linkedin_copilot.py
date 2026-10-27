@@ -259,7 +259,11 @@ class ProspectUpdate(BaseModel):
 
 @router.get("/prospects")
 async def list_prospects(status: Optional[str] = None):
-    return Copilot.list_prospects(status)
+    data = Copilot.list_prospects(status)
+    ties = NetworkingService.job_ties(data["items"])   # people at the companies of your jobs: they get "Mensagem"
+    for p in data["items"]:
+        p["jobs"] = ties.get(p["id"], [])
+    return data
 
 
 @router.post("/prospects")
@@ -328,7 +332,7 @@ class MessageSentIn(BaseModel):
 
 @router.post("/prospects/{item_id}/message")
 async def draft_message(item_id: int, req: MessageIn):
-    """First direct message to a connection, from their profile, the related jobs and your line of thought."""
+    """Message to someone at the company of one of your jobs: a connection note, or a DM once connected."""
     try:
         return _found(await NetworkingService.draft_message(item_id, req.instruction))
     except RuntimeError as e:
@@ -402,7 +406,7 @@ async def consolidate_voice_profile():
 
 # ── Networking from the jobs (companies, people, posts, messages) ────────
 class PlanMark(BaseModel):
-    key: str = Field(..., pattern=r"^(companies|people|posts|messages):\d+$")
+    key: str = Field(..., pattern=r"^(contacts|companies|follow|posts):\d+$")
     done: bool = True
 
 

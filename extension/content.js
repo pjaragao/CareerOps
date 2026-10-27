@@ -296,13 +296,16 @@ function extractCurrentJobData() {
         }
     }
 
-    // 6. Hiring Team
-    const posterEl = document.querySelector('.jobs-poster, .hiring-team-member');
-    const hiringTeam = posterEl ? {
-        name: posterEl.querySelector('.jobs-poster__name, .artdeco-entity-lockup__title')?.innerText?.trim(),
-        title: posterEl.querySelector('.jobs-poster__headline, .artdeco-entity-lockup__subtitle')?.innerText?.trim(),
-        link: posterEl.querySelector('a')?.href
-    } : null;
+    // 6. Hiring Team ("Meet the hiring team"): found by its heading, since LinkedIn's class names change
+    const head = [...document.querySelectorAll('main h1, main h2, main h3, main span, main div, main p')]
+        .find(el => el.children.length <= 1 && /^(meet the hiring team|conhe[cç]a a equipe de contrata[cç][aã]o|equipe de contrata[cç][aã]o)$/i.test((el.innerText || '').trim()));
+    let box = head;
+    for (let k = 0; box && k < 6 && box.parentElement && !box.querySelector('a[href*="/in/"]'); k++) box = box.parentElement;
+    const hiringTeam = box ? [...new Map([...box.querySelectorAll('a[href*="/in/"]')].map(a => {
+        const lines = (a.closest('li, div') || a).innerText.split('\n').map(t => t.trim()).filter(t => t && !/^(·|\d(st|nd|rd|º)|job poster|message|mensagem|connect|conectar|•)/i.test(t));
+        const name = ((a.innerText || '').trim().split('\n')[0] || lines[0] || '').replace(/\s*(verified profile|perfil verificado).*$/i, '');
+        return [a.href.split('?')[0], { name, title: lines.find(t => t !== name && !t.startsWith(name)) || '', link: a.href.split('?')[0] }];
+    }).filter(([, p]) => p.name)).values()].slice(0, 5) : [];
 
     return { linkedin_job_id, url: finalUrl, title, company, location, description, hiringTeam, timestamp: new Date().toISOString() };
 }

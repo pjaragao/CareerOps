@@ -559,9 +559,10 @@ const ProspectRow = ({ p, onUpdate }: { p: Prospect; onUpdate: (id: number, patc
             <a className="btn btn-primary" style={{ ...smallBtn, whiteSpace: 'nowrap' }} href={connectUrl} target="_blank" rel="noreferrer"
               title="Abre o perfil e a extensão envia o convite sem nota"><UserPlus size={13} /> Conectar</a>
           )}
-          {(p.status === 'accepted' || p.status === 'replied') && (
+          {!!p.jobs?.length && p.status !== 'skipped' && (
             <button className={`btn ${p.message_sent_at ? 'btn-secondary' : 'btn-primary'}`} style={{ ...smallBtn, whiteSpace: 'nowrap' }} onClick={() => setWriting(true)}
-              title={p.message_sent_at ? `Mensagem enviada em ${new Date(p.message_sent_at).toLocaleDateString()}` : 'Primeira mensagem depois do aceite'}>
+              title={p.message_sent_at ? `Mensagem enviada em ${new Date(p.message_sent_at).toLocaleDateString()}`
+                : `Trabalha na empresa da vaga ${p.jobs[0].job_title}: ${p.status === 'to_contact' ? 'nota para o convite' : 'mensagem se colocando à disposição'}`}>
               <MessageSquare size={13} /> {p.message_sent_at ? 'Enviada' : 'Mensagem'}
             </button>
           )}
@@ -589,9 +590,11 @@ const MessageModal = ({ p, initial, onClose, onSent }: { p: Prospect; initial?: 
   useEffect(() => { if (firstDraft) request(); }, [firstDraft, request]);
   const sent = async () => { await svc.messageSent(p.id, { text, ...meta }); onSent(); };
   return (
-    <Modal title={`Mensagem para ${p.name || 'a conexão'}`} onClose={onClose}>
+    <Modal title={`${p.status === 'to_contact' ? 'Nota de convite' : 'Mensagem'} para ${p.name || 'a pessoa'}`} onClose={onClose}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10, textAlign: 'left' }}>
         <div style={muted}>{[p.headline, p.company].filter(Boolean).join(' · ')}</div>
+        {!!p.jobs?.length && <div style={{ ...muted, fontSize: '0.8rem' }}>vaga: {p.jobs.map(j => `${j.job_title} · ${j.company}`).join(' | ')}</div>}
+        {p.status === 'to_contact' && <div style={{ fontSize: '0.8rem', color: '#ffb020' }}>Ainda não é conexão: isto é a nota do convite (até 300 caracteres). No LinkedIn, use Conectar → Adicionar nota.</div>}
         <textarea value={busy ? 'Escrevendo…' : text} onChange={e => setText(e.target.value)} rows={7} style={field} disabled={busy} />
         <div style={{ display: 'flex', gap: 6 }}>
           <input value={instruction} onChange={e => setInstruction(e.target.value)} placeholder="Refazer com um pedido (ex.: cite a vaga, pergunte sobre o time)"
@@ -635,92 +638,88 @@ const NetworkingTab = () => {
   const [plan, setPlan] = useState<NetworkingPlan | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [prospects, setProspects] = useState<Prospect[]>([]);
-  const [writing, setWriting] = useState<{ p: Prospect; text: string; key: string } | null>(null);
-  useEffect(() => {
-    svc.networking().then(setPlan).finally(() => setLoaded(true));
-    svc.prospects().then(d => setProspects(d.items)).catch(() => setProspects([]));
-  }, []);
+  useEffect(() => { svc.networking().then(setPlan).finally(() => setLoaded(true)); }, []);
   const generate = async () => {
     setBusy(true);
     try { setPlan(await svc.generateNetworking()); } catch (e) { alert(errMsg(e)); } finally { setBusy(false); }
   };
   const done = (key: string) => !!plan?.done.includes(key);
   const toggle = async (key: string) => { if (plan) setPlan(await svc.markNetworking(plan.id, key, !done(key))); };
-  const jobLabel = (id: number | null) => {
-    const j = plan?.jobs.find(x => x.id === id);
-    return j ? `${j.job_title} · ${j.company}` : null;
-  };
+  const job = (id: number | null) => plan?.jobs.find(x => x.id === id);
+  const jobLabel = (id: number | null) => { const j = job(id); return j ? `${j.job_title} · ${j.company}` : null; };
   const p = plan?.plan;
+  const contacts = p?.contacts || [];
+  const pursued = (plan?.jobs || []).filter(j => ['applied', 'interviewing', 'offer'].includes(j.status));
+  const linkBtn = (href: string, text: string, title?: string) => (
+    <a className="btn btn-secondary" style={{ ...smallBtn, whiteSpace: 'nowrap' }} href={href} target="_blank" rel="noreferrer" title={title}><ExternalLink size={13} /> {text}</a>
+  );
   return (
     <>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         <span style={muted}>
-          {plan ? <>Plano de {new Date(plan.created_at).toLocaleString()} a partir de {plan.jobs.length} vagas
-            ({plan.jobs.filter(j => ['applied', 'interviewing', 'offer'].includes(j.status)).length} em andamento).</>
-            : 'Empresas para seguir, pessoas para conectar, conversas para entrar e mensagens, a partir das vagas do sistema.'}
-          {' '}Tudo é link de busca ou texto para copiar: você age no LinkedIn.
+          {plan ? <>Plano de {new Date(plan.created_at).toLocaleString()} para {pursued.length} vaga(s) em andamento.</>
+            : 'Quem pode te contratar nas vagas em que você se candidatou, com nota de convite e mensagem prontas.'}
+          {' '}Abra a vaga no LinkedIn e clique em 📥 CareerOps para trazer o "Meet the hiring team": aí os contatos vêm com nome e perfil.
         </span>
         <button className="btn btn-primary" style={{ ...smallBtn, whiteSpace: 'nowrap' }} disabled={busy} onClick={generate}>
           <Sparkles size={13} /> {busy ? 'Gerando (≈1 min)…' : plan ? 'Gerar novo plano' : 'Gerar plano'}
         </button>
       </div>
       {loaded && !plan && !busy && <p style={muted}>Nenhum plano ainda.</p>}
-      {p && <>
-        <PlanSection title="Empresas para seguir" hint="abra a busca e clique em Seguir na página da empresa" count={p.companies.length}>
-          {p.companies.map((c, i) => (
-            <PlanRow key={i} done={done(`companies:${i}`)} onToggle={() => toggle(`companies:${i}`)} actions={<a className="btn btn-secondary" style={{ ...smallBtn, whiteSpace: 'nowrap' }} href={c.url} target="_blank" rel="noreferrer"><ExternalLink size={13} /> Abrir</a>}>
-              <div style={{ display: 'flex', gap: 6, alignItems: 'baseline' }}><strong>{c.company}</strong>{marketChip(c.market)}{c.similar && <span style={chip('#c38bff')}>similar</span>}</div>
-              {c.why && <div style={{ ...muted, ...clamp(2) }}>{c.why}</div>}
-              {!!c.job_ids.length && <div style={{ ...muted, fontSize: '0.75rem', opacity: 0.7, ...clamp(1) }}>{c.job_ids.map(jobLabel).filter(Boolean).join(' · ')}</div>}
-            </PlanRow>
-          ))}
-        </PlanSection>
-        <PlanSection title="Pessoas para conectar e seguir" hint="na busca, use ⭐ Avaliar pessoas da página: os bons perfis entram em Prospecção" count={p.people.length}>
-          {p.people.map((x, i) => (
-            <PlanRow key={i} done={done(`people:${i}`)} onToggle={() => toggle(`people:${i}`)} actions={<a className="btn btn-secondary" style={{ ...smallBtn, whiteSpace: 'nowrap' }} href={x.url} target="_blank" rel="noreferrer"><ExternalLink size={13} /> Buscar</a>}>
+      {p && !p.contacts && <p style={muted}>Este plano é do formato antigo: gere um novo.</p>}
+      {p && p.contacts && <>
+        <PlanSection title="Contatos de contratação" hint="convide com a nota; depois do aceite, mande a mensagem" count={contacts.length}>
+          {contacts.map((c, i) => (
+            <PlanRow key={i} done={done(`contacts:${i}`)} onToggle={() => toggle(`contacts:${i}`)} actions={<>
+              <button className="btn btn-secondary" style={{ ...smallBtn, whiteSpace: 'nowrap' }} onClick={() => copy(c.note)} title="Copiar a nota do convite (até 300 caracteres)"><Copy size={13} /> Nota</button>
+              <button className="btn btn-secondary" style={{ ...smallBtn, whiteSpace: 'nowrap' }} onClick={() => copy(c.message)} title="Copiar a mensagem para depois do aceite"><Copy size={13} /> Mensagem</button>
+              {c.profile_url ? linkBtn(c.profile_url, 'Perfil') : linkBtn(c.url, 'Buscar', `Busca: ${c.search}`)}
+            </>}>
               <div style={{ display: 'flex', gap: 6, alignItems: 'baseline', flexWrap: 'wrap' }}>
-                <span style={chip(x.action === 'follow' ? '#ffb020' : '#00d4aa')}>{x.action === 'follow' ? 'seguir' : 'conectar'}</span>
-                <strong>{x.role}</strong>{x.company && <span style={muted}>· {x.company}</span>}{marketChip(x.market)}
+                <span style={chip(c.profile_url ? '#00d4aa' : '#9aa4b2')}>{c.profile_url ? 'pessoa' : 'cargo'}</span>
+                <strong style={{ whiteSpace: 'nowrap' }}>{c.name || c.role}</strong>
+                {c.name && c.role && <span style={{ ...muted, ...clamp(1) }}>{c.role}</span>}
+                {c.prospect_status && <span style={chip(STATUS_COLOR[c.prospect_status])}>{STATUS_LABEL[c.prospect_status] || c.prospect_status}</span>}
               </div>
-              {x.why && <div style={{ ...muted, ...clamp(2) }}>{x.why}</div>}
-              <div style={{ ...muted, fontSize: '0.75rem', opacity: 0.7 }}>busca: {x.search}{jobLabel(x.job_id) ? ` · vaga: ${jobLabel(x.job_id)}` : ''}</div>
+              <div style={{ ...muted, fontSize: '0.78rem' }}>vaga: {jobLabel(c.job_id) || c.company}{c.why ? ` · ${c.why}` : ''}</div>
+              <div style={{ fontSize: '0.85rem', marginTop: 4 }}><span style={muted}>Nota: </span>{c.note}</div>
+              <details style={{ fontSize: '0.85rem' }}><summary style={{ ...muted, cursor: 'pointer' }}>Mensagem depois do aceite</summary>
+                <div style={{ whiteSpace: 'pre-wrap', marginTop: 4 }}>{c.message}</div></details>
             </PlanRow>
           ))}
         </PlanSection>
-        <PlanSection title="Posts para interagir" hint="posts recentes do tema; use ✨ Comentário IA com o ângulo abaixo" count={p.posts.length}>
+        <PlanSection title="Posts para interagir" hint="atividade do time de contratação e posts que citam a empresa; comente com o ângulo" count={p.posts.length}>
           {p.posts.map((x, i) => (
             <PlanRow key={i} done={done(`posts:${i}`)} onToggle={() => toggle(`posts:${i}`)} actions={<>
               {x.angle && <button className="btn btn-secondary" style={smallBtn} title="Copiar o ângulo (cole como pedido no ✨ Comentário IA)" onClick={() => copy(x.angle || '')}><Copy size={13} /></button>}
-              <a className="btn btn-secondary" style={{ ...smallBtn, whiteSpace: 'nowrap' }} href={x.url} target="_blank" rel="noreferrer"><ExternalLink size={13} /> Posts</a>
+              {x.people.map(pp => <React.Fragment key={pp.url}>{linkBtn(pp.url, pp.name.split(' ')[0], `Posts recentes de ${pp.name}`)}</React.Fragment>)}
+              {linkBtn(x.url, 'Empresa', `Posts recentes que citam ${x.company}`)}
             </>}>
-              <div style={{ display: 'flex', gap: 6, alignItems: 'baseline' }}><strong>{x.topic}</strong>{marketChip(x.market)}</div>
+              <div style={{ display: 'flex', gap: 6, alignItems: 'baseline' }}><strong>{x.company}</strong>{x.job_id && <span style={{ ...muted, ...clamp(1) }}>{job(x.job_id)?.job_title}</span>}</div>
               {x.angle && <div style={{ fontSize: '0.85rem', ...clamp(3) }}>{x.angle}</div>}
               {x.why && <div style={{ ...muted, fontSize: '0.78rem', opacity: 0.75, ...clamp(1) }}>{x.why}</div>}
             </PlanRow>
           ))}
         </PlanSection>
-        <PlanSection title="Mensagens para conexões" hint="para quem aceitou e ainda não recebeu mensagem" count={p.messages.length}>
-          {p.messages.map((m, i) => {
-            const person = prospects.find(x => x.id === m.prospect_id);
-            return (
-              <PlanRow key={i} done={done(`messages:${i}`)} onToggle={() => toggle(`messages:${i}`)} actions={<>
-                <button className="btn btn-secondary" style={smallBtn} onClick={() => copy(m.text)}><Copy size={13} /></button>
-                {person && <button className="btn btn-secondary" style={{ ...smallBtn, whiteSpace: 'nowrap' }} onClick={() => setWriting({ p: person, text: m.text, key: `messages:${i}` })}>Editar</button>}
-              </>}>
-                <div style={{ display: 'flex', gap: 6, alignItems: 'baseline' }}>
-                  {person?.profile_url ? <a href={person.profile_url} target="_blank" rel="noreferrer" style={{ color: '#fff', fontWeight: 700, whiteSpace: 'nowrap' }}>{m.name}</a> : <strong style={{ whiteSpace: 'nowrap' }}>{m.name}</strong>}
-                  <span style={{ ...muted, ...clamp(1) }}>{m.headline}</span>
-                </div>
-                <div style={{ fontSize: '0.85rem', whiteSpace: 'pre-wrap' }}>{m.text}</div>
-                {m.why && <div style={{ ...muted, fontSize: '0.78rem', opacity: 0.75 }}>{m.why}</div>}
-              </PlanRow>
-            );
-          })}
+        <PlanSection title="Empresas para seguir" hint="abra a busca e clique em Seguir na página da empresa" count={p.companies.length}>
+          {p.companies.map((c, i) => (
+            <PlanRow key={i} done={done(`companies:${i}`)} onToggle={() => toggle(`companies:${i}`)} actions={linkBtn(c.url, 'Abrir')}>
+              <div style={{ display: 'flex', gap: 6, alignItems: 'baseline' }}><strong>{c.company}</strong>{marketChip(c.market)}{c.similar && <span style={chip('#c38bff')}>similar</span>}</div>
+              {c.why && <div style={{ ...muted, ...clamp(2) }}>{c.why}</div>}
+              {!!c.job_ids.length && <div style={{ ...muted, fontSize: '0.75rem', opacity: 0.7, ...clamp(1) }}>{[...new Set(c.job_ids.map(jobLabel).filter(Boolean))].join(' · ')}</div>}
+            </PlanRow>
+          ))}
+        </PlanSection>
+        <PlanSection title="Pessoas para seguir" hint="referências nos temas das vagas" count={(p.follow || []).length}>
+          {(p.follow || []).map((x, i) => (
+            <PlanRow key={i} done={done(`follow:${i}`)} onToggle={() => toggle(`follow:${i}`)} actions={linkBtn(x.url, 'Buscar')}>
+              <div style={{ display: 'flex', gap: 6, alignItems: 'baseline', flexWrap: 'wrap' }}><strong>{x.role}</strong>{marketChip(x.market)}</div>
+              {x.why && <div style={{ ...muted, ...clamp(2) }}>{x.why}</div>}
+              <div style={{ ...muted, fontSize: '0.75rem', opacity: 0.7 }}>busca: {x.search}</div>
+            </PlanRow>
+          ))}
         </PlanSection>
       </>}
-      {writing && <MessageModal p={writing.p} initial={writing.text} onClose={() => setWriting(null)}
-        onSent={async () => { const key = writing.key; setWriting(null); if (plan && !done(key)) setPlan(await svc.markNetworking(plan.id, key, true)); }} />}
     </>
   );
 };

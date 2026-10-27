@@ -48,6 +48,7 @@ export interface Prospect {
   message_draft: string | null;
   message_sent_at: string | null;
   status: ProspectStatus;
+  jobs?: { id: number; job_title: string; company: string; status: string }[];   // jobs at their company
 }
 
 export type VoiceKind = 'comment' | 'reply' | 'message' | 'post' | 'position';
@@ -77,16 +78,21 @@ export interface VoiceData {
 }
 
 export interface PlanCompany { company: string; job_ids: number[]; market: Market | null; similar: boolean; why: string | null; url: string }
-export interface PlanPerson { action: 'connect' | 'follow'; role: string | null; company: string | null; search: string; market: Market | null; job_id: number | null; why: string | null; url: string }
-export interface PlanPost { topic: string; search: string; market: Market | null; angle: string | null; why: string | null; url: string }
-export interface PlanMessage { prospect_id: number; name: string | null; headline: string | null; job_id: number | null; text: string; why: string | null }
+// Someone who could hire you for a job you applied to: a real person (hiring team / prospect) or the likely role
+export interface PlanContact {
+  job_id: number; company: string; name: string | null; role: string | null; why: string | null;
+  note: string; message: string; profile_url: string | null; prospect_id: number | null; prospect_status: ProspectStatus | null;
+  search: string | null; url: string;
+}
+export interface PlanFollow { role: string | null; search: string; market: Market | null; job_id: number | null; why: string | null; url: string }
+export interface PlanPost { company: string; job_id: number | null; angle: string | null; why: string | null; people: { name: string; url: string }[]; url: string }
 
 export interface NetworkingPlan {
   id: number;
   created_at: string;
-  done: string[];           // "people:3"…
+  done: string[];           // "contacts:3"…
   jobs: { id: number; job_title: string; company: string; status: string }[];
-  plan: { companies: PlanCompany[]; people: PlanPerson[]; posts: PlanPost[]; messages: PlanMessage[] };
+  plan: { contacts?: PlanContact[]; companies: PlanCompany[]; follow?: PlanFollow[]; posts: PlanPost[] };
 }
 
 export interface Inspiration {

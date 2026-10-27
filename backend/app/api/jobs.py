@@ -99,7 +99,14 @@ async def import_job_extension(request: Request):
                 conn.commit()
                 conn.close()
             except: pass
-            
+            # "Meet the hiring team" on the job page: stored on the job and added to the prospects
+            if data.get("hiringTeam"):
+                try:
+                    from app.services.linkedin_networking_service import NetworkingService
+                    NetworkingService.save_hiring_team(data.get("linkedin_job_id"), data.get("url"), data["hiringTeam"])
+                except Exception as e:
+                    print(f"DEBUG: hiring team not saved: {e}")
+
         return {"ok": success}
     except Exception as e:
         print(f"DEBUG: Job import failed: {e}")

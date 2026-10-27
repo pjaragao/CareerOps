@@ -1076,6 +1076,30 @@
         };
     }
 
+    // "Meet the hiring team" / "Conheça a equipe de contratação": the people who posted or own the job, when LinkedIn
+    // shows them. Found by the heading text (class names change), then every profile link inside that section.
+    const HIRING_HEAD = /^(meet the hiring team|conhe[cç]a a equipe de contrata[cç][aã]o|equipe de contrata[cç][aã]o|job poster|anunciante da vaga)$/i;
+    function hiringTeamFromPage() {
+        const head = [...document.querySelectorAll('main h1, main h2, main h3, main h4, main span, main div, main p')]
+            .find((el) => el.children.length <= 1 && HIRING_HEAD.test(clean(el.innerText || '')));
+        if (!head) return [];
+        let box = head;
+        for (let k = 0; k < 6 && box.parentElement && !box.querySelector('a[href*="/in/"]'); k++) box = box.parentElement;
+        const people = new Map();
+        for (const a of box.querySelectorAll('a[href*="/in/"]')) {
+            const link = a.href.split('?')[0].replace(/\/$/, '');
+            const lines = clean(a.innerText || '').split('\n').map((s) => s.trim()).filter(Boolean);
+            // the card around the link holds the name, the headline and badges ("2nd", "Job poster")
+            const card = a.closest('li, div') || a;
+            const all = (card.innerText || '').split('\n').map((s) => s.trim()).filter((s) => s && !/^(·|\d(st|nd|rd|º)|job poster|anunciante da vaga|message|mensagem|connect|conectar|verified|•)/i.test(s));
+            const name = (lines[0] || all[0] || '').replace(/\s*(verified profile|perfil verificado).*$/i, '');
+            if (!name || people.has(link)) continue;
+            const title = all.find((s) => s !== name && !s.startsWith(name) && s.length > 3) || '';
+            people.set(link, { name, title, link });
+        }
+        return [...people.values()].slice(0, 5);
+    }
+
     const jobState = new Map();   // job id -> imported in this tab
     const setJobButtons = (id, text) => document.querySelectorAll(`.careerops-jobbtn[data-job="${id}"]`).forEach((b) => { b.textContent = text; });
 
@@ -1092,6 +1116,7 @@
         const res = await backend('POST', '/jobs/import-extension', {
             title: job.title, company: job.company, location: job.location, description: job.description,
             url: `https://www.linkedin.com/jobs/view/${id}/`, linkedin_job_id: id, status: 'new',
+            hiringTeam: hiringTeamFromPage(),
         });
         if (res.ok) jobState.set(id, true);
         setJobButtons(id, res.ok ? '✓ No CareerOps' : '📥 CareerOps');
