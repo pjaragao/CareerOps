@@ -1197,6 +1197,119 @@
         return true;
     });
 
+    // ── 5. Prospect check: who accepted / replied (reads two lists, opens no profile, clicks nothing on people) ──
+    // Started by <connections page>#careerops-check (from the app, the popup or the 12 h alarm in background.js).
+    // Step 1 reads My Network → Connections (newest first), step 2 reads the Messaging list; the backend matches both
+    // against the invited prospects. The step survives the page change in sessionStorage (same tab only).
+    const CHECK_KEY = 'careeropsProspectCheck';
+    const CONNECTIONS_URL = 'https://www.linkedin.com/mynetwork/invite-connect/connections/';
+    const checkState = () => { try { return JSON.parse(sessionStorage.getItem(CHECK_KEY) || 'null'); } catch (e) { return null; } };
+    const setCheckState = (v) => { try { v ? sessionStorage.setItem(CHECK_KEY, JSON.stringify(v)) : sessionStorage.removeItem(CHECK_KEY); } catch (e) { /* private mode */ } };
+    let checkPanel = null;
+    const checkStatus = (text, color = '#555') => {
+        if (!checkPanel) {
+            checkPanel = card('CareerOps · verificar prospecção');
+            checkPanel.style.cssText += ';position:fixed;right:16px;top:72px;width:340px;margin:0;z-index:2147483646';
+            document.documentElement.appendChild(checkPanel);
+            checkPanel.__status = line(checkPanel, '');
+        }
+        checkPanel.__status.textContent = text;
+        checkPanel.__status.style.color = color;
+    };
+
+    // Lists load more as you scroll (or with "Show more results"): a few rounds, stopping when nothing new comes
+    async function loadMore(count, scroller, rounds = 6) {
+        let last = -1;
+        for (let i = 0; i < rounds && count() !== last; i++) {
+            last = count();
+            (scroller || document.scrollingElement).scrollTop = (scroller || document.scrollingElement).scrollHeight;
+            const more = [...document.querySelectorAll('main button')].find((b) => b.offsetParent !== null
+                && /^(mostrar mais resultados|exibir mais resultados|show more results|load more|carregar mais)$/i.test(label(b)));
+            if (more) more.click();
+            await wait(1800);
+        }
+    }
+
+    function readConnections() {
+        const seen = new Map();
+        document.querySelectorAll('main a[href*="/in/"]').forEach((a) => {
+            const m = a.href.match(/https:\/\/www\.linkedin\.com\/in\/[^/?#]+/);
+            if (!m) return;
+            const name = clean(a.innerText).split('\n').map((s) => s.trim()).find((s) => s && !/^(membro do linkedin|linkedin member)$/i.test(s));
+            if (name && (!seen.get(m[0]) || !seen.get(m[0]).name)) seen.set(m[0], { profile_url: m[0], name: name.slice(0, 200) });
+            else if (!seen.has(m[0])) seen.set(m[0], { profile_url: m[0], name: null });
+        });
+        return [...seen.values()];
+    }
+
+    const CONVO = '.msg-conversation-listitem, .msg-conversations-container__convo-item, li[class*="conversation-listitem"]';
+    function readConversations() {
+        return [...document.querySelectorAll(CONVO)].filter((li) => !li.parentElement.closest(CONVO)).map((li) => {
+            const q = (sel) => clean((li.querySelector(sel) || {}).innerText || '');
+            const name = q('.msg-conversation-listitem__participant-names, .msg-conversation-card__participant-names, h3') || clean(li.innerText).split('\n')[0];
+            const snippet = q('.msg-conversation-card__message-snippet, [class*="message-snippet"], p');
+            const link = li.querySelector('a[href*="/in/"]');
+            return {
+                name: name.slice(0, 200),
+                profile_url: link ? (link.href.match(/https:\/\/www\.linkedin\.com\/in\/[^/?#]+/) || [null])[0] : null,
+                // the list shows the last message: "Você: …" / "You: …" when it was yours
+                replied: !!snippet && !/^\s*(voc[eê]|you)\s*(:|enviou|sent)/i.test(snippet),
+            };
+        }).filter((c) => c.name && !c.name.includes(','));   // group conversations: no single person to match
+    }
+
+    async function runProspectCheck() {
+        const state = checkState();
+        if (!state) return;
+        if (state.step === 'connections') {
+            if (!/^\/mynetwork\/invite-connect\/connections/.test(location.pathname)) return;
+            checkStatus('Lendo suas conexões mais recentes…');
+            await waitFor(() => document.querySelector('main a[href*="/in/"]'), 20000);
+            await loadMore(() => document.querySelectorAll('main a[href*="/in/"]').length);
+            const connections = readConnections();
+            setCheckState({ ...state, step: 'messaging', connections });
+            checkStatus(`${connections.length} conexões lidas. Abrindo as mensagens…`);
+            await wait(800);
+            location.href = 'https://www.linkedin.com/messaging/';
+            return;
+        }
+        if (state.step !== 'messaging' || !/^\/messaging/.test(location.pathname)) return;
+        setCheckState(null);   // whatever happens next, the check ends on this page
+        checkStatus('Lendo a lista de conversas…');
+        const first = await waitFor(() => document.querySelector(CONVO), 20000);
+        if (first) {
+            let scroller = first.parentElement;
+            while (scroller && scroller !== document.body && scroller.scrollHeight <= scroller.clientHeight + 4) scroller = scroller.parentElement;
+            await loadMore(() => document.querySelectorAll(CONVO).length, scroller, 3);
+        }
+        const conversations = first ? readConversations() : [];
+        const res = await api('POST', '/prospects/check', { connections: state.connections || [], conversations });
+        let summary;
+        if (!res.ok) {
+            summary = errText(res);
+            checkStatus(summary, '#d63031');
+        } else {
+            const d = res.data;
+            const names = (list) => list.map((p) => p.name || '?').join(', ');
+            summary = `${d.accepted.length} aceitaram, ${d.replied.length} responderam · ${d.waiting} convite(s) ainda pendentes`;
+            checkStatus(summary, d.accepted.length || d.replied.length ? '#00b894' : '#555');
+            if (d.accepted.length) line(checkPanel, `Aceitaram: ${names(d.accepted)}`);
+            if (d.replied.length) line(checkPanel, `Responderam: ${names(d.replied)}`);
+            if (!first) line(checkPanel, 'Não reconheci a lista de mensagens (o LinkedIn pode ter mudado): só as conexões foram verificadas.', '#b7791f');
+            line(checkPanel, `Lidos: ${d.read.connections} conexões, ${d.read.conversations} conversas.`, '#999');
+        }
+        try { chrome.runtime.sendMessage({ action: 'prospectCheckDone', ok: res.ok, result: res.data, summary, background: !!state.background }); } catch (e) { /* extension reloaded */ }
+    }
+
+    function startProspectCheck() {
+        const m = location.hash.match(/careerops-check(-bg)?/);
+        if (!m) return;
+        history.replaceState(null, '', location.pathname + location.search);
+        setCheckState({ step: 'connections', background: !!m[1] });
+        if (!/^\/mynetwork\/invite-connect\/connections/.test(location.pathname)) { location.href = CONNECTIONS_URL; return; }
+        runProspectCheck();
+    }
+
     // ── Floating buttons, re-evaluated as LinkedIn navigates (single-page app) ─────────────────────────
     const fab = document.createElement('div');
     fab.style.cssText = 'position:fixed;right:16px;bottom:16px;z-index:2147483645;display:flex;gap:6px';
@@ -1246,4 +1359,5 @@
         .observe(document.documentElement, { childList: true, subtree: true });
     refresh();
     autoConnectFromApp();
+    if (/careerops-check/.test(location.hash)) startProspectCheck(); else runProspectCheck();
 })();

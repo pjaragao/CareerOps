@@ -8,6 +8,7 @@ batch automation breaks LinkedIn's User Agreement and gets accounts restricted.
 import asyncio
 import logging
 import re
+import unicodedata
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 from zoneinfo import ZoneInfo
@@ -27,6 +28,17 @@ WEEKLY_PROSPECTS = 20    # weekly connection-request target
 AUTO_DRAFTS = 2          # drafts kept ready from saved themes (see auto_draft)
 # badges LinkedIn glues to names in the page text ("Ana Lima Verified Profile 3rd+")
 _BADGES = re.compile(r"(\s*(•.*|verified profile|premium profile|perfil verificado|perfil premium|author|autor|you|você|1st|2nd|3rd\+?|[123]º\+?))+\s*$", re.I)
+
+
+def _name_key(name: Optional[str]) -> str:
+    """'José  da Silva, PhD 🚀' → 'jose da silva phd': for matching the same person across LinkedIn pages."""
+    plain = unicodedata.normalize("NFKD", _BADGES.sub("", (name or "").strip())).encode("ascii", "ignore").decode()
+    return " ".join(re.sub(r"[^a-z ]+", " ", plain.lower()).split())
+
+
+def _profile_slug(url: Optional[str]) -> str:
+    m = re.search(r"/in/([^/?#]+)", url or "")
+    return m.group(1).lower() if m else ""
 
 
 def _theme_market(theme: dict) -> str:
@@ -430,6 +442,48 @@ class LinkedInCopilotService:
                SET status = COALESCE(%s, status), note_draft = COALESCE(%s, note_draft), notes = COALESCE(%s, notes), updated_at = NOW()
              WHERE id = %s RETURNING *
         """, (status, note_draft[:300] if note_draft else None, notes, item_id))
+
+    @staticmethod
+    def check_prospects(connections: List[Dict[str, Any]], conversations: List[Dict[str, Any]]) -> dict:
+        """Moves invited prospects forward from what the extension read on two LinkedIn lists.
+
+        connections: [{"profile_url", "name"}] from My Network → Connections (newest first): an invited prospect there
+        accepted. conversations: [{"name", "profile_url"?, "replied"}] from Messaging, replied = the last message is
+        theirs: an invited/accepted prospect there replied. Matched by profile slug, else by the full name when only one
+        open prospect has it (search results link to /in/ACoAA… ids, the lists to the vanity slug).
+        """
+        open_rows = _rows("SELECT * FROM public.linkedin_prospects WHERE status IN ('invited', 'accepted')")
+        by_slug = {_profile_slug(r["profile_url"]): r for r in open_rows if _profile_slug(r["profile_url"])}
+        by_name: Dict[str, List[dict]] = {}
+        for r in open_rows:
+            if _name_key(r["name"]):
+                by_name.setdefault(_name_key(r["name"]), []).append(r)
+
+        def match(person: Dict[str, Any]) -> Optional[dict]:
+            row = by_slug.get(_profile_slug(person.get("profile_url")))
+            if row:
+                return row
+            same = by_name.get(_name_key(person.get("name")), [])
+            return same[0] if len(same) == 1 else None
+
+        moved: Dict[int, dict] = {}
+        for person in conversations:
+            row = match(person)
+            if row and person.get("replied") and row["status"] != "replied":
+                moved[row["id"]] = {**row, "status": "replied"}
+        for person in connections:
+            row = match(person)
+            if row and row["status"] == "invited" and row["id"] not in moved:
+                moved[row["id"]] = {**row, "status": "accepted"}
+        for item_id, row in moved.items():
+            LinkedInCopilotService.update_prospect(item_id, row["status"])
+        changed = [{"id": r["id"], "name": r["name"], "status": r["status"]} for r in moved.values()]
+        return {
+            "accepted": [c for c in changed if c["status"] == "accepted"],
+            "replied": [c for c in changed if c["status"] == "replied"],
+            "waiting": sum(1 for r in open_rows if r["status"] == "invited" and r["id"] not in moved),
+            "read": {"connections": len(connections), "conversations": len(conversations)},
+        }
 
     # ── Easy Apply assistant (fills the form; the user reviews and submits) ──
     # Demographic questions are never sent to the AI. Gender is answered only from config/easy_apply.yml (self_identification).

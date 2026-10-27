@@ -288,6 +288,24 @@ async def score_people(req: PeopleBatchIn):
         raise HTTPException(status_code=502, detail=str(e))
 
 
+class SeenPerson(BaseModel):
+    name: Optional[str] = Field(None, max_length=300)
+    profile_url: Optional[str] = None
+    replied: bool = False
+
+
+class ProspectCheckIn(BaseModel):
+    connections: List[SeenPerson] = Field(default_factory=list, max_length=1000)
+    conversations: List[SeenPerson] = Field(default_factory=list, max_length=500)
+
+
+@router.post("/prospects/check")
+async def check_prospects(req: ProspectCheckIn):
+    """Invited prospects found in your connections → accepted; found replying in Messaging → replied.
+    The extension reads those two lists on LinkedIn (no profile is opened, nothing is clicked)."""
+    return Copilot.check_prospects([p.model_dump() for p in req.connections], [p.model_dump() for p in req.conversations])
+
+
 @router.patch("/prospects/{item_id}")
 async def update_prospect(item_id: int, req: ProspectUpdate):
     return _found(Copilot.update_prospect(item_id, req.status, req.note_draft, req.notes))

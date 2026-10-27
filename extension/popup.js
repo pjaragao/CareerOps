@@ -58,6 +58,21 @@ document.addEventListener('DOMContentLoaded', () => {
         if (pros && pros.ok) $('s-invites').textContent = `${pros.data.invited_this_week}/${pros.data.weekly_target}`;
     }
 
+    // ── Prospect check (accepted invites / replies): last result and a manual run ──────────────────
+    const ago = (t) => { const m = Math.round((Date.now() - t) / 60000); return m < 60 ? `há ${m} min` : m < 1440 ? `há ${Math.round(m / 60)} h` : `há ${Math.round(m / 1440)} d`; };
+    async function loadCheck() {
+        const { prospectCheck: c } = await chrome.storage.local.get('prospectCheck');
+        if (c) $('check-text').textContent = `Última verificação ${ago(c.at)}: ${c.summary || '—'}`;
+    }
+    $('check-btn').addEventListener('click', async () => {
+        $('check-btn').disabled = true;
+        const r = await send({ action: 'checkProspects' });
+        $('check-text').textContent = r && r.ok ? 'Verificando numa aba em segundo plano (~1 min)…' : (r && r.detail) || 'Não consegui iniciar';
+        setTimeout(() => { $('check-btn').disabled = false; }, 5000);
+    });
+    loadCheck();
+    chrome.storage.onChanged.addListener((ch) => { if (ch.prospectCheck) loadCheck(); });
+
     // ── What can be done on the current page ─────────────────────────────────────────────────────
     let pageKind = 'other';
     let lockStatus = false;          // keeps the saved-jobs result visible over the 1 s refresh
