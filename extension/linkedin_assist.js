@@ -165,11 +165,59 @@
         return post.getAttribute('data-careerops-urn');
     }
 
+    // ── The post's link: several independent sources, the first that answers wins ──────────────────────────────
+    // 1. the HTML (data-urn / data-id on the card or its wrappers, links to /feed/update/… or /posts/…-activity-…)
+    // 2. React's data (urn_bridge.js)
+    // 3. LinkedIn's own request when you open the comment box or send a comment on that post (urn_bridge.js)
+    // 4. the page address, when the page shows one post (/feed/update/…, /posts/…)
+    // and when all fail, the backend keeps the post and the extension fills the link the next time the post shows up.
+    const URN = /urn:li:(activity|ugcPost|share|groupPost):[\d-]+/;
+    const urnFromValue = (v) => {
+        const m = decodeURIComponent(v || '').match(URN);
+        if (m) return m[0];
+        const a = (v || '').match(/activity[-:](\d{16,})/);
+        return a ? `urn:li:activity:${a[1]}` : null;
+    };
+    function htmlUrn(post) {
+        const els = [post, ...post.querySelectorAll('[data-urn], [data-id], a[href*="urn:li:"], a[href*="/feed/update/"], a[href*="/posts/"]')];
+        for (let a = post.parentElement, k = 0; a && k < 6; a = a.parentElement, k++) els.push(a);
+        for (const el of els) {
+            if (el !== post && el.closest && el.closest('.careerops-card')) continue;
+            for (const attr of ['data-urn', 'data-id', 'href']) {
+                const urn = urnFromValue(el.getAttribute && el.getAttribute(attr));
+                if (urn) return urn;
+            }
+        }
+        return null;
+    }
+    // 3: the post you clicked Comment / Publicar on in the last seconds gets the id LinkedIn sends right after;
+    // two different ids in that window are ambiguous and both are dropped
+    let armed = null;   // { post, at }
+    const ARM = /^(comment|comentar|post|publicar|reply|responder)$/i;
+    document.addEventListener('click', (e) => {
+        const b = e.target.closest && e.target.closest('button, [role="button"]');
+        if (!b || own(b)) return;
+        if (!(ARM.test(label(b)) || ARM.test(b.getAttribute('aria-label') || '') || b.className.includes('comments-comment-box__submit-button'))) return;
+        const post = findPosts().find((p) => p.contains(b));
+        if (post) armed = { post, at: Date.now() };
+    }, true);
+    document.addEventListener('careerops-net-urn', (e) => {
+        if (!armed || Date.now() - armed.at > 4000 || !e.detail) return;
+        const post = armed.post;
+        if (!post.dataset.careeropsNetUrn) post.dataset.careeropsNetUrn = e.detail;
+        else if (post.dataset.careeropsNetUrn !== e.detail && !post.dataset.careeropsNetUrn.startsWith('?')) post.dataset.careeropsNetUrn = '?';
+    });
+    function pageUrn() {
+        if (!/^\/(feed\/update|posts)\//.test(location.pathname) || findPosts().length !== 1) return null;
+        return urnFromValue(location.pathname);
+    }
+    function postUrn(post) {
+        const net = post.dataset.careeropsNetUrn;
+        return htmlUrn(post) || reactUrn(post) || (net && net !== '?' ? net : null) || pageUrn();
+    }
+    const postUrl = (urn) => (urn ? `https://www.linkedin.com/feed/update/${urn}/` : null);
+
     function postInfo(post) {
-        const urnHolder = [post, ...post.querySelectorAll('[data-urn], [data-id], a[href*="urn:li:"]')]
-            .map((el) => (el.getAttribute('data-urn') || el.getAttribute('data-id') || el.getAttribute('href') || ''))
-            .concat(Array.from({ length: 6 }, (_, k) => { let a = post; for (let n = 0; n <= k && a; n++) a = a.parentElement; return a ? (a.getAttribute('data-urn') || '') : ''; }))
-            .map((v) => (v.match(/urn:li:(activity|ugcPost|share):\d+/) || [])[0]).find(Boolean);
         const textEl = post.querySelector('.update-components-text, .feed-shared-inline-show-more-text, .feed-shared-update-v2__description, [data-test-id="main-feed-activity-card__commentary"]');
         const authorEl = post.querySelector('.update-components-actor__title span[aria-hidden="true"], .update-components-actor__name, .feed-shared-actor__name');
         const headlineEl = post.querySelector('.update-components-actor__description span[aria-hidden="true"], .update-components-actor__description');
@@ -207,9 +255,8 @@
             text = lines.join('\n');
         }
         const who = authorEl ? { name: clean(authorEl.innerText).split('\n')[0], headline: headlineEl ? clean(headlineEl.innerText) : null } : actorOf(post);
-        const urn = urnHolder || reactUrn(post);
         return {
-            post_url: urn ? `https://www.linkedin.com/feed/update/${urn}/` : null,
+            post_url: postUrl(postUrn(post)),
             post_text: clean(text).slice(0, 6000),
             author_name: who ? who.name : null,
             author_headline: who && who.headline ? who.headline.slice(0, 300) : null,
@@ -379,11 +426,16 @@
         });
     }
 
-    function saveCommented(post, comment) {
+    async function saveCommented(post, comment) {
         if (post.__careeropsSaved) return;
-        const info = postInfo(post);
-        if (info.post_text.length < 20) return;
         post.__careeropsSaved = true;
+        let info = postInfo(post);
+        if (info.post_text.length < 20) { post.__careeropsSaved = false; return; }
+        // no id yet: the request that sends your comment carries it — give it a moment
+        if (!info.post_url) {
+            const url = await waitFor(() => postUrl(postUrn(post)), 2500);
+            if (url) info = { ...info, post_url: url };
+        }
         const note = comment ? `Você comentou: ${comment}`.slice(0, 2000) : null;
         api('POST', '/inspirations', { ...info, note }).then((res) => {
             if (res.ok) { toast('📌 Tema salvo — você comentou neste post'); harvestPeople(post, info); } else post.__careeropsSaved = false;
@@ -615,8 +667,35 @@
         return g;
     }
 
+    // ── Saved posts that still have no link: filled in when the post shows up again (feed, search, the post page) ──
+    const plainKey = (t) => (t || '').toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '');
+    let missing = { at: 0, items: [], loading: false };
+    async function repairLinks(posts) {
+        if (Date.now() - missing.at > 10 * 60 * 1000 && !missing.loading) {
+            missing.loading = true;
+            const res = await api('GET', '/inspirations/missing-links');
+            missing = { at: Date.now(), items: res.ok ? res.data.items : [], loading: false };
+        }
+        if (!missing.items.length) return;
+        for (const post of posts) {
+            if (post.__careeropsKeyChecked) continue;
+            const key = plainKey((post.innerText || '').slice(0, 3000));   // the whole card: header, author, then the text
+            if (key.length < 20) continue;
+            post.__careeropsKeyChecked = true;
+            const item = missing.items.find((i) => key.includes(i.key));
+            if (!item) continue;
+            const url = postUrl(postUrn(post));
+            if (!url) { post.__careeropsKeyChecked = false; continue; }   // try again later (e.g. after you click Comment)
+            missing.items = missing.items.filter((i) => i !== item);
+            const res = await api('PATCH', `/inspirations/${item.id}/link`, { post_url: url });
+            if (res.ok) toast('🔗 Link do post salvo no CareerOps');
+        }
+    }
+
     function decoratePosts() {
-        findPosts().forEach((post) => {
+        const posts = findPosts();
+        repairLinks(posts);
+        posts.forEach((post) => {
             if (post.closest('.careerops-card')) return;
             const bar = actionBar(post);
             if (bar) {

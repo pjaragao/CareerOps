@@ -181,6 +181,21 @@ async def add_inspiration(req: InspirationIn):
     return Copilot.add_inspiration(req.post_text, req.post_url, req.author_name, req.author_headline, req.note)
 
 
+@router.get("/inspirations/missing-links")
+async def inspirations_missing_links():
+    """Saved posts without a link: the extension fills them in when the post appears on LinkedIn again."""
+    return {"items": Copilot.missing_links()}
+
+
+class PostLinkIn(BaseModel):
+    post_url: str = Field(..., pattern=r"^https://www\.linkedin\.com/feed/update/urn:li:(activity|ugcPost|share|groupPost):[\d-]+/?$")
+
+
+@router.patch("/inspirations/{item_id}/link")
+async def set_inspiration_link(item_id: int, req: PostLinkIn):
+    return _found(Copilot.set_post_link(item_id, req.post_url))
+
+
 @router.delete("/inspirations/{item_id}")
 async def delete_inspiration(item_id: int):
     return _found(Copilot.delete_inspiration(item_id))

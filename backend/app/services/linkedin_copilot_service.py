@@ -62,6 +62,13 @@ def _one_per_person(rows: List[dict]) -> List[dict]:
     return [r for r in rows if id(r) in keep]
 
 
+def _text_key(text: Optional[str]) -> str:
+    """The post's opening, letters and digits only: the same post read on two LinkedIn pages gives the same key
+    (line breaks, "… more", emoji and spacing differ)."""
+    plain = unicodedata.normalize("NFKD", (text or "").lower()).encode("ascii", "ignore").decode()
+    return re.sub(r"[^a-z0-9]+", "", plain)[:60]
+
+
 def _theme_market(theme: dict) -> str:
     return "br" if detect_language(theme.get("post_text") or "") == "Portuguese" else "intl"
 
@@ -266,18 +273,44 @@ class LinkedInCopilotService:
     @staticmethod
     def _save_inspiration(post_text: str, post_url: Optional[str] = None, author_name: Optional[str] = None,
                           author_headline: Optional[str] = None, note: Optional[str] = None) -> dict:
-        if post_url:
-            existing = _one("SELECT * FROM public.linkedin_inspirations WHERE post_url = %s", (post_url,))
-            if existing:
-                # saved again (e.g. by hand, then commented): fill what was missing — your comment, author, headline
-                return _one("""
-                    UPDATE public.linkedin_inspirations SET note = COALESCE(note, %s), author_name = COALESCE(author_name, %s),
-                           author_headline = COALESCE(author_headline, %s) WHERE id = %s RETURNING *
-                """, (note, author_name, author_headline, existing["id"]))
+        existing = _one("SELECT * FROM public.linkedin_inspirations WHERE post_url = %s", (post_url,)) if post_url else None
+        if not existing:
+            # the same post saved before without its link (or now without one): one row, and the link fills in
+            key = _text_key(post_text)
+            existing = next((r for r in _rows("SELECT * FROM public.linkedin_inspirations WHERE post_url IS NULL OR %s::text IS NULL",
+                                              (post_url,)) if len(key) >= 20 and _text_key(r["post_text"]) == key), None)
+            if existing and post_url:
+                LinkedInCopilotService.set_post_link(existing["id"], post_url)
+        if existing:
+            # saved again (e.g. by hand, then commented): fill what was missing — your comment, author, headline
+            return _one("""
+                UPDATE public.linkedin_inspirations SET note = COALESCE(note, %s), author_name = COALESCE(author_name, %s),
+                       author_headline = COALESCE(author_headline, %s) WHERE id = %s RETURNING *
+            """, (note, author_name, author_headline, existing["id"]))
         return _one("""
             INSERT INTO public.linkedin_inspirations (post_url, author_name, author_headline, post_text, note)
             VALUES (%s, %s, %s, %s, %s) RETURNING *
         """, (post_url, author_name, author_headline, post_text[:6000], note))
+
+    @staticmethod
+    def missing_links() -> List[dict]:
+        """Saved posts without a link, for the extension to fill in when the post shows up on LinkedIn again."""
+        return [{"id": r["id"], "key": _text_key(r["post_text"]), "author_name": r["author_name"]}
+                for r in _rows("SELECT id, post_text, author_name FROM public.linkedin_inspirations WHERE post_url IS NULL ORDER BY id DESC LIMIT 50")
+                if len(_text_key(r["post_text"])) >= 20]
+
+    @staticmethod
+    def set_post_link(item_id: int, post_url: str) -> Optional[dict]:
+        """Fills a saved post's link, and the same post's comment-queue item and line-of-thought records."""
+        item = _one("UPDATE public.linkedin_inspirations SET post_url = %s WHERE id = %s AND post_url IS NULL RETURNING *", (post_url, item_id))
+        if not item:
+            return None
+        key = _text_key(item["post_text"])
+        for table, text_col in (("linkedin_engagement", "post_text"), ("linkedin_voice", "context")):
+            for r in _rows(f"SELECT id, {text_col} AS t FROM public.{table} WHERE post_url IS NULL AND {text_col} IS NOT NULL"):
+                if _text_key(r["t"]) == key:
+                    _one(f"UPDATE public.{table} SET post_url = %s WHERE id = %s AND post_url IS NULL RETURNING id", (post_url, r["id"]))
+        return item
 
     @staticmethod
     def add_inspiration(post_text: str, post_url: Optional[str] = None, author_name: Optional[str] = None,
@@ -287,8 +320,10 @@ class LinkedInCopilotService:
             LinkedInCopilotService.reconcile_engagement()
         if note and note.startswith("Você comentou: "):
             # also comments written without a draft; with a draft, the same key keeps its topic, stance and request
-            _voice().record("comment", note[len("Você comentou: "):], context=post_text, post_url=post_url,
-                            ref=_voice().comment_ref(post_url, post_text))
+            # the link stored on the theme (it may have been found earlier than now), so the record key stays the same
+            url = item.get("post_url") if item else post_url
+            _voice().record("comment", note[len("Você comentou: "):], context=post_text, post_url=url,
+                            ref=_voice().comment_ref(url, post_text))
         return item
 
     @staticmethod

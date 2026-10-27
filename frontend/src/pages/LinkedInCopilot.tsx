@@ -219,8 +219,13 @@ const ago = (iso: string) => {
   return days <= 0 ? 'hoje' : days === 1 ? 'ontem' : `há ${days} dias`;
 };
 // Themes saved before the extension read post links: find the post by its opening words
-const themeLink = (i: Inspiration) => i.post_url
-  || `https://www.linkedin.com/search/results/content/?keywords=${encodeURIComponent(i.post_text.split('\n')[0].slice(0, 80))}`;
+// No link saved: search the post's opening words as an exact phrase. With the extension, the post found there gets
+// its link saved back here.
+const themeLink = (i: Inspiration) => {
+  if (i.post_url) return i.post_url;
+  const words = i.post_text.replace(/[“”"#@]/g, ' ').split(/\s+/).filter(Boolean).slice(0, 8).join(' ');
+  return `https://www.linkedin.com/search/results/content/?keywords=${encodeURIComponent(`"${words}"`)}&sortBy=%22date_posted%22`;
+};
 
 // Dense tables (same look as the job list)
 const th: React.CSSProperties = { padding: '0.7rem 1rem', textAlign: 'left', color: 'var(--text-muted)', fontSize: '0.75rem', fontWeight: 600, letterSpacing: '0.04em', whiteSpace: 'nowrap' };
@@ -290,7 +295,7 @@ const ThemesList = () => {
                 <button className="btn btn-primary" style={{ ...smallBtn, whiteSpace: 'nowrap' }} disabled={busy !== null} onClick={() => generate(i)}
                   title={`Escreve um post seu (${MARKET_LABEL[i.market]}) sobre este tema`}><Sparkles size={13} /> {busy === i.id ? 'Gerando…' : 'Gerar post'}</button>
                 <a className="btn btn-secondary" style={iconBtn} href={themeLink(i)} target="_blank" rel="noreferrer"
-                  title={i.post_url ? 'Abrir o post no LinkedIn' : 'Sem link salvo: buscar o post no LinkedIn'}><ExternalLink size={15} /></a>
+                  title={i.post_url ? 'Abrir o post no LinkedIn' : 'Sem link salvo: buscar o post no LinkedIn (a extensão salva o link quando o post aparecer)'}><ExternalLink size={15} /></a>
                 <button className="btn btn-secondary" style={{ ...iconBtn, color: 'var(--error)' }} title="Remover tema"
                   onClick={async () => { await svc.deleteInspiration(i.id); load(); }}><X size={15} /></button>
               </div>
