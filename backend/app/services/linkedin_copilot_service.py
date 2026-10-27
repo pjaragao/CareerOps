@@ -11,6 +11,7 @@ import re
 import unicodedata
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
+from urllib.parse import unquote
 from zoneinfo import ZoneInfo
 
 from app.core.config import settings
@@ -38,7 +39,7 @@ def _name_key(name: Optional[str]) -> str:
 
 def _profile_slug(url: Optional[str]) -> str:
     m = re.search(r"/in/([^/?#]+)", url or "")
-    return m.group(1).lower() if m else ""
+    return unquote(m.group(1)).lower() if m else ""
 
 
 def _theme_market(theme: dict) -> str:

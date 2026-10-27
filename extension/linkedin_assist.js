@@ -1217,12 +1217,20 @@
         checkPanel.__status.style.color = color;
     };
 
+    // Both lists scroll inside their own box (Connections: <main>, Messaging: the conversation <ul>), not the window
+    function scrollParent(el) {
+        for (; el && el !== document.body; el = el.parentElement) {
+            if (/(auto|scroll)/.test(getComputedStyle(el).overflowY) && el.scrollHeight > el.clientHeight + 4) return el;
+        }
+        return document.scrollingElement;
+    }
+
     // Lists load more as you scroll (or with "Show more results"): a few rounds, stopping when nothing new comes
     async function loadMore(count, scroller, rounds = 6) {
         let last = -1;
         for (let i = 0; i < rounds && count() !== last; i++) {
             last = count();
-            (scroller || document.scrollingElement).scrollTop = (scroller || document.scrollingElement).scrollHeight;
+            scroller.scrollTop = scroller.scrollHeight;
             const more = [...document.querySelectorAll('main button')].find((b) => b.offsetParent !== null
                 && /^(mostrar mais resultados|exibir mais resultados|show more results|load more|carregar mais)$/i.test(label(b)));
             if (more) more.click();
@@ -1252,8 +1260,9 @@
             return {
                 name: name.slice(0, 200),
                 profile_url: link ? (link.href.match(/https:\/\/www\.linkedin\.com\/in\/[^/?#]+/) || [null])[0] : null,
-                // the list shows the last message: "Você: …" / "You: …" when it was yours
-                replied: !!snippet && !/^\s*(voc[eê]|you)\s*(:|enviou|sent)/i.test(snippet),
+                // the list shows the last message: "Você: …" / "You: …" when it was yours; "Sponsored • …" is an ad
+                replied: !!snippet && !/^\s*(voc[eê]|you)\s*(:|enviou|sent)/i.test(snippet)
+                    && !/^\s*(sponsored|patrocinad[ao]|linkedin offer|inmail)\b/i.test(snippet),
             };
         }).filter((c) => c.name && !c.name.includes(','));   // group conversations: no single person to match
     }
@@ -1264,8 +1273,8 @@
         if (state.step === 'connections') {
             if (!/^\/mynetwork\/invite-connect\/connections/.test(location.pathname)) return;
             checkStatus('Lendo suas conexões mais recentes…');
-            await waitFor(() => document.querySelector('main a[href*="/in/"]'), 20000);
-            await loadMore(() => document.querySelectorAll('main a[href*="/in/"]').length);
+            const first = await waitFor(() => document.querySelector('main a[href*="/in/"]'), 20000);
+            if (first) await loadMore(() => document.querySelectorAll('main a[href*="/in/"]').length, scrollParent(first), 8);
             const connections = readConnections();
             setCheckState({ ...state, step: 'messaging', connections });
             checkStatus(`${connections.length} conexões lidas. Abrindo as mensagens…`);
@@ -1277,11 +1286,7 @@
         setCheckState(null);   // whatever happens next, the check ends on this page
         checkStatus('Lendo a lista de conversas…');
         const first = await waitFor(() => document.querySelector(CONVO), 20000);
-        if (first) {
-            let scroller = first.parentElement;
-            while (scroller && scroller !== document.body && scroller.scrollHeight <= scroller.clientHeight + 4) scroller = scroller.parentElement;
-            await loadMore(() => document.querySelectorAll(CONVO).length, scroller, 3);
-        }
+        if (first) await loadMore(() => document.querySelectorAll(CONVO).length, scrollParent(first), 3);
         const conversations = first ? readConversations() : [];
         const res = await api('POST', '/prospects/check', { connections: state.connections || [], conversations });
         let summary;
