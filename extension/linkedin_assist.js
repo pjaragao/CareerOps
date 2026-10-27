@@ -1225,16 +1225,20 @@
         return document.scrollingElement;
     }
 
-    // Lists load more as you scroll (or with "Show more results"): a few rounds, stopping when nothing new comes
-    async function loadMore(count, scroller, rounds = 6) {
-        let last = -1;
-        for (let i = 0; i < rounds && count() !== last; i++) {
-            last = count();
+    // Lists load more as you scroll (or with "Show more results"): a few rounds, stopping after two that bring nothing.
+    // The scroll box is looked up each round from an item: right after the first items appear the box is not
+    // scrollable yet, and scrolling the window instead loads nothing.
+    async function loadMore(count, item, rounds = 6) {
+        let last = count(), idle = 0;
+        for (let i = 0; i < rounds && idle < 2; i++) {
+            const scroller = scrollParent(item());
             scroller.scrollTop = scroller.scrollHeight;
             const more = [...document.querySelectorAll('main button')].find((b) => b.offsetParent !== null
                 && /^(mostrar mais resultados|exibir mais resultados|show more results|load more|carregar mais)$/i.test(label(b)));
             if (more) more.click();
             await wait(1800);
+            idle = count() > last ? 0 : idle + 1;
+            last = count();
         }
     }
 
@@ -1274,7 +1278,7 @@
             if (!/^\/mynetwork\/invite-connect\/connections/.test(location.pathname)) return;
             checkStatus('Lendo suas conexões mais recentes…');
             const first = await waitFor(() => document.querySelector('main a[href*="/in/"]'), 20000);
-            if (first) await loadMore(() => document.querySelectorAll('main a[href*="/in/"]').length, scrollParent(first), 8);
+            if (first) await loadMore(() => document.querySelectorAll('main a[href*="/in/"]').length, () => document.querySelector('main a[href*="/in/"]'), 8);
             const connections = readConnections();
             setCheckState({ ...state, step: 'messaging', connections });
             checkStatus(`${connections.length} conexões lidas. Abrindo as mensagens…`);
@@ -1286,7 +1290,7 @@
         setCheckState(null);   // whatever happens next, the check ends on this page
         checkStatus('Lendo a lista de conversas…');
         const first = await waitFor(() => document.querySelector(CONVO), 20000);
-        if (first) await loadMore(() => document.querySelectorAll(CONVO).length, scrollParent(first), 3);
+        if (first) await loadMore(() => document.querySelectorAll(CONVO).length, () => document.querySelector(CONVO), 3);
         const conversations = first ? readConversations() : [];
         const res = await api('POST', '/prospects/check', { connections: state.connections || [], conversations });
         let summary;
