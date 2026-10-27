@@ -18,33 +18,31 @@ document.addEventListener('DOMContentLoaded', () => {
         return false;
     };
 
-    // ── Connection, publishing status, update check, links ──────────────────────────────────────
+    // ── Header: backend and LinkedIn API indicators (details on hover), version with update notice, links ─────
     async function loadConnection() {
         const st = await send({ action: 'backendStatus' });
         if (!st || !st.ok) {
             $('conn-dot').className = 'dot bad';
-            $('conn-text').textContent = 'Backend inacessível';
-            $('conn-detail').textContent = 'Confira se o computador está no Tailscale e se o app abre no navegador.';
+            $('conn-chip').title = 'Backend inacessível — confira se o computador está no Tailscale e se o app abre no navegador.';
+            $('pub-chip').title = 'Publicação no LinkedIn: sem backend';
             return null;
         }
         $('conn-dot').className = 'dot ok';
-        $('conn-text').textContent = `Conectado (${st.ms} ms)`;
-        $('conn-detail').textContent = st.base.replace(/^https?:\/\//, '').replace(/\/api$/, '');
+        $('conn-chip').title = `Conectado em ${st.ms} ms · ${st.base.replace(/^https?:\/\//, '').replace(/\/api$/, '')}`;
         const s = st.status || {};
         $('pub-dot').className = 'dot ' + (s.connected ? 'ok' : 'warn');
-        $('pub-text').textContent = 'Publicação no LinkedIn: ' + (s.connected ? `API conectada (${s.member_name || ''})` : 'manual — copiar e colar');
+        $('pub-chip').title = 'Publicação no LinkedIn: ' + (s.connected ? `API conectada (${s.member_name || ''})` : 'manual — copiar e colar');
         // the app (frontend) lives behind the same HTTPS host; on the server itself it is :5173
         const app = st.appUrl.replace(':8005', ':5173');
-        if (st.appUrl.startsWith('https://')) appBase = st.appUrl;
         $('link-app').href = app + '/';
         $('link-copilot').href = app + '/linkedin-copilot';
-        $('link-install').href = app + '/configuracoes?tab=extensao';
+        $('link-install').href = $('version').href = app + '/configuracoes?tab=extensao';
         if (st.serverVersion && newer(st.serverVersion, version)) {
-            const u = $('update');
-            u.style.display = 'block';
-            u.innerHTML = `Versão nova disponível: <b>v${st.serverVersion}</b>. <a href="${app}/configuracoes?tab=extensao" target="_blank">Baixar</a>, extrair por cima da pasta e recarregar em chrome://extensions.`;
+            $('version').classList.add('new');
+            $('version').textContent = `v${version} → v${st.serverVersion}`;
+            $('version').title = `Versão nova disponível (v${st.serverVersion}): clique em Atualizar`;
         } else {
-            $('footer').textContent = `CareerOps · v${version} · atualizada`;
+            $('version').title = `v${version} · atualizada`;
         }
         return st;
     }
@@ -87,7 +85,7 @@ document.addEventListener('DOMContentLoaded', () => {
             btn = 'Importar esta vaga';
         } else if (li && /^\/in\/[^/]+\/?$/.test(path)) {
             kind = 'profile'; title = 'Perfil de pessoa';
-            actions = ['🤝 Convite IA (canto inferior direito): avalia e preenche a nota.', 'No seu próprio perfil: botão CareerOps · Perfil com os textos EN/PT.'];
+            actions = ['🤝 Conectar (CareerOps) ao lado do Conectar: avalia o encaixe e convida sem nota.', 'No seu próprio perfil: botão CareerOps · Perfil com os textos EN/PT.'];
             btn = 'Importar como MEU perfil (só no seu)';
         } else if (li && /^\/in\/[^/]+\/(details|edit)/.test(path)) {
             kind = 'profile-edit'; title = 'Edição do seu perfil';
@@ -172,20 +170,6 @@ document.addEventListener('DOMContentLoaded', () => {
         await chrome.storage.local.remove(['careerops_import_active', 'careerops_status', 'careerops_import_data']);
         updateUI();
     });
-
-    // ── Update: one PowerShell command (download + extract over the folder) and a reload button ─────
-    // An unpacked extension cannot rewrite its own files; automatic updates need the Chrome Web Store.
-    let appBase = 'https://mpbflndsk201-wsl.tabby-broadnose.ts.net:5174';
-    const folderInput = $('ext-folder');
-    chrome.storage.local.get('careerops_folder', (v) => { folderInput.value = v.careerops_folder || '$HOME\\Documents\\CareerOps'; });
-    folderInput.addEventListener('change', () => chrome.storage.local.set({ careerops_folder: folderInput.value }));
-    $('copy-update').addEventListener('click', async () => {
-        const cmd = `$z="$env:TEMP\\careerops-extension.zip"; Invoke-WebRequest "${appBase}/api/linkedin-copilot/extension/download" -OutFile $z; Expand-Archive $z "${folderInput.value}" -Force; Write-Host "CareerOps: extensão atualizada — clique em Recarregar"`;
-        await navigator.clipboard.writeText(cmd);
-        $('copy-update').textContent = 'Copiado ✓';
-        setTimeout(() => { $('copy-update').textContent = 'Copiar comando'; }, 2000);
-    });
-    $('reload-ext').addEventListener('click', () => chrome.runtime.reload());
 
     updateUI();
     setInterval(updateUI, 1000);
