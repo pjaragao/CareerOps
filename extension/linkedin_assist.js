@@ -1269,10 +1269,17 @@
         return document.scrollingElement;
     }
 
+    // Waits until a list stops growing on its own (first render), up to ~6 s
+    async function settle(count) {
+        let last = -1;
+        for (let i = 0; i < 12 && count() !== last; i++) { last = count(); await wait(500); }
+    }
+
     // Lists load more as you scroll (or with "Show more results"): a few rounds, stopping after two that bring nothing.
     // The scroll box is looked up each round from an item: right after the first items appear the box is not
     // scrollable yet, and scrolling the window instead loads nothing.
     async function loadMore(count, item, rounds = 6) {
+        await settle(count);
         let last = count(), idle = 0;
         for (let i = 0; i < rounds && idle < 2; i++) {
             const scroller = scrollParent(item());
@@ -1332,6 +1339,7 @@
     async function runProspectCheck() {
         const state = checkState();
         if (!state) return;
+        if (document.hidden) state.hidden = true;   // carried by the next steps' saved state
         if (state.step === 'connections') {
             if (!/^\/mynetwork\/invite-connect\/connections/.test(location.pathname)) return;
             checkStatus('Lendo suas conexões mais recentes…');
@@ -1364,6 +1372,7 @@
         checkStatus('Lendo a lista de conversas…');
         const first = await waitFor(() => document.querySelector(CONVO), 20000);
         if (first) await loadMore(() => document.querySelectorAll(CONVO).length, () => document.querySelector(CONVO), 3);
+        if (first) await settle(() => document.querySelectorAll(CONVO).length);
         const conversations = first ? readConversations() : [];
         const res = await api('POST', '/prospects/check', { connections: state.connections || [], sent: state.sent || [], conversations });
         let summary;
@@ -1381,7 +1390,7 @@
             if (d.replied.length) line(checkPanel, `Responderam: ${names(d.replied)}`);
             if (!first) line(checkPanel, 'Não reconheci a lista de mensagens (o LinkedIn pode ter mudado): só as conexões foram verificadas.', '#b7791f');
             line(checkPanel, `Lidos: ${d.read.connections} conexões, ${d.read.sent}${state.sentTotal ? ` de ${state.sentTotal}` : ''} convites enviados, ${d.read.conversations} conversas.`, '#999');
-            if (state.sentTotal && d.read.sent < state.sentTotal) line(checkPanel, `Faltaram ${state.sentTotal - d.read.sent} convites enviados (a lista não carregou toda): rode de novo com a aba visível.`, '#b7791f');
+            if (state.sentTotal && d.read.sent < state.sentTotal) line(checkPanel, `Faltaram ${state.sentTotal - d.read.sent} convites enviados (a lista não carregou toda)${state.hidden ? ': a aba ficou oculta — o Chrome não carrega listas em abas de fundo; deixe-a visível durante a verificação' : ''}.`, '#b7791f');
         }
         try { chrome.runtime.sendMessage({ action: 'prospectCheckDone', ok: res.ok, result: res.data, summary, background: !!state.background }); } catch (e) { /* extension reloaded */ }
     }

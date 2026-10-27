@@ -310,15 +310,19 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
 });
 
-// ── Prospect check: every 12 h (while Chrome is open) a background tab reads Connections and Messaging and the
-// backend moves invited prospects to "aceitou"/"respondeu" (linkedin_assist.js, section 5). Two list pages per run,
-// no profile visits — and only when there is someone waiting on an invite or a reply.
+// ── Prospect check: a tab reads Connections, Sent invitations and Messaging and the backend moves prospects to
+// convidado/aceitou/respondeu (linkedin_assist.js, section 5). Three list pages per run, no profile visits.
+// The tab must be VISIBLE: Chrome does not render background tabs, and LinkedIn's lists only load more items when
+// their end scrolls into view — a hidden tab reads just the first 10. So a manual run brings the tab to the front for
+// ~40 s and then returns to the tab you were on; the 12-hourly run waits until you are away (idle 1 min, screen
+// unlocked) and does the same.
 const CHECK_ALARM = 'careerops-prospect-check';
 const CHECK_TIMEOUT = 'careerops-prospect-check-timeout';
 const CHECK_URL = 'https://www.linkedin.com/mynetwork/invite-connect/connections/#careerops-check-bg';
 
 function scheduleProspectCheck() {
     chrome.alarms.get(CHECK_ALARM, (a) => { if (!a) chrome.alarms.create(CHECK_ALARM, { delayInMinutes: 10, periodInMinutes: 720 }); });
+    chrome.idle.setDetectionInterval(60);
 }
 chrome.runtime.onInstalled.addListener(scheduleProspectCheck);
 chrome.runtime.onStartup.addListener(scheduleProspectCheck);
@@ -328,31 +332,44 @@ async function startProspectCheck(manual) {
     if (checkTab) return { ok: false, detail: 'Já há uma verificação em andamento' };
     if (!manual) {
         const r = await callBackend('/linkedin-copilot/prospects', 'GET');
-        if (!r.ok || !r.data.items.some((p) => p.status === 'invited' || p.status === 'accepted')) return { ok: true, skipped: true };
+        if (!r.ok || !r.data.items.some((p) => ['to_contact', 'invited', 'accepted'].includes(p.status))) return { ok: true, skipped: true };
     }
-    const tab = await chrome.tabs.create({ url: CHECK_URL, active: false });
-    await chrome.storage.session.set({ checkTab: tab.id });
+    const [prev] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+    const tab = await chrome.tabs.create({ url: CHECK_URL, active: true, ...(prev ? { windowId: prev.windowId, index: prev.index + 1 } : {}) });
+    await chrome.storage.session.set({ checkTab: tab.id, checkPrevTab: prev ? prev.id : null });
+    await chrome.storage.local.remove('prospectCheckDue');
     chrome.alarms.create(CHECK_TIMEOUT, { delayInMinutes: 4 });
     return { ok: true, started: true };
 }
 
 async function finishProspectCheck(tabId) {
-    const { checkTab } = await chrome.storage.session.get('checkTab');
+    const { checkTab, checkPrevTab } = await chrome.storage.session.get(['checkTab', 'checkPrevTab']);
     if (!checkTab || (tabId && tabId !== checkTab)) return;
-    await chrome.storage.session.remove('checkTab');
+    await chrome.storage.session.remove(['checkTab', 'checkPrevTab']);
     chrome.alarms.clear(CHECK_TIMEOUT);
-    chrome.tabs.remove(checkTab).catch(() => {});
+    await chrome.tabs.remove(checkTab).catch(() => {});
+    if (checkPrevTab) chrome.tabs.update(checkPrevTab, { active: true }).catch(() => {});
 }
 
+// the 12-hourly run: marked due, started at once if you are already away, otherwise at the next idle moment
+async function runDueCheck() {
+    const { prospectCheckDue } = await chrome.storage.local.get('prospectCheckDue');
+    if (prospectCheckDue) startProspectCheck(false);
+}
+chrome.idle.onStateChanged.addListener((state) => { if (state === 'idle') runDueCheck(); });
+
 chrome.alarms.onAlarm.addListener(async (alarm) => {
-    if (alarm.name === CHECK_ALARM) startProspectCheck(false);
+    if (alarm.name === CHECK_ALARM) {
+        await chrome.storage.local.set({ prospectCheckDue: true });
+        chrome.idle.queryState(60, (state) => { if (state === 'idle') runDueCheck(); });
+    }
     if (alarm.name === CHECK_TIMEOUT) {
         await chrome.storage.local.set({ prospectCheck: { at: Date.now(), ok: false, summary: 'A verificação não terminou em 4 min (LinkedIn não carregou?)' } });
         finishProspectCheck();
     }
 });
 chrome.tabs.onRemoved.addListener((tabId) => {
-    chrome.storage.session.get('checkTab').then(({ checkTab }) => { if (checkTab === tabId) chrome.storage.session.remove('checkTab'); });
+    chrome.storage.session.get('checkTab').then(({ checkTab }) => { if (checkTab === tabId) chrome.storage.session.remove(['checkTab', 'checkPrevTab']); });
 });
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
@@ -365,6 +382,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     chrome.storage.local.set({ prospectCheck: { at: Date.now(), ok: request.ok, summary: request.summary, result: request.result } });
     if (found) setBadge(`+${found}`, '#00d4aa');
     else if (!request.ok) setBadge('ERR', '#ff6b6b');
-    // the background run closes its tab; one started from the app stays open with the result card
-    if (request.background && sender.tab) setTimeout(() => finishProspectCheck(sender.tab.id), 1500);
+    // a run the extension opened closes its tab (after a moment to read the card); one started from the app stays open
+    if (request.background && sender.tab) setTimeout(() => finishProspectCheck(sender.tab.id), 4000);
 });

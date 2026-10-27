@@ -65,7 +65,7 @@ document.addEventListener('DOMContentLoaded', () => {
     $('check-btn').addEventListener('click', async () => {
         $('check-btn').disabled = true;
         const r = await send({ action: 'checkProspects' });
-        $('check-text').textContent = r && r.ok ? 'Verificando numa aba em segundo plano (~1 min)…' : (r && r.detail) || 'Não consegui iniciar';
+        $('check-text').textContent = r && r.ok ? 'Verificando numa aba do LinkedIn (~40 s); depois volto para esta aba…' : (r && r.detail) || 'Não consegui iniciar';
         setTimeout(() => { $('check-btn').disabled = false; }, 5000);
     });
     loadCheck();
