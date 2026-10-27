@@ -633,7 +633,7 @@
     let profilePanel = null;
 
     // Connection requests go out WITHOUT a note (the free plan only allows a few personalized ones per month).
-    const CONNECT = /^(conectar|connect)$/i;
+    const CONNECT = /^\+?\s*(conectar|connect)$/i;
     const SEND_NO_NOTE = ['enviar sem nota', 'send without a note', 'send without note'];
     const SEND = ['enviar', 'send', 'enviar convite', 'send invitation'];
     const inDialog = () => [...document.querySelectorAll('div[role="dialog"], .artdeco-modal, [aria-modal="true"]')].find((d) => d.offsetParent !== null || d.getClientRects().length);
@@ -641,40 +641,50 @@
 
     // Only the profile's own top card counts. <main> also holds "People you may know" / "More profiles for you", whose
     // Connect buttons invite THAT person straight away (no dialog) — a wrong match there invites a stranger.
-    const ROW_ACTION = /^(conectar|connect|mensagem|message|seguir|follow|pendente|pending|mais|more)$/i;
-    // The name heading: <h1> in the old layout; now an <h2> inside the link to this same profile
+    const isMoreButton = (b) => /^(mais|more)$/i.test(btnLabel(b)) || /mais a[cç][oõ]es|more actions/i.test(b.getAttribute('aria-label') || '');
+    const PENDING = /^(pendente|pending)$/i;
+    // The name heading: <h1> in the old layout; now an <h2> — sometimes inside the link to this same profile, sometimes
+    // not, so it is also recognised by matching the tab title ("Ana Lima | LinkedIn")
+    const titleName = () => clean(document.title.replace(/^\(\d+\)\s*/, '').split(' | ')[0]).toLowerCase();
+    const profileSlug = () => decodeURIComponent((location.pathname.match(/^\/in\/([^/]+)/) || [])[1] || '').toLowerCase();
+    const linkSlug = (a) => decodeURIComponent((a.pathname.match(/^\/in\/([^/]+)/) || [])[1] || '').toLowerCase();
     function profileHeading() {
-        const slug = (location.pathname.match(/^\/in\/([^/]+)/) || [])[1];
-        return document.querySelector('main h1') || (slug && [...document.querySelectorAll('main a[href*="/in/"] h2')]
-            .find((h) => decodeURIComponent(h.closest('a').pathname).replace(/\/$/, '') === decodeURIComponent('/in/' + slug))) || null;
+        return document.querySelector('main h1')
+            || [...document.querySelectorAll('main h2')].find((h) => titleName() && clean(h.innerText).toLowerCase() === titleName())
+            || [...document.querySelectorAll('main a[href*="/in/"] h2')].find((h) => linkSlug(h.closest('a')) === profileSlug()) || null;
     }
+    // From the name up to the block that holds its action row (always has "More", "Connect" or "Pending"), never
+    // far enough to take in a card about somebody else (a link to another /in/ profile)
     function profileTopCard() {
-        const h1 = profileHeading();
-        let el = h1;
-        while (el && el.parentElement && el.parentElement.tagName !== 'MAIN'
-            && ![...el.querySelectorAll('button, a')].some((b) => b.offsetParent !== null && ROW_ACTION.test(btnLabel(b)))) el = el.parentElement;
-        return el && el !== h1 ? el : null;
+        const head = profileHeading();
+        const visible = (el) => [...el.querySelectorAll('button, a, [role="button"]')].filter((b) => b.offsetParent !== null);
+        const hasRow = (el) => visible(el).some((b) => isMoreButton(b) || CONNECT.test(btnLabel(b)) || PENDING.test(btnLabel(b)));
+        const other = (el) => [...el.querySelectorAll('a[href*="/in/"]')].some((a) => linkSlug(a) && linkSlug(a) !== profileSlug());
+        let el = head;
+        while (el && !hasRow(el) && el.parentElement && el.parentElement.tagName !== 'MAIN' && !other(el.parentElement)) el = el.parentElement;
+        return el && el !== head && hasRow(el) ? el : null;
     }
-    const profileName = () => clean((profileHeading() || {}).innerText || document.title.replace(/^\(\d+\)\s*/, '').split(' | ')[0]).toLowerCase();
+    const profileName = () => clean((profileHeading() || {}).innerText || '').toLowerCase() || titleName();
     // "Invite Ana Lima to connect" must name this profile; any other aria-label naming someone else is rejected
     function invitesThisPerson(el) {
         const labels = [el, ...el.querySelectorAll('[aria-label]')].map((e) => e.getAttribute('aria-label') || '').filter((l) => /(invite|convidar|convide)\b/i.test(l));
-        const name = profileName();
-        return labels.every((l) => name && l.toLowerCase().includes(name.split(/\s+/)[0]));
+        const words = profileName().split(',')[0].trim().split(/\s+/);   // "ahmed elkadi, phd" → first + last name
+        return labels.every((l) => words[0] && l.toLowerCase().includes(words[0]) && l.toLowerCase().includes(words[words.length - 1]));
     }
+    const CANDIDATES = 'button, a, [role="button"], [role="menuitem"], div[aria-label]';
     const isConnect = (el) => el.offsetParent !== null && !el.closest('.careerops-card') && invitesThisPerson(el)
         && (CONNECT.test(btnLabel(el)) || /^(convidar|invite) .*(conectar|connect)/i.test(el.getAttribute('aria-label') || ''));
 
-    // "Connect" sits in the top card's action row or, for many profiles, in its "More" menu (rendered outside <main>)
+    // "Connect" is either a button in the top card's action row (older layout, most 2nd-degree profiles) or an item of
+    // its "More" menu (rendered outside <main>). Menu items are told apart by appearing only after "More" is clicked.
     async function findConnect(card) {
-        let el = [...card.querySelectorAll('button, a, [role="button"]')].find(isConnect);
+        let el = [...card.querySelectorAll(CANDIDATES)].find(isConnect);
         if (el) return el;
-        const more = [...card.querySelectorAll('button')].find((b) => b.offsetParent !== null
-            && (/^(mais|more)$/i.test(btnLabel(b)) || /mais a[cç][oõ]es|more actions/i.test(b.getAttribute('aria-label') || '')));
+        const more = [...card.querySelectorAll('button, [role="button"]')].find((b) => b.offsetParent !== null && isMoreButton(b));
         if (!more) return null;
+        const before = new Set([...document.querySelectorAll(CANDIDATES)].filter((e) => e.offsetParent !== null));
         more.click();
-        // only items of the menu just opened: role=menuitem, which the suggestion cards do not use
-        el = await waitFor(() => [...document.querySelectorAll('[role="menuitem"]')].find(isConnect) || null, 2500);
+        el = await waitFor(() => [...document.querySelectorAll(CANDIDATES)].find((e) => !before.has(e) && isConnect(e)) || null, 2500);
         if (!el) more.click();   // close the menu again
         return el;
     }
@@ -684,14 +694,14 @@
         const card = profileTopCard();
         if (!card) return 'unavailable';
         const actions = () => [...card.querySelectorAll('button, a')].filter((b) => b.offsetParent !== null).map(btnLabel);
-        if (actions().some((l) => /^(pendente|pending)$/.test(l))) return 'pending';
+        if (actions().some((l) => PENDING.test(l))) return 'pending';
         const target = await findConnect(card);
         if (!target) return actions().some((l) => /^(mensagem|message)$/.test(l)) ? 'connected' : 'unavailable';
         target.click();
         const dlg = await waitFor(inDialog, 4000);
         if (!dlg) {
             // some profiles send at once, without a dialog: the button turns into "Pending"
-            return (await waitFor(() => actions().some((l) => /^(pendente|pending)$/.test(l)), 2000)) ? 'sent' : 'needs_user';
+            return (await waitFor(() => actions().some((l) => PENDING.test(l)), 2000)) ? 'sent' : 'needs_user';
         }
         const btn = await waitFor(() => [...dlg.querySelectorAll('button')].find((b) => SEND_NO_NOTE.includes(btnLabel(b)))
             || [...dlg.querySelectorAll('button')].find((b) => SEND.includes(btnLabel(b)) && !dlg.querySelector('input[type="email"], input[name="email"]')), 3000);
