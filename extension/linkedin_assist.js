@@ -1199,10 +1199,12 @@
 
     // ── 5. Prospect check: who accepted / replied (reads two lists, opens no profile, clicks nothing on people) ──
     // Started by <connections page>#careerops-check (from the app, the popup or the 12 h alarm in background.js).
-    // Step 1 reads My Network → Connections (newest first), step 2 reads the Messaging list; the backend matches both
-    // against the invited prospects. The step survives the page change in sessionStorage (same tab only).
+    // Step 1 reads My Network → Connections (newest first), step 2 the pending Sent invitations (also the ones sent from
+    // LinkedIn itself, which the extension never saw), step 3 the Messaging list; the backend matches all three against
+    // the prospects. The step survives the page changes in sessionStorage (same tab only).
     const CHECK_KEY = 'careeropsProspectCheck';
     const CONNECTIONS_URL = 'https://www.linkedin.com/mynetwork/invite-connect/connections/';
+    const SENT_URL = 'https://www.linkedin.com/mynetwork/invitation-manager/sent/';
     const checkState = () => { try { return JSON.parse(sessionStorage.getItem(CHECK_KEY) || 'null'); } catch (e) { return null; } };
     const setCheckState = (v) => { try { v ? sessionStorage.setItem(CHECK_KEY, JSON.stringify(v)) : sessionStorage.removeItem(CHECK_KEY); } catch (e) { /* private mode */ } };
     let checkPanel = null;
@@ -1254,6 +1256,20 @@
         return [...seen.values()];
     }
 
+    // Sent invitations: the profile links carry no text; the name is the first line of the card (the block holding "Withdraw")
+    function readSent() {
+        const seen = new Map();
+        document.querySelectorAll('main a[href*="/in/"]').forEach((a) => {
+            const m = a.href.match(/https:\/\/www\.linkedin\.com\/in\/[^/?#]+/);
+            if (!m || seen.has(m[0])) return;
+            let card = a;
+            while (card.parentElement && card.parentElement.tagName !== 'MAIN' && !/\b(withdraw|retirar)\b/i.test(card.innerText || '')) card = card.parentElement;
+            const name = /\b(withdraw|retirar)\b/i.test(card.innerText || '') ? clean(card.innerText).split('\n')[0] : '';
+            seen.set(m[0], { profile_url: m[0], name: name.slice(0, 200) || null });
+        });
+        return [...seen.values()];
+    }
+
     const CONVO = '.msg-conversation-listitem, .msg-conversations-container__convo-item, li[class*="conversation-listitem"]';
     function readConversations() {
         return [...document.querySelectorAll(CONVO)].filter((li) => !li.parentElement.closest(CONVO)).map((li) => {
@@ -1280,8 +1296,21 @@
             const first = await waitFor(() => document.querySelector('main a[href*="/in/"]'), 20000);
             if (first) await loadMore(() => document.querySelectorAll('main a[href*="/in/"]').length, () => document.querySelector('main a[href*="/in/"]'), 8);
             const connections = readConnections();
-            setCheckState({ ...state, step: 'messaging', connections });
-            checkStatus(`${connections.length} conexões lidas. Abrindo as mensagens…`);
+            setCheckState({ ...state, step: 'sent', connections });
+            checkStatus(`${connections.length} conexões lidas. Abrindo os convites enviados…`);
+            await wait(800);
+            location.href = SENT_URL;
+            return;
+        }
+        if (state.step === 'sent') {
+            if (!/^\/mynetwork\/invitation-manager\/sent/.test(location.pathname)) return;
+            checkStatus('Lendo os convites enviados…');
+            const first = await waitFor(() => document.querySelector('main a[href*="/in/"]')
+                || /(no pending|nenhum convite|n[aã]o h[aá] convites)/i.test((document.querySelector('main') || {}).innerText || ''), 20000);
+            if (first instanceof Element) await loadMore(() => document.querySelectorAll('main a[href*="/in/"]').length, () => document.querySelector('main a[href*="/in/"]'), 8);
+            const sent = readSent();
+            setCheckState({ ...state, step: 'messaging', sent });
+            checkStatus(`${sent.length} convites pendentes lidos. Abrindo as mensagens…`);
             await wait(800);
             location.href = 'https://www.linkedin.com/messaging/';
             return;
@@ -1292,7 +1321,7 @@
         const first = await waitFor(() => document.querySelector(CONVO), 20000);
         if (first) await loadMore(() => document.querySelectorAll(CONVO).length, () => document.querySelector(CONVO), 3);
         const conversations = first ? readConversations() : [];
-        const res = await api('POST', '/prospects/check', { connections: state.connections || [], conversations });
+        const res = await api('POST', '/prospects/check', { connections: state.connections || [], sent: state.sent || [], conversations });
         let summary;
         if (!res.ok) {
             summary = errText(res);
@@ -1300,12 +1329,14 @@
         } else {
             const d = res.data;
             const names = (list) => list.map((p) => p.name || '?').join(', ');
-            summary = `${d.accepted.length} aceitaram, ${d.replied.length} responderam · ${d.waiting} convite(s) ainda pendentes`;
-            checkStatus(summary, d.accepted.length || d.replied.length ? '#00b894' : '#555');
+            summary = `${d.accepted.length} aceitaram, ${d.replied.length} responderam · ${d.waiting} convite(s) pendentes`
+                + (d.invited.length ? ` (${d.invited.length} marcados agora como convidados)` : '');
+            checkStatus(summary, d.accepted.length || d.replied.length || d.invited.length ? '#00b894' : '#555');
+            if (d.invited.length) line(checkPanel, `Já convidados: ${names(d.invited)}`);
             if (d.accepted.length) line(checkPanel, `Aceitaram: ${names(d.accepted)}`);
             if (d.replied.length) line(checkPanel, `Responderam: ${names(d.replied)}`);
             if (!first) line(checkPanel, 'Não reconheci a lista de mensagens (o LinkedIn pode ter mudado): só as conexões foram verificadas.', '#b7791f');
-            line(checkPanel, `Lidos: ${d.read.connections} conexões, ${d.read.conversations} conversas.`, '#999');
+            line(checkPanel, `Lidos: ${d.read.connections} conexões, ${d.read.sent} convites enviados, ${d.read.conversations} conversas.`, '#999');
         }
         try { chrome.runtime.sendMessage({ action: 'prospectCheckDone', ok: res.ok, result: res.data, summary, background: !!state.background }); } catch (e) { /* extension reloaded */ }
     }

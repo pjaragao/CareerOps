@@ -297,13 +297,15 @@ class SeenPerson(BaseModel):
 class ProspectCheckIn(BaseModel):
     connections: List[SeenPerson] = Field(default_factory=list, max_length=1000)
     conversations: List[SeenPerson] = Field(default_factory=list, max_length=500)
+    sent: List[SeenPerson] = Field(default_factory=list, max_length=1000)
 
 
 @router.post("/prospects/check")
 async def check_prospects(req: ProspectCheckIn):
-    """Invited prospects found in your connections → accepted; found replying in Messaging → replied.
-    The extension reads those two lists on LinkedIn (no profile is opened, nothing is clicked)."""
-    return Copilot.check_prospects([p.model_dump() for p in req.connections], [p.model_dump() for p in req.conversations])
+    """Prospects found among your sent invitations → invited; in your connections → accepted; replying in Messaging →
+    replied. The extension reads those three lists on LinkedIn (no profile is opened, nothing is clicked)."""
+    dump = lambda people: [p.model_dump() for p in people]
+    return Copilot.check_prospects(dump(req.connections), dump(req.conversations), dump(req.sent))
 
 
 @router.patch("/prospects/{item_id}")

@@ -361,7 +361,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         return true;
     }
     if (request.action !== 'prospectCheckDone') return;
-    const found = request.ok ? request.result.accepted.length + request.result.replied.length : 0;
+    const found = request.ok ? request.result.accepted.length + request.result.replied.length + (request.result.invited || []).length : 0;
     chrome.storage.local.set({ prospectCheck: { at: Date.now(), ok: request.ok, summary: request.summary, result: request.result } });
     if (found) setBadge(`+${found}`, '#00d4aa');
     else if (!request.ok) setBadge('ERR', '#ff6b6b');

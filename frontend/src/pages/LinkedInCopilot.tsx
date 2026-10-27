@@ -514,11 +514,11 @@ const ProspectsTab = () => {
         ]} />
         <span style={muted}>Semana: <strong style={{ color: '#fff' }}>{data.invited_this_week}</strong> / {data.weekly_target} convites ·
           vêm dos autores e comentaristas dos posts que você salva ou comenta</span>
-        {/* The extension reads Connections and Messaging in that tab and moves invited people to aceitou/respondeu
+        {/* The extension reads Connections, Sent invitations and Messaging in that tab and moves people to convidado/aceitou/respondeu
             (it also does this by itself every 12 h); come back and reload to see the new statuses */}
         <a className="btn btn-secondary" style={{ ...smallBtn, whiteSpace: 'nowrap' }} href="https://www.linkedin.com/mynetwork/invite-connect/connections/#careerops-check"
           target="_blank" rel="noreferrer" onClick={() => setTimeout(load, 90000)}
-          title="Lê suas conexões e mensagens no LinkedIn e marca quem aceitou ou respondeu">Verificar aceites</a>
+          title="Lê suas conexões, convites enviados e mensagens no LinkedIn e marca quem já foi convidado, aceitou ou respondeu">Verificar aceites</a>
       </div>
       <DenseTable head={<>
         <th style={th}>PESSOA</th><th style={th}>FIT</th><th className="hide-sm" style={th}>MERCADO</th><th className="hide-sm" style={th}>STATUS</th><th style={{ ...th, textAlign: 'right' }}>AÇÕES</th>

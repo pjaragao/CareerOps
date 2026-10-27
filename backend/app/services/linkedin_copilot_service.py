@@ -42,6 +42,26 @@ def _profile_slug(url: Optional[str]) -> str:
     return unquote(m.group(1)).lower() if m else ""
 
 
+# how far a prospect got: a status is only ever moved forward
+_STAGE = {"skipped": 0, "to_contact": 0, "invited": 1, "accepted": 2, "replied": 3}
+
+
+def _clean_profile_url(url: Optional[str]) -> Optional[str]:
+    """'…/in/ana/?miniProfile=…' and '…/in/ana' are the same person: stored without query and trailing slash."""
+    return (url or "").split("#")[0].split("?")[0].rstrip("/") or None
+
+
+def _one_per_person(rows: List[dict]) -> List[dict]:
+    """Rows saved twice for one profile (older ones differ by a trailing slash): keeps the furthest along."""
+    best: Dict[str, dict] = {}
+    for r in rows:
+        key = _profile_slug(r["profile_url"]) or f"id:{r['id']}"
+        if key not in best or _STAGE.get(r["status"], 0) > _STAGE.get(best[key]["status"], 0):
+            best[key] = r
+    keep = {id(r) for r in best.values()}
+    return [r for r in rows if id(r) in keep]
+
+
 def _theme_market(theme: dict) -> str:
     return "br" if detect_language(theme.get("post_text") or "") == "Portuguese" else "intl"
 
@@ -363,8 +383,9 @@ class LinkedInCopilotService:
     @staticmethod
     async def add_prospect(profile_text: str, profile_url: Optional[str] = None, name: Optional[str] = None,
                            headline: Optional[str] = None, company: Optional[str] = None) -> dict:
+        profile_url = _clean_profile_url(profile_url)
         if profile_url:
-            existing = _one("SELECT * FROM public.linkedin_prospects WHERE profile_url = %s", (profile_url,))
+            existing = _one("SELECT * FROM public.linkedin_prospects WHERE RTRIM(profile_url, '/') = %s ORDER BY id LIMIT 1", (profile_url,))
             if existing:
                 return existing
         ai = await _skill("linkedin/prospect_note.md", {
@@ -387,7 +408,7 @@ class LinkedInCopilotService:
         """
         clean, seen = [], set()
         for person in people:
-            url = (person.get("profile_url") or "").split("?")[0].rstrip("/")
+            url = _clean_profile_url(person.get("profile_url"))
             if not url or url in seen:
                 continue
             seen.add(url)
@@ -400,8 +421,8 @@ class LinkedInCopilotService:
         clean = clean[:25]
         if len(clean) * 2 < len(people):   # the extension is not reading headlines: LinkedIn's markup probably changed
             log.warning("score_people: only %d of %d people came with a usable headline", len(clean), len(people))
-        known = {r["profile_url"]: r for r in _rows(
-            "SELECT * FROM public.linkedin_prospects WHERE profile_url = ANY(%s)", ([c["profile_url"] for c in clean],))}
+        known = {r["profile_url"].rstrip("/"): r for r in _one_per_person(_rows(
+            "SELECT * FROM public.linkedin_prospects WHERE RTRIM(profile_url, '/') = ANY(%s)", ([c["profile_url"] for c in clean],)))}
         todo = [c for c in clean if c["profile_url"] not in known]
         results = {url: row for url, row in known.items()}
         if todo:
@@ -425,10 +446,8 @@ class LinkedInCopilotService:
 
     @staticmethod
     def list_prospects(status: Optional[str] = None) -> dict:
-        if status:
-            items = _rows("SELECT * FROM public.linkedin_prospects WHERE status = %s ORDER BY fit DESC NULLS LAST, created_at", (status,))
-        else:
-            items = _rows("SELECT * FROM public.linkedin_prospects WHERE status <> 'skipped' ORDER BY status, fit DESC NULLS LAST, created_at")
+        items = _one_per_person(_rows("SELECT * FROM public.linkedin_prospects ORDER BY status, fit DESC NULLS LAST, created_at"))
+        items = [r for r in items if r["status"] == status] if status else [r for r in items if r["status"] != "skipped"]
         week = _one("""
             SELECT COUNT(*) FILTER (WHERE status IN ('invited', 'accepted', 'replied') AND updated_at >= %s) AS invited_this_week
               FROM public.linkedin_prospects
@@ -445,45 +464,50 @@ class LinkedInCopilotService:
         """, (status, note_draft[:300] if note_draft else None, notes, item_id))
 
     @staticmethod
-    def check_prospects(connections: List[Dict[str, Any]], conversations: List[Dict[str, Any]]) -> dict:
-        """Moves invited prospects forward from what the extension read on two LinkedIn lists.
+    def check_prospects(connections: List[Dict[str, Any]], conversations: List[Dict[str, Any]],
+                        sent: List[Dict[str, Any]]) -> dict:
+        """Moves prospects forward from what the extension read on three LinkedIn lists.
 
-        connections: [{"profile_url", "name"}] from My Network → Connections (newest first): an invited prospect there
-        accepted. conversations: [{"name", "profile_url"?, "replied"}] from Messaging, replied = the last message is
-        theirs: an invited/accepted prospect there replied. Matched by profile slug, else by the full name when only one
-        open prospect has it (search results link to /in/ACoAA… ids, the lists to the vanity slug).
+        sent: [{"profile_url", "name"}] from Invitations → Sent (pending invites) → invited, which also catches invites
+        sent from LinkedIn itself (search results, My Network) that the extension never saw.
+        connections: same shape, from My Network → Connections (newest first) → accepted.
+        conversations: [{"name", "profile_url"?, "replied"}] from Messaging, replied = the last message is theirs → replied.
+        Matched by profile slug, else by the full name when it belongs to one profile only (search results link to
+        /in/ACoAA… ids, the lists to the vanity slug). Every row of the same profile moves (older duplicates).
         """
-        open_rows = _rows("SELECT * FROM public.linkedin_prospects WHERE status IN ('invited', 'accepted')")
-        by_slug = {_profile_slug(r["profile_url"]): r for r in open_rows if _profile_slug(r["profile_url"])}
+        rows = _rows("SELECT * FROM public.linkedin_prospects")
+        by_slug: Dict[str, List[dict]] = {}
         by_name: Dict[str, List[dict]] = {}
-        for r in open_rows:
+        for r in rows:
+            if _profile_slug(r["profile_url"]):
+                by_slug.setdefault(_profile_slug(r["profile_url"]), []).append(r)
             if _name_key(r["name"]):
                 by_name.setdefault(_name_key(r["name"]), []).append(r)
 
-        def match(person: Dict[str, Any]) -> Optional[dict]:
-            row = by_slug.get(_profile_slug(person.get("profile_url")))
-            if row:
-                return row
+        def match(person: Dict[str, Any]) -> List[dict]:
+            same = by_slug.get(_profile_slug(person.get("profile_url")))
+            if same:
+                return same
             same = by_name.get(_name_key(person.get("name")), [])
-            return same[0] if len(same) == 1 else None
+            return same if len({_profile_slug(r["profile_url"]) or r["id"] for r in same}) == 1 else []
 
-        moved: Dict[int, dict] = {}
-        for person in conversations:
-            row = match(person)
-            if row and person.get("replied") and row["status"] != "replied":
-                moved[row["id"]] = {**row, "status": "replied"}
-        for person in connections:
-            row = match(person)
-            if row and row["status"] == "invited" and row["id"] not in moved:
-                moved[row["id"]] = {**row, "status": "accepted"}
-        for item_id, row in moved.items():
-            LinkedInCopilotService.update_prospect(item_id, row["status"])
-        changed = [{"id": r["id"], "name": r["name"], "status": r["status"]} for r in moved.values()]
+        target: Dict[int, str] = {}
+        for status, people in (("invited", sent), ("accepted", connections),
+                               ("replied", [c for c in conversations if c.get("replied")])):
+            for person in people:
+                for r in match(person):
+                    current = target.get(r["id"], r["status"])
+                    if _STAGE[status] > _STAGE.get(current, 0):
+                        target[r["id"]] = status
+        for item_id, status in target.items():
+            LinkedInCopilotService.update_prospect(item_id, status)
+        changed = _one_per_person([{**r, "status": target[r["id"]]} for r in rows if r["id"] in target])
+        after = _one_per_person([{**r, "status": target.get(r["id"], r["status"])} for r in rows])
+        pick = lambda status: [{"id": r["id"], "name": r["name"], "status": r["status"]} for r in changed if r["status"] == status]
         return {
-            "accepted": [c for c in changed if c["status"] == "accepted"],
-            "replied": [c for c in changed if c["status"] == "replied"],
-            "waiting": sum(1 for r in open_rows if r["status"] == "invited" and r["id"] not in moved),
-            "read": {"connections": len(connections), "conversations": len(conversations)},
+            "invited": pick("invited"), "accepted": pick("accepted"), "replied": pick("replied"),
+            "waiting": sum(1 for r in after if r["status"] == "invited"),
+            "read": {"sent": len(sent), "connections": len(connections), "conversations": len(conversations)},
         }
 
     # ── Easy Apply assistant (fills the form; the user reviews and submits) ──
