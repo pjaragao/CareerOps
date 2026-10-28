@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { FileText, BookOpen, Globe, Briefcase, MessageSquare, Key, Puzzle, PenLine } from 'lucide-react';
+import { FileText, BookOpen, Globe, Briefcase, MessageSquare, Key, Puzzle, PenLine, Search } from 'lucide-react';
 import MainLayout from './layouts/MainLayout';
 import TabbedPage from './components/TabbedPage';
 import Home from './pages/Home';
@@ -7,6 +7,7 @@ import Profile from './pages/Profile';
 import DocumentRepository from './pages/DocumentRepository';
 import LinkedInTexts from './pages/LinkedInTexts';
 import JobBoard from './pages/JobBoard';
+import JobSearch from './pages/JobSearch';
 import Interview from './pages/Interview';
 import LinkedInCopilot from './pages/LinkedInCopilot';
 import Settings from './pages/Settings';
@@ -25,6 +26,7 @@ const MyProfile = () => (
 const Jobs = () => (
   <TabbedPage tabs={[
     { id: 'vagas', label: 'Vagas e candidaturas', icon: <Briefcase size={16} />, render: () => <JobBoard /> },
+    { id: 'pesquisar', label: 'Pesquisar vagas', icon: <Search size={16} />, render: () => <JobSearch /> },
     { id: 'entrevistas', label: 'Preparação de entrevistas', icon: <MessageSquare size={16} />, render: () => <Interview /> },
   ]} />
 );
