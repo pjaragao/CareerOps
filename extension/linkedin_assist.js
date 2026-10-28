@@ -900,7 +900,21 @@
     const CONNECT = /^\+?\s*(conectar|connect)$/i;
     const SEND_NO_NOTE = ['enviar sem nota', 'send without a note', 'send without note'];
     const SEND = ['enviar', 'send', 'enviar convite', 'send invitation'];
-    const inDialog = () => [...document.querySelectorAll('div[role="dialog"], .artdeco-modal, [aria-modal="true"]')].find((d) => d.offsetParent !== null || d.getClientRects().length);
+    const dialogs = () => [...document.querySelectorAll('div[role="dialog"], .artdeco-modal, [aria-modal="true"], dialog[open]')]
+        .filter((d) => (d.offsetParent !== null || d.getClientRects().length) && !own(d));
+    const NO_NOTE = /^(send without( a)? note|enviar sem( uma)? nota)$/i;
+    const EMAIL = 'input[type="email"], input[name="email"], input[id*="email" i]';
+    // "Send without a note" anywhere in the open dialogs; plain "Send" only when no email field is asked for
+    function sendButton(open) {
+        for (const d of open) {
+            const btns = [...d.querySelectorAll('button')].filter((b) => b.offsetParent !== null && !b.disabled);
+            const noNote = btns.find((b) => NO_NOTE.test(btnLabel(b)) || NO_NOTE.test(clean(b.getAttribute('aria-label') || '')));
+            if (noNote) return noNote;
+            const send = btns.find((b) => SEND.includes(btnLabel(b)));
+            if (send && !d.querySelector(EMAIL)) return send;
+        }
+        return null;
+    }
     const btnLabel = (b) => clean(b.innerText || b.getAttribute('aria-label') || '').split('\n')[0].toLowerCase();
 
     // Only the profile's own top card counts. <main> also holds "People you may know" / "More profiles for you", whose
@@ -961,15 +975,16 @@
         if (actions().some((l) => PENDING.test(l))) return 'pending';
         const target = await findConnect(card);
         if (!target) return actions().some((l) => /^(mensagem|message)$/.test(l)) ? 'connected' : 'unavailable';
+        const before = new Set(dialogs());
         target.click();
-        const dlg = await waitFor(inDialog, 4000);
-        if (!dlg) {
+        // The invite dialog is the one that opens now, not one already on the page (the messaging overlay is a
+        // dialog too): look for its send button in every dialog that is open, newest first
+        const btn = await waitFor(() => sendButton(dialogs().sort((x, y) => before.has(x) - before.has(y))), 5000);
+        if (!btn) {
             // some profiles send at once, without a dialog: the button turns into "Pending"
-            return (await waitFor(() => actions().some((l) => PENDING.test(l)), 2000)) ? 'sent' : 'needs_user';
+            if (await waitFor(() => actions().some((l) => PENDING.test(l)), 1500)) return 'sent';
+            return 'needs_user';   // e.g. LinkedIn asks for the person's email: that one is yours
         }
-        const btn = await waitFor(() => [...dlg.querySelectorAll('button')].find((b) => SEND_NO_NOTE.includes(btnLabel(b)))
-            || [...dlg.querySelectorAll('button')].find((b) => SEND.includes(btnLabel(b)) && !dlg.querySelector('input[type="email"], input[name="email"]')), 3000);
-        if (!btn) return 'needs_user';   // e.g. LinkedIn asks for the person's email: that one is yours
         btn.click();
         await wait(800);
         return 'sent';
