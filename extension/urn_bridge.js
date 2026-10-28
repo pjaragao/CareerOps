@@ -66,3 +66,15 @@ try {
         return send.apply(this, arguments);
     };
 } catch (e) { /* page locked these down: React data and the page link still work */ }
+
+// ── 3. File pickers ────────────────────────────────────────────────────────────────────────────────────────────
+// LinkedIn's Easy Apply has no file input until "Upload resume" is clicked; then it creates one and opens the system
+// file dialog. While linkedin_assist.js marks <html data-careerops-pick-file>, that dialog is skipped: the input stays
+// in the page and the extension puts the CV generated for the job in it.
+try {
+    const skip = (el) => el.type === 'file' && document.documentElement.hasAttribute('data-careerops-pick-file');
+    const click = HTMLInputElement.prototype.click;
+    HTMLInputElement.prototype.click = function () { if (skip(this)) return undefined; return click.apply(this, arguments); };
+    const picker = HTMLInputElement.prototype.showPicker;
+    if (picker) HTMLInputElement.prototype.showPicker = function () { if (skip(this)) return undefined; return picker.apply(this, arguments); };
+} catch (e) { /* the user picks the file */ }

@@ -32,6 +32,24 @@ async def get_job(job_id: int):
         raise HTTPException(status_code=404, detail="Job not found")
     return job
 
+@router.get("/linkedin/{linkedin_job_id}")
+async def job_by_linkedin_id(linkedin_job_id: str):
+    """The CareerOps job for a LinkedIn job id (Easy Apply uses it to attach the CV generated for that job)."""
+    from app.db.session import get_db_connection, get_db_cursor
+    conn = get_db_connection()
+    try:
+        with get_db_cursor(conn) as cur:
+            cur.execute("""SELECT id, status, resume_markdown IS NOT NULL AND resume_markdown <> '' AS has_resume,
+                                  cover_letter IS NOT NULL AND cover_letter <> '' AS has_cover
+                             FROM public.job_listings WHERE linkedin_job_id = %s OR url LIKE %s ORDER BY id LIMIT 1""",
+                        (linkedin_job_id, f"%/jobs/view/{linkedin_job_id}/%"))
+            row = cur.fetchone()
+    finally:
+        conn.close()
+    if not row:
+        raise HTTPException(status_code=404, detail="Vaga ainda não está no CareerOps")
+    return dict(row)
+
 @router.post("/manual")
 async def add_manual_job(job: ManualJobCreate):
     success = JobService.insert_manual_job(

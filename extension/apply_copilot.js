@@ -300,14 +300,48 @@
     const mark = (f, color) => f.els.forEach((el) => { (el.type === 'radio' || el.type === 'checkbox' ? el.parentElement : el).style.outline = `2px solid ${color}`; });
 
     // ── Files: tailored resume (and cover letter) PDFs from CareerOps ──
+    // Which document a file input wants. The text around an input often names both ("Resume/CV … Cover letter"), and
+    // the resume used to win: the input's own attributes decide first, then the closest text that names only one.
+    function fileKind(el, inputs) {
+        const own = `${el.id} ${el.name} ${el.getAttribute('aria-label') || ''} ${el.getAttribute('data-automation-id') || ''} ${el.getAttribute('data-qa') || ''}`;
+        if (/cover|carta|motivation/i.test(own)) return 'cover';
+        if (/resume|r[eé]sum[eé]|\bcv\b|curr[ií]cul/i.test(own)) return 'resume';
+        if (inputs.length === 1) {
+            // one upload on the step: the resume, unless its own short label asks for a letter (never page-wide text,
+            // which includes the job description)
+            for (let box = el.parentElement, k = 0; box && k < 3; box = box.parentElement, k++) {
+                const t = (box.innerText || '');
+                if (t.length > 300) break;
+                if (COVER.test(t) && !RESUME.test(t)) return 'cover';
+            }
+            return 'resume';
+        }
+        for (let box = el.parentElement, k = 0; box && k < 8; box = box.parentElement, k++) {
+            const t = (box.innerText || '').slice(0, 600);
+            const cover = COVER.test(t), resume = RESUME.test(t);
+            if (cover && !resume) return 'cover';
+            if (resume && !cover) return 'resume';
+            if (cover && resume) {
+                // both in this box: the one named nearest before the input (the field's own heading)
+                let last = null;
+                const walker = document.createTreeWalker(box, NodeFilter.SHOW_TEXT);
+                for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+                    if (!(n.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING)) break;
+                    if (COVER.test(n.textContent)) last = 'cover'; else if (RESUME.test(n.textContent)) last = 'resume';
+                }
+                if (last) return last;
+                break;
+            }
+        }
+        return inputs.length === 1 ? 'resume' : null;
+    }
     const attached = new WeakSet();
     async function attachFiles(manual = false) {
         const inputs = [...document.querySelectorAll('input[type="file"]')].filter((el) => !el.disabled && !attached.has(el));
         if (!inputs.length) { if (manual) status('Não encontrei campo de arquivo nesta etapa.'); return 0; }
         let n = 0;
         for (const el of inputs) {
-            const ctx = `${labelOf(el)} ${el.name} ${el.id} ${(el.closest('div, section, fieldset') || {}).innerText || ''}`.slice(0, 400);
-            const kind = COVER.test(ctx) && !RESUME.test(labelOf(el)) ? 'cover' : RESUME.test(ctx) || inputs.length === 1 ? 'resume' : null;
+            const kind = fileKind(el, inputs);
             if (!kind || (kind === 'resume' && !prep.resume_markdown) || (kind === 'cover' && !prep.cover_letter)) continue;
             const file = await send({ action: 'backendFile', path: `/jobs/${jobId}/document.pdf?kind=${kind}` });
             if (!file || !file.ok) { status(`Não consegui baixar o ${kind === 'resume' ? 'CV' : 'carta'}: ${(file && file.detail) || ''}`); continue; }

@@ -924,10 +924,84 @@
     const DEMOGRAPHIC = /race|ra[cç]a|etnia|ethnic|veteran|disab|defici[eê]ncia|pcd|orienta[cç][aã]o sexual|sexual orientation|pronoun|pronome|religi/i;
     const PLACEHOLDER = /^(selecione|select|escolha|choose)/i;
 
+    // LinkedIn's apply form: the old modal (div role=dialog) or the native <dialog> it uses now (top layer: no
+    // offsetParent, so visibility is checked with getClientRects)
+    const shown = (el) => el.offsetParent !== null || el.getClientRects().length > 0;
     function easyApplyModal() {
-        return [...document.querySelectorAll('.jobs-easy-apply-modal, div[role="dialog"]')]
-            .find((d) => d.offsetParent !== null && (d.classList.contains('jobs-easy-apply-modal')
-                || /candidatura simplificada|easy apply|apply to |candidatar-se/i.test(d.innerText.slice(0, 400))));
+        return [...document.querySelectorAll('.jobs-easy-apply-modal, div[role="dialog"], dialog[open]')]
+            .find((d) => shown(d) && (d.classList.contains('jobs-easy-apply-modal')
+                || /candidatura simplificada|easy apply|apply to |candidatar-se|candidatura para/i.test(d.innerText.slice(0, 400))));
+    }
+
+    // ── CV and cover letter generated for this job, attached in the form ──
+    // A file input already in the step is filled directly. LinkedIn's current form has none: "Upload resume" creates one
+    // and opens the system dialog; urn_bridge.js skips that dialog while <html data-careerops-pick-file> is set.
+    const UPLOAD = { resume: /^(upload resume|carregar curr[ií]culo|enviar curr[ií]culo|fazer upload do curr[ií]culo|upload cv)/i,
+                     cover: /^(upload cover letter|carregar carta|enviar carta|fazer upload da carta)/i };
+    const KIND_TEXT = { resume: /resume|r[eé]sum[eé]|\bcv\b|curr[ií]cul/i, cover: /cover letter|carta de apresenta|motivation letter/i };
+    async function careeropsJob(say) {
+        const id = currentJobId();
+        if (!id) return null;
+        let res = await backend('GET', `/jobs/linkedin/${id}`);
+        if (!res.ok && res.status === 404) {   // not imported yet: import it, then look again
+            say('Importando a vaga para o CareerOps…');
+            let job = jobFromPage(id);
+            if (!job.description) { const extra = await jobPosting(id); job = { ...job, ...Object.fromEntries(Object.entries(extra).filter(([, v]) => v)) }; }
+            await backend('POST', '/jobs/import-extension', { title: job.title, company: job.company, location: job.location, description: job.description,
+                url: `https://www.linkedin.com/jobs/view/${id}/`, linkedin_job_id: id, status: 'new', hiringTeam: hiringTeamFromPage() });
+            res = await backend('GET', `/jobs/linkedin/${id}`);
+        }
+        return res.ok ? res.data : null;
+    }
+    async function putFile(modal, kind, file) {
+        const bytes = Uint8Array.from(atob(file.b64), (c) => c.charCodeAt(0));
+        const dt = new DataTransfer();
+        dt.items.add(new File([bytes], file.name, { type: file.type }));
+        const set = (input) => { input.files = dt.files; input.dispatchEvent(new Event('input', { bubbles: true })); input.dispatchEvent(new Event('change', { bubbles: true })); };
+        const inputs = [...modal.querySelectorAll('input[type="file"]')];
+        const direct = inputs.find((i) => KIND_TEXT[kind].test(`${i.id} ${i.name} ${i.getAttribute('aria-label') || ''} ${(i.closest('label, div') || {}).innerText || ''}`.slice(0, 300)));
+        if (direct || (kind === 'resume' && inputs.length === 1)) { set(direct || inputs[0]); return true; }
+        const btn = [...modal.querySelectorAll('button, [role="button"], label')].find((b) => !own(b) && UPLOAD[kind].test(label(b)));
+        if (!btn) return false;
+        const before = new Set(document.querySelectorAll('input[type="file"]'));
+        document.documentElement.setAttribute('data-careerops-pick-file', '');
+        try {
+            btn.click();
+            const input = await waitFor(() => [...document.querySelectorAll('input[type="file"]')].find((i) => !before.has(i)), 3000);
+            if (!input) return false;
+            set(input);
+            return true;
+        } finally {
+            setTimeout(() => document.documentElement.removeAttribute('data-careerops-pick-file'), 500);
+        }
+    }
+    // the step asks for a CV / cover letter: attach the ones generated for this job (once per form)
+    async function attachDocuments(modal, say) {
+        const wants = ['resume', 'cover'].filter((k) => !(modal.__careeropsDocs || {})[k]
+            && ([...modal.querySelectorAll('button, [role="button"], label')].some((b) => !own(b) && UPLOAD[k].test(label(b)))
+                || [...modal.querySelectorAll('input[type="file"]')].length && KIND_TEXT[k].test(modal.innerText)));
+        if (!wants.length) return [];
+        modal.__careeropsDocs = modal.__careeropsDocs || {};
+        const job = await careeropsJob(say);
+        if (!job) { say('Vaga não encontrada no CareerOps: anexe o CV à mão.'); return []; }
+        if ((wants.includes('resume') && !job.has_resume) || (wants.includes('cover') && !job.has_cover)) {
+            say('Gerando o CV e a carta para esta vaga (≈1 min)…');
+            await backend('POST', `/jobs/${job.id}/auto-apply/prepare`, {});
+        }
+        const done = [];
+        for (const kind of wants) {
+            const file = await message({ action: 'backendFile', path: `/jobs/${job.id}/document.pdf?kind=${kind}` });
+            if (!file || !file.ok) { say(`Não consegui baixar o ${kind === 'resume' ? 'CV' : 'carta'}: ${(file && file.detail) || ''}`); continue; }
+            if (await putFile(modal, kind, file)) {
+                modal.__careeropsDocs[kind] = true;
+                done.push(file.name);
+                await wait(2500);   // LinkedIn uploads it and adds it to the list
+                // the uploaded file must be the one chosen (LinkedIn keeps the last CV used, often another job's)
+                const radio = [...modal.querySelectorAll('input[type="radio"]')].find((r) => (r.closest('label, li, div') || {}).innerText && r.closest('li, div').innerText.includes(file.name.replace(/\.pdf$/i, '')));
+                if (radio && !radio.checked) radio.click();
+            }
+        }
+        return done;
     }
 
     function labelFor(el, modal) {
@@ -943,7 +1017,7 @@
         const fields = [];
         const seen = new Set();
         modal.querySelectorAll('input, textarea, select').forEach((el, i) => {
-            if (el.closest('.careerops-card') || el.offsetParent === null || el.disabled) return;
+            if (el.closest('.careerops-card') || !shown(el) || el.disabled) return;
             const type = el.tagName === 'SELECT' ? 'select' : el.tagName === 'TEXTAREA' ? 'textarea'
                 : el.type === 'radio' ? 'radio' : el.type === 'checkbox' ? 'checkbox' : el.type === 'number' ? 'number'
                 : ['text', 'tel', 'email', 'url', ''].includes(el.type) ? 'text' : null;
@@ -1010,7 +1084,9 @@
         const all = collectFields(modal);
         const fields = all.filter((f) => !f.current);
         const status = panel.querySelector('.careerops-apply-status');
-        if (!fields.length) { status.textContent = 'Nada para preencher nesta etapa. Revise e clique em Avançar.'; return { filled: 0, pending: 0 }; }
+        const attached = await attachDocuments(modal, (t) => { status.textContent = t; });
+        if (attached.length) line(panel, `📎 Anexado: ${attached.join(', ')} (gerado para esta vaga).`, '#00b894');
+        if (!fields.length) { status.textContent = attached.length ? 'Anexado. Revise e clique em Avançar.' : 'Nada para preencher nesta etapa. Revise e clique em Avançar.'; return { filled: 0, pending: 0 }; }
         const demographic = fields.filter((f) => DEMOGRAPHIC.test(f.label));
         const send = fields.filter((f) => !DEMOGRAPHIC.test(f.label));
         demographic.forEach((f) => mark(f, '#e17055'));
@@ -1289,23 +1365,6 @@
         }
     }
 
-    async function uploadResume(modal) {
-        const input = modal.querySelector('input[type="file"]');
-        if (!input || autopilot.uploaded || !autopilot.prep.resume_markdown) return false;
-        if (!/resume|curr[ií]culo|\bcv\b/i.test(modal.innerText)) return false;
-        const file = await message({ action: 'backendFile', path: `/jobs/${autopilot.jobId}/document.pdf?kind=resume` });
-        if (!file || !file.ok) { apStatus(`Não consegui baixar o CV: ${(file && file.detail) || ''} — sigo com o CV já salvo no LinkedIn.`, '#b7791f'); autopilot.uploaded = true; return false; }
-        const bytes = Uint8Array.from(atob(file.b64), (c) => c.charCodeAt(0));
-        const dt = new DataTransfer();
-        dt.items.add(new File([bytes], file.name, { type: file.type }));
-        input.files = dt.files;
-        input.dispatchEvent(new Event('change', { bubbles: true }));
-        autopilot.uploaded = true;
-        apStatus(`📎 CV personalizado enviado (${file.name}).`);
-        await wait(3000);
-        return true;
-    }
-
     async function finishApplied() {
         autopilot.done = true;
         const r = await backend('PATCH', `/jobs/${autopilot.jobId}/status`, { status: 'applied' });
@@ -1316,7 +1375,7 @@
     async function driveAutopilot() {
         const ap = autopilot;
         if (!ap || ap.done || ap.running || !ap.prep.job) return;
-        if ([...document.querySelectorAll('div[role="dialog"], .artdeco-modal')].some((d) => d.offsetParent !== null && SENT.test(d.innerText))) { finishApplied(); return; }
+        if ([...document.querySelectorAll('div[role="dialog"], .artdeco-modal, dialog[open]')].some((d) => shown(d) && SENT.test(d.innerText))) { finishApplied(); return; }
         const modal = easyApplyModal();
         if (!modal) return;
         const footer = [...modal.querySelectorAll('button')].filter((b) => !own(b) && b.offsetParent !== null && !b.disabled);
@@ -1326,7 +1385,6 @@
         ap.running = true;
         try {
             await wait(800);
-            await uploadResume(modal);
             const panel = modal.querySelector('.careerops-apply');
             const result = panel ? await fillStep(modal, panel) : { pending: 0 };
             const buttons = [...modal.querySelectorAll('button')].filter((b) => !own(b) && b.offsetParent !== null && !b.disabled);
