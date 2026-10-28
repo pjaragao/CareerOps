@@ -684,7 +684,8 @@
             const ed = await waitFor(() => [...thread.querySelectorAll(EDITOR)].find((el) => el.offsetParent !== null && !own(el))
                 || [...block.parentElement.querySelectorAll(EDITOR)].find((el) => el.offsetParent !== null && !own(el)));
             if (!ed) { toast('Não achei a caixa de resposta — use Copiar', false); return; }
-            fill(ed, ta.value, true);
+            const tagged = await ensureMention(ed, who.name);
+            fill(ed, tagged ? dropLeadingName(ta.value, who.name) : ta.value, true);
             likeOnComment = like.checked;
             toast('Inserido. Revise e clique em Responder.');
             box.remove();
@@ -695,6 +696,55 @@
         actions.appendChild(button('🔄 Outra', () => again(opts.instruction), false));
         box.appendChild(actions);
         promptRow(box, 'Refazer com um pedido (ex.: discorde com educação, cite um exemplo)', again);
+    }
+
+    // ── @mention of the person you answer: LinkedIn usually puts it in the reply box by itself (sometimes a moment
+    // later); when it doesn't, type "@Name" and pick the person in LinkedIn's suggestion list, like you would
+    const MENTION = 'a, .ql-mention, [data-entity-urn], [data-mention], [class*="mention"]';
+    const OPTION = '[role="listbox"] [role="option"], [class*="typeahead"] [role="option"], [class*="typeahead"] li';
+    const plain = (t) => (t || '').toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '');
+    const hasMention = (ed, name) => !!ed.querySelector(MENTION) || (name && plain(ed.innerText).includes(plain(name)));
+    async function ensureMention(ed, name) {
+        if (!name) return false;
+        if (await waitFor(() => hasMention(ed, name), 1500)) return true;
+        const words = name.split(/\s+/).filter(Boolean);
+        const typed = '@' + words.slice(0, 2).join(' ');
+        writing = true;
+        try {
+            ed.focus();
+            const sel = window.getSelection();
+            sel.selectAllChildren(ed);
+            sel.collapseToStart();
+            document.execCommand('insertText', false, typed);
+        } finally { writing = false; }
+        const [first, last] = [plain(words[0]), plain(words[words.length - 1])];
+        const option = await waitFor(() => [...document.querySelectorAll(OPTION)]
+            .find((o) => o.offsetParent !== null && plain(o.innerText).includes(first) && plain(o.innerText).includes(last)), 3500);
+        if (option) {
+            option.click();
+            if (await waitFor(() => ed.querySelector(MENTION), 1500)) return true;
+        }
+        // no suggestion list: take the typed "@Name" back out and reply without the tag
+        writing = true;
+        try {
+            ed.focus();
+            const sel = window.getSelection();
+            sel.selectAllChildren(ed);
+            sel.collapseToStart();
+            for (let k = 0; k < typed.length; k++) sel.modify('extend', 'forward', 'character');
+            if (sel.toString() === typed) document.execCommand('delete');
+        } finally { writing = false; }
+        toast('Não consegui marcar a pessoa — marque com @ antes de enviar', false);
+        return false;
+    }
+    // with the @mention in front, an opening "Ahmed," / "Ahmed —" would repeat the name
+    function dropLeadingName(text, name) {
+        const first = (name || '').split(/\s+/)[0];
+        if (!first) return text;
+        const m = text.match(new RegExp(`^\\s*${first.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\p{L}])\\s*[,—–:-]?\\s*`, 'iu'));
+        if (!m || !m[0].trim()) return text;
+        const rest = text.slice(m[0].length);
+        return rest.charAt(0).toUpperCase() + rest.slice(1);
     }
 
     // ▾ next to "✨ Responder": you say what you want in the reply, then the AI writes it

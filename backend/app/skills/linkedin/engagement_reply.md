@@ -43,7 +43,7 @@ DECIDE THE KIND:
 - "close": the reply only thanks, agrees, praises or tags someone without adding to the discussion. Write a short, warm thank-you that ends the exchange naturally (no question, no new topic) — one or two sentences.
 
 RULES:
-- Address the person by first name. Shorter than a comment: "continue" up to ~350 characters, "close" up to ~160.
+- Do not start with the person's name: the reply goes out with an @mention of them in front. Shorter than a comment: "continue" up to ~350 characters, "close" up to ~160.
 - Never self-promote, never link, never ask for a job, no hashtags. Only facts from the knowledge base; never numbers marked "(estimate)" or NDA client names.
 
 {{ writing_style("comment") }}
