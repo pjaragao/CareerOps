@@ -1079,13 +1079,23 @@
     }
 
     let applyBusy = false;
+    // one notice line under the status, replaced at each step (the bar never grows)
+    function note(panel, text, color = '#555') {
+        let el = panel.querySelector('.careerops-apply-note');
+        if (!el) { el = line(panel, ''); el.className = 'careerops-apply-note'; }
+        el.textContent = text;
+        el.style.color = color;
+        return el;
+    }
+
     async function fillStep(modal, panel) {
         if (applyBusy) return null;
         const all = collectFields(modal);
         const fields = all.filter((f) => !f.current);
         const status = panel.querySelector('.careerops-apply-status');
+        note(panel, '');   // the previous step's notice
         const attached = await attachDocuments(modal, (t) => { status.textContent = t; });
-        if (attached.length) line(panel, `📎 Anexado: ${attached.join(', ')} (gerado para esta vaga).`, '#00b894');
+        if (attached.length) note(panel, `📎 Anexado: ${attached.join(', ')} (gerado para esta vaga).`, '#00b894');
         if (!fields.length) { status.textContent = attached.length ? 'Anexado. Revise e clique em Avançar.' : 'Nada para preencher nesta etapa. Revise e clique em Avançar.'; return { filled: 0, pending: 0 }; }
         const demographic = fields.filter((f) => DEMOGRAPHIC.test(f.label));
         const send = fields.filter((f) => !DEMOGRAPHIC.test(f.label));
@@ -1112,29 +1122,50 @@
         demographic.forEach((f) => pending.push(f.label));
         status.style.color = '#555';
         status.textContent = `${filled} preenchido(s) em verde. ` + (pending.length ? `Para você (laranja): ${pending.slice(0, 6).join(' · ')}` : 'Revise e clique em Avançar.');
-        if (toConfirm.length) line(panel, `Confirme ou altere (amarelo) — sugestão de mercado estimada pela IA: ${toConfirm.join(' · ')}`, '#b7791f');
-        if (res.data.notes) line(panel, res.data.notes, '#777');
+        if (toConfirm.length) note(panel, `Confirme ou altere (amarelo) — sugestão de mercado estimada pela IA: ${toConfirm.join(' · ')}`, '#b7791f');
+        if (res.data.notes) note(panel, res.data.notes, '#777');
         return { filled, pending: pending.length };
     }
 
     let applyPanel = null;
+    // The panel goes right above the area that scrolls the form (inside the same column), never as a loose child of
+    // the dialog: LinkedIn's <dialog> lays its children out in a row, and a panel there squeezed the form into a
+    // narrow column
+    function placeApplyPanel(modal, panel) {
+        const field = [...modal.querySelectorAll('input, select, textarea, h3, label')].find((el) => !own(el) && shown(el));
+        let scroller = null;
+        for (let el = field && field.parentElement; el && el !== modal; el = el.parentElement) {
+            if (/(auto|scroll)/.test(getComputedStyle(el).overflowY)) { scroller = el; break; }
+        }
+        const parent = scroller && scroller.parentElement;
+        const rowLayout = parent && getComputedStyle(parent).display.includes('flex') && !getComputedStyle(parent).flexDirection.startsWith('column');
+        if (scroller && parent && !rowLayout) parent.insertBefore(panel, scroller);
+        else if (scroller) scroller.insertAdjacentElement('afterbegin', panel);   // inside the scrolling area
+        else modal.insertAdjacentElement('afterbegin', panel);
+    }
+
     function decorateEasyApply() {
         const modal = easyApplyModal();
         if (!modal) { applyPanel = null; return; }
         if (!modal.querySelector('.careerops-apply')) {
+            // a compact bar: button, auto-fill switch and one status line; the colour legend is the tooltip
             applyPanel = card('CareerOps · Easy Apply');
             applyPanel.classList.add('careerops-apply');
-            line(applyPanel, 'A IA preenche com seus dados (config/easy_apply.yml + CV). Verde: preenchido · Amarelo: salário sugerido, confirme · Laranja: com você.', '#777');
-            const status = line(applyPanel, '');
-            status.className = 'careerops-apply-status';
-            const auto = document.createElement('label');
-            auto.style.cssText = 'font-size:12px;color:#555;display:flex;gap:4px;align-items:center;margin:4px 0';
-            auto.innerHTML = '<input type="checkbox" checked> preencher cada nova etapa automaticamente';
-            applyPanel.__auto = auto.querySelector('input');
+            applyPanel.style.cssText += ';margin:6px 16px;padding:8px 12px;flex:0 0 auto;box-shadow:none';
+            applyPanel.title = 'A IA preenche com seus dados (config/easy_apply.yml + o CV gerado para a vaga). Verde: preenchido · Amarelo: sugestão, confirme · Laranja: com você.';
+            const row = document.createElement('div');
+            row.style.cssText = 'display:flex;align-items:center;gap:10px;flex-wrap:wrap';
             const fillBtn = button('✨ Preencher com IA', () => fillStep(modal, applyPanel));
             fillBtn.classList.add('careerops-fill');
-            applyPanel.append(fillBtn, auto);
-            modal.insertAdjacentElement('afterbegin', applyPanel);
+            const auto = document.createElement('label');
+            auto.style.cssText = 'font-size:12px;color:#555;display:flex;gap:4px;align-items:center;margin:0;cursor:pointer';
+            auto.innerHTML = '<input type="checkbox" checked> cada nova etapa';
+            applyPanel.__auto = auto.querySelector('input');
+            row.append(fillBtn, auto);
+            applyPanel.appendChild(row);
+            const status = line(applyPanel, '');
+            status.className = 'careerops-apply-status';
+            placeApplyPanel(modal, applyPanel);
         }
         // Auto: when a new step shows empty fields, fill them (the user still clicks Next/Submit)
         const panel = modal.querySelector('.careerops-apply');
