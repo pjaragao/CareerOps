@@ -268,10 +268,19 @@ async function setApplyTab(tabId, value) {
     if (value) tabs[tabId] = value; else delete tabs[tabId];
     await chrome.storage.session.set({ applyTabs: tabs });
 }
+// A new tab continues the application only when it is the one the application opened: LinkedIn's "Apply" on the
+// company site (right after the hand-off), or a company page opening its form. Other links clicked later in an
+// Auto Apply tab (the feed, another job) open ordinary tabs.
+const HANDOFF_WINDOW = 2 * 60 * 1000;
+const SITE_WINDOW = 30 * 60 * 1000;
 chrome.tabs.onCreated.addListener(async (tab) => {
     const tabs = await applyTabs();
     const from = tab.openerTabId && tabs[tab.openerTabId];
-    if (from) await setApplyTab(tab.id, { ...from, via: 'opener' });
+    if (!from) return;
+    const now = Date.now();
+    const handedOff = from.handoffAt && now - from.handoffAt < HANDOFF_WINDOW;
+    const companySite = !from.linkedinJobId && now - from.at < SITE_WINDOW;
+    if (handedOff || companySite) await setApplyTab(tab.id, { jobId: from.jobId, at: now, via: 'opener' });
 });
 chrome.tabs.onRemoved.addListener((tabId) => { setApplyTab(tabId, null); });
 
@@ -295,7 +304,15 @@ async function backendFile(path) {
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     const tabId = sender.tab && sender.tab.id;
     if (request.action === 'applyStart') {
-        setApplyTab(tabId, { jobId: request.jobId, at: Date.now() }).then(() => sendResponse({ ok: true }));
+        setApplyTab(tabId, { jobId: request.jobId, at: Date.now(), linkedinJobId: request.linkedinJobId || null })
+            .then(() => sendResponse({ ok: true }));
+        return true;
+    }
+    if (request.action === 'applyHandoff') {   // LinkedIn's "Apply" (company site) is being clicked in this tab
+        applyTabs().then(async (tabs) => {
+            if (tabs[tabId]) await setApplyTab(tabId, { ...tabs[tabId], handoffAt: Date.now() });
+            sendResponse({ ok: true });
+        });
         return true;
     }
     if (request.action === 'applyPending') {

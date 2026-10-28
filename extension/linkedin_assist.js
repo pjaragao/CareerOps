@@ -1548,7 +1548,7 @@
     const SUBMIT_APP = /^(submit application|submit|enviar candidatura|enviar)$/i;
     const SENT = /application (was )?sent|application submitted|candidatura (foi )?enviada|sua candidatura foi enviada/i;
     let autopilot = null;
-    let applyChecked = false;
+    let applyCheckedFor = null;   // the job id last checked for a pending Auto Apply (LinkedIn changes jobs without reloading)
 
     function apStatus(text, color = '#333') {
         if (autopilot) { autopilot.status.textContent = text; autopilot.status.style.color = color; }
@@ -1556,9 +1556,18 @@
     }
 
     async function startAutopilot() {
-        applyChecked = true;
-        const pending = await message({ action: 'applyPending' });
-        if (!pending) return;
+        const jobOnPage = String(currentJobId());
+        applyCheckedFor = jobOnPage;
+        // the tab CareerOps just opened registers itself (apply_copilot.js) at about the same time: give it a moment
+        const marked = /careerops-apply=/.test(location.hash);
+        let pending = await message({ action: 'applyPending' });
+        for (let k = 0; marked && k < 20 && !(pending && String(pending.linkedinJobId) === jobOnPage); k++) {
+            await sleep(150);
+            pending = await message({ action: 'applyPending' });
+        }
+        if (!pending || autopilot) return;
+        // only on the job it was started for (other jobs and pages opened later in this tab are not applied to)
+        if (pending.linkedinJobId ? String(pending.linkedinJobId) !== jobOnPage : !/careerops-apply=/.test(location.hash)) return;
         const box = card('🚀 CareerOps · Auto Apply');
         box.style.cssText += ';position:fixed;left:16px;bottom:16px;width:330px;margin:0;z-index:2147483646';
         const status = line(box, 'Preparando CV e carta…');
@@ -1568,25 +1577,36 @@
         const autoSubmit = opts.querySelector('input');
         chrome.storage.local.get('autoSubmit', (v) => { autoSubmit.checked = !!(v && v.autoSubmit); });
         autoSubmit.addEventListener('change', () => chrome.storage.local.set({ autoSubmit: autoSubmit.checked }));
-        const stop = button('Parar', async () => { autopilot.done = true; await message({ action: 'applyStop' }); box.remove(); activity('Auto Apply encerrado'); }, false);
+        const stop = button('Parar', () => closeAutopilot('Auto Apply encerrado'), false);
         const pause = button('⏸ Pausar', () => setPaused(!paused), false);
         pause.classList.add('careerops-pause');
         box.append(opts, pause, stop);
         document.documentElement.appendChild(box);
-        autopilot = { jobId: pending.jobId, box, status, autoSubmit, prep: {}, uploaded: false, lastSig: '', running: false, done: false, steps: 0 };
+        const ap = autopilot = { jobId: pending.jobId, linkedinJobId: jobOnPage, box, status, autoSubmit, prep: {}, uploaded: false, lastSig: '', running: false, done: false, steps: 0 };
         const res = await backend('POST', `/jobs/${pending.jobId}/auto-apply/prepare`, {});
+        if (ap.done) return;   // closed meanwhile (Parar, or you left the job)
         if (!res.ok) { apStatus(errText(res), '#d63031'); return; }
-        autopilot.prep = res.data;
+        ap.prep = res.data;
         const btn = await waitFor(() => [...document.querySelectorAll('main button, main a')].find((b) => !own(b) && b.offsetParent !== null
             && (EASY.test(label(b)) || APPLY_EXT.test(label(b)))), 12000);
+        if (ap.done) return;
         if (!btn) { apStatus('Não achei o botão de candidatura nesta página (vaga encerrada ou já candidatado?).', '#d63031'); return; }
         if (EASY.test(label(btn))) {
             apStatus('Abrindo o Easy Apply…');
             btn.click();
         } else {
             apStatus('Esta vaga é no site da empresa: abrindo… o painel CareerOps continua lá (anexa o CV e preenche).');
+            await message({ action: 'applyHandoff' });
             btn.click();
         }
+    }
+
+    function closeAutopilot(text) {
+        autopilot.done = true;
+        autopilot.box.remove();
+        autopilot = null;
+        message({ action: 'applyStop' });
+        activity(text);
     }
 
     async function finishApplied() {
@@ -1854,7 +1874,9 @@
         decorateReplies();
         decorateEasyApply();
         decorateJobSave();
-        if (!applyChecked && currentJobId()) startAutopilot();
+        if (currentJobId() && applyCheckedFor !== String(currentJobId())) startAutopilot();
+        // left the job (feed, another job): this tab's Auto Apply ends, the company-site tab it opened goes on
+        if (autopilot && String(currentJobId()) !== autopilot.linkedinJobId) closeAutopilot('Auto Apply encerrado: você saiu da vaga');
         driveAutopilot();
         // the job pane is reused when another job is opened: reset our button for the new job
         document.querySelectorAll('.careerops-jobbtn').forEach((b) => { if (b.dataset.job !== String(currentJobId())) b.remove(); });

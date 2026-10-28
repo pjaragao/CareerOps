@@ -11,7 +11,9 @@
         try { chrome.runtime.sendMessage(msg, (res) => { void chrome.runtime.lastError; resolve(res); }); } catch (e) { resolve(null); }
     });
     const marker = !inFrame && location.hash.match(/careerops-apply=(\d+)/);
-    const started = marker ? send({ action: 'applyStart', jobId: Number(marker[1]) }) : Promise.resolve();
+    // on LinkedIn the job's own id goes with it: Auto Apply runs on that job only, not on pages visited later in the tab
+    const started = marker ? send({ action: 'applyStart', jobId: Number(marker[1]),
+        linkedinJobId: (location.pathname.match(/\/jobs\/view\/(\d+)/) || [])[1] || new URLSearchParams(location.search).get('currentJobId') }) : Promise.resolve();
     if (location.hostname.endsWith('linkedin.com')) return;   // LinkedIn: linkedin_assist.js drives Easy Apply
 
     const ready = () => new Promise((r) => (document.readyState === 'loading' ? document.addEventListener('DOMContentLoaded', r, { once: true }) : r()));
