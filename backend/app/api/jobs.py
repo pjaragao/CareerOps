@@ -150,6 +150,21 @@ async def import_job_universal(request: Request):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+class JobLinkIn(BaseModel):
+    url: Optional[str] = ""
+    text: Optional[str] = ""
+
+@router.post("/from-url")
+async def job_from_url(body: JobLinkIn):
+    """Title, company, location and description read from the job's link (or from its pasted text); not saved."""
+    from app.services.job_link_service import JobLinkService, LinkError
+    try:
+        if (body.text or "").strip():
+            return await JobLinkService.from_text(body.text, body.url or "")
+        return await JobLinkService.from_url(body.url or "")
+    except LinkError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
 @router.post("/{job_id}/evaluate")
 async def evaluate_job(job_id: int):
     result = await JobService.evaluate_job(job_id)

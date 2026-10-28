@@ -33,6 +33,21 @@ export interface EligibilityIssue {
   reason?: string;
 }
 
+export interface JobFromLink {
+  title: string;
+  company: string;
+  location: string;
+  description: string;
+  url: string;
+  source: string;
+  employment_type?: string;
+  seniority?: string;
+  salary?: string;
+  posted?: string;
+  workplace?: string;
+  existing?: { id: number; job_title: string; company: string; status: string } | null;
+}
+
 export interface AIOptions {
   tone?: string;
   orientation?: string;
@@ -54,6 +69,11 @@ export const jobService = {
       description: job.description
     };
     const response = await api.post('/jobs/manual', payload);
+    return response.data;
+  },
+  // Title, company, location and description read from the job's link, or from its pasted text (not saved)
+  fromLink: async (url: string, text?: string) => {
+    const response = await api.post<JobFromLink>('/jobs/from-url', { url, text: text || '' });
     return response.data;
   },
   deleteJob: async (id: number) => {

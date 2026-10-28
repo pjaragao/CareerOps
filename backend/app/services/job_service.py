@@ -63,6 +63,16 @@ class JobService:
     def insert_manual_job(job_title: str, company: str, location: str, url: str, description: str, linkedin_job_id: Optional[str] = None) -> bool:
         conn = get_db_connection()
         # If no LinkedIn ID, generate a synthetic one from URL or UUID
+        if not linkedin_job_id and url:
+            # the same link added again updates that job instead of creating a copy
+            conn_check = get_db_connection()
+            try:
+                with conn_check.cursor() as cur:
+                    cur.execute("SELECT linkedin_job_id FROM public.job_listings WHERE url = %s ORDER BY id LIMIT 1", (url,))
+                    row = cur.fetchone()
+                    linkedin_job_id = row[0] if row else None
+            finally:
+                conn_check.close()
         if not linkedin_job_id:
             if 'linkedin.com/jobs/view/' in url:
                 match = re.search(r'/view/(\d+)', url)

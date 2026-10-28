@@ -6,6 +6,7 @@ import {
   Search, ChevronDown, ChevronLeft, ChevronRight, ArrowUpDown, Check, X, AlertTriangle,
 } from 'lucide-react';
 import JobDetail, { JobTab, JobAction } from '../components/JobDetail';
+import NewJobModal from '../components/NewJobModal';
 
 // ── Status: one source for labels and colours (list, filters, menu, kanban) ─────────────────────────────────────
 const STATUS: { id: string; label: string; color: string }[] = [
@@ -142,7 +143,6 @@ const JobBoard = () => {
   const [menu, setMenu] = useState<{ job: Job; rect: DOMRect } | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [selected, setSelected] = useState<{ job: Job; tab?: JobTab; action?: JobAction } | null>(null);
-  const [newJob, setNewJob] = useState({ job_title: '', company: '', location: '', url: '', description: '' });
   const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { remember('view', viewMode); }, [viewMode]);
@@ -398,26 +398,7 @@ const JobBoard = () => {
 
       {menu && <StatusMenu anchor={menu.rect} current={menu.job.status} onPick={s => setStatus(menu.job, s)} onClose={() => setMenu(null)} />}
 
-      {showAddModal && createPortal(
-        <div onClick={() => setShowAddModal(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(5,5,10,.75)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, backdropFilter: 'blur(8px)' }}>
-          <div className="panel" onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 440, marginBottom: 0 }}>
-            <h2 style={{ marginBottom: '1.2rem', fontSize: '1.15rem' }}>Nova vaga</h2>
-            <form onSubmit={async e => { e.preventDefault(); try { await jobService.addManualJob(newJob); setShowAddModal(false); setNewJob({ job_title: '', company: '', location: '', url: '', description: '' }); loadJobs(); } catch (err) { alert(err); } }}
-              style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem' }}>
-              <input required value={newJob.job_title} onChange={e => setNewJob({ ...newJob, job_title: e.target.value })} placeholder="Cargo" />
-              <input required value={newJob.company} onChange={e => setNewJob({ ...newJob, company: e.target.value })} placeholder="Empresa" />
-              <input value={newJob.location} onChange={e => setNewJob({ ...newJob, location: e.target.value })} placeholder="Local" />
-              <input value={newJob.url} onChange={e => setNewJob({ ...newJob, url: e.target.value })} placeholder="Link da vaga" />
-              <textarea required value={newJob.description} onChange={e => setNewJob({ ...newJob, description: e.target.value })} placeholder="Descrição" style={{ height: 110 }} />
-              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                <button type="button" className="btn btn-secondary" onClick={() => setShowAddModal(false)}>Cancelar</button>
-                <button type="submit" className="btn btn-primary">Salvar</button>
-              </div>
-            </form>
-          </div>
-        </div>,
-        document.body,
-      )}
+      {showAddModal && <NewJobModal onClose={() => setShowAddModal(false)} onSaved={() => { setShowAddModal(false); loadJobs(); }} />}
 
       {selected && <JobDetail key={`${selected.job.id}-${selected.action || selected.tab || ''}`} job={selected.job} initialTab={selected.tab} autoRun={selected.action}
         onClose={() => setSelected(null)}
