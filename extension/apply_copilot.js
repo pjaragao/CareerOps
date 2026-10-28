@@ -19,7 +19,17 @@
     const copilot = (method, path, body) => send({ action: 'copilotApi', method, path, body }).then((r) => r || { ok: false, data: { detail: 'Sem resposta da extensão' } });
     const errText = (res) => (res && res.data && res.data.detail) || 'Falha ao falar com o CareerOps';
     const clean = (t) => (t || '').replace(/\s+/g, ' ').trim();
-    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    // ⏸ Pausar (here, in the LinkedIn bar or in the popup — shared through chrome.storage) holds every automatic step
+    // at its next wait until ▶ Continuar. A field you typed into is never overwritten.
+    let paused = false;
+    let writing = false;   // our own fill in progress (its input events are not yours)
+    const touched = new WeakSet();
+    const mine = (e) => { if (e.isTrusted && !writing && e.target instanceof Element) touched.add(e.target); };
+    document.addEventListener('input', mine, true);
+    document.addEventListener('change', mine, true);
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    async function gate() { while (paused) await sleep(300); }
+    const wait = async (ms) => { await sleep(ms); await gate(); };
 
     const DEMOGRAPHIC = /race|ra[cç]a|etnia|ethnic|veteran|disab|defici[eê]ncia|pcd|orienta[cç][aã]o sexual|sexual orientation|pronoun|pronome|religi|gender|g[eê]nero|sexo\b/i;
     const PLACEHOLDER = /^(selecione|select|escolha|choose|--|please select)/i;
@@ -41,9 +51,12 @@
             button{font:600 12px system-ui,sans-serif;border-radius:14px;padding:5px 10px;cursor:pointer;margin:2px;border:1px solid #c9c9d6;background:#fff;color:#333}
             button.p{background:#6c5ce7;border-color:#6c5ce7;color:#fff} label{font-size:12px;color:#555;display:flex;gap:4px;align-items:center;margin-top:6px}
             .min{display:none} .box.small .body{display:none} .box.small .min{display:inline}
+            .paused{display:none;font-size:12px;background:#fff6dd;border:1px solid #fdcb6e;color:#8a6d1f;border-radius:8px;padding:5px 8px;margin:6px 0}
+            .box.is-paused .paused{display:block} .box.is-paused{border-color:#fdcb6e}
         </style>
         <div class="box"><div class="head"><strong>🚀 CareerOps · Candidatura</strong>
-            <span><button class="tog" title="Minimizar">–</button><button class="end" title="Encerrar o Auto Apply nesta aba">✕</button></span></div>
+            <span><button class="pause p" title="Segura o preenchimento automático até você continuar">⏸ Pausar</button><button class="tog" title="Minimizar">–</button><button class="end" title="Encerrar o Auto Apply nesta aba">✕</button></span></div>
+            <div class="paused">⏸ Pausado — nada é preenchido até você continuar. Os campos que você digitar não serão alterados.</div>
             <div class="body">
             <div class="job"></div><div class="st">Preparando…</div><div class="todo"></div>
             <div><button class="p fill">✨ Preencher com IA</button><button class="cv">📎 Anexar CV</button></div>
@@ -52,7 +65,9 @@
             </div></div>`;
         document.documentElement.appendChild(host);
         const $ = (s) => root.querySelector(s);
-        ui = { box: $('.box'), st: $('.st'), todo: $('.todo'), auto: $('.auto') };
+        ui = { box: $('.box'), st: $('.st'), todo: $('.todo'), auto: $('.auto'), pause: $('.pause') };
+        $('.pause').onclick = () => setPaused(!paused);
+        renderPause();
         $('.job').textContent = `${job.title || ''} · ${job.company || ''}`;
         $('.tog').onclick = () => ui.box.classList.toggle('small');
         $('.end').onclick = async () => { await send({ action: 'applyStop' }); host.remove(); observer.disconnect(); };
@@ -67,6 +82,28 @@
         };
     }
     const status = (t) => { if (ui.st) ui.st.textContent = t; };
+    function renderPause() {
+        if (!ui.box) return;
+        ui.box.classList.toggle('is-paused', paused);
+        ui.pause.textContent = paused ? '▶ Continuar' : '⏸ Pausar';
+    }
+    function setPaused(v) {
+        try { chrome.storage.local.set({ careeropsPaused: !!v }); } catch (e) { /* extension reloaded */ }
+        applyPaused(v);
+    }
+    function applyPaused(v) {
+        const was = paused;
+        paused = !!v;
+        renderPause();
+        if (was && !paused && ui.auto && ui.auto.checked && !busy && jobId) {   // a step that appeared while paused
+            const sig = collect().map((f) => f.key).join('|');
+            if (sig && sig !== lastSignature) fillPage(false);
+        }
+    }
+    try {
+        chrome.storage.local.get('careeropsPaused', (v) => applyPaused(v && v.careeropsPaused));
+        chrome.storage.onChanged.addListener((c, area) => { if (area === 'local' && c.careeropsPaused) applyPaused(c.careeropsPaused.newValue); });
+    } catch (e) { /* extension reloaded */ }
     const todo = (t) => { if (ui.todo) ui.todo.textContent = t; };
     const copy = (text, msg) => (text ? navigator.clipboard.writeText(text).then(() => status(msg)) : status('Ainda não gerado no CareerOps'));
 
@@ -177,6 +214,10 @@
     }
 
     function setValue(el, text) {
+        writing = true;
+        try { setValueNow(el, text); } finally { writing = false; }
+    }
+    function setValueNow(el, text) {
         el.focus();
         const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : el.tagName === 'SELECT' ? HTMLSelectElement.prototype : HTMLInputElement.prototype;
         // date segments (Workday's month/year) and other key-driven widgets ignore a set value: type it instead
@@ -190,10 +231,14 @@
     }
     // like the user typing: the page's own key handlers see each insertion
     function typeText(el, text) {
-        el.focus();
-        if (el.select) el.select();
-        document.execCommand('insertText', false, text);
-        el.dispatchEvent(new Event('change', { bubbles: true }));
+        const was = writing;
+        writing = true;
+        try {
+            el.focus();
+            if (el.select) el.select();
+            document.execCommand('insertText', false, text);
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+        } finally { writing = was; }
     }
 
     const norm = (t) => clean(t).toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '');
@@ -273,6 +318,8 @@
 
     async function apply(f, value) {
         if (value === undefined || value === null || value === '') return false;
+        await gate();
+        if (f.els.some((el) => touched.has(el))) return false;   // you answered it yourself
         if (!f.els[0].isConnected) return false;   // the form moved to another step meanwhile
         value = String(value);
         if (f.searchPick && (f.options || []).length < 20 && /[,;]/.test(value)) {   // free multi-select (skills…): one pick per item
@@ -401,6 +448,7 @@
             })),
         });
         if (!res.ok) { status(errText(res)); busy = false; return; }
+        if (paused) status('⏸ Pausado — as respostas da IA estão prontas e entram quando você continuar.');
         const sugg = res.data.suggestions || {};
         const corrections = res.data.corrections || {};
         for (const f of toAsk) {
@@ -434,7 +482,7 @@
     const observer = new MutationObserver(() => {
         clearTimeout(observer.t);
         observer.t = setTimeout(() => {
-            if (!ui.auto || !ui.auto.checked || busy) return;
+            if (!ui.auto || !ui.auto.checked || busy || paused) return;
             const sig = collect().map((f) => f.key).join('|');
             if (sig && sig !== lastSignature) fillPage(false);
         }, 1200);

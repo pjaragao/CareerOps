@@ -353,8 +353,8 @@ async function finishProspectCheck(tabId) {
 
 // the 12-hourly run: marked due, started at once if you are already away, otherwise at the next idle moment
 async function runDueCheck() {
-    const { prospectCheckDue } = await chrome.storage.local.get('prospectCheckDue');
-    if (prospectCheckDue) startProspectCheck(false);
+    const { prospectCheckDue, careeropsPaused } = await chrome.storage.local.get(['prospectCheckDue', 'careeropsPaused']);
+    if (prospectCheckDue && !careeropsPaused) startProspectCheck(false);   // paused: stays due for the next idle moment
 }
 chrome.idle.onStateChanged.addListener((state) => { if (state === 'idle') runDueCheck(); });
 
@@ -364,6 +364,8 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
         chrome.idle.queryState(60, (state) => { if (state === 'idle') runDueCheck(); });
     }
     if (alarm.name === CHECK_TIMEOUT) {
+        const { careeropsPaused } = await chrome.storage.local.get('careeropsPaused');
+        if (careeropsPaused) { chrome.alarms.create(CHECK_TIMEOUT, { delayInMinutes: 4 }); return; }   // you paused it to look: wait
         await chrome.storage.local.set({ prospectCheck: { at: Date.now(), ok: false, summary: 'A verificação não terminou em 4 min (LinkedIn não carregou?)' } });
         finishProspectCheck();
     }

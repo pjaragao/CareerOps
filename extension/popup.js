@@ -1,5 +1,19 @@
 document.addEventListener('DOMContentLoaded', () => {
     const $ = (id) => document.getElementById(id);
+
+    // ⏸ / ▶: the same switch as the bar on LinkedIn and the copilot panel on company sites (chrome.storage)
+    const renderPause = (on) => {
+        $('pause-btn').textContent = on ? '▶ Continuar' : '⏸ Pausar';
+        $('pause-btn').className = on ? 'small' : 'secondary small';
+        $('pause-text').textContent = on ? '⏸ Pausado — nada é preenchido, clicado ou importado sozinho' : 'Ações automáticas ativas (preencher, avançar, importar, verificar)';
+        $('pause-card').style.borderColor = on ? 'var(--warn)' : '';
+    };
+    chrome.storage.local.get('careeropsPaused', (v) => renderPause(!!(v && v.careeropsPaused)));
+    $('pause-btn').addEventListener('click', () => chrome.storage.local.get('careeropsPaused', (v) => {
+        const on = !(v && v.careeropsPaused);
+        chrome.storage.local.set({ careeropsPaused: on });
+        renderPause(on);
+    }));
     const importBtn = $('import-btn');
     const cancelBtn = $('cancel-btn');
     const statusText = $('status-text');

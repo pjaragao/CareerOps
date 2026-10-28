@@ -69,6 +69,7 @@
     }
 
     function toast(msg, ok = true) {
+        remember(msg);
         const t = document.createElement('div');
         t.textContent = msg;
         t.style.cssText = `position:fixed;right:16px;bottom:72px;z-index:2147483647;background:${ok ? '#00b894' : '#d63031'};color:#fff;
@@ -79,6 +80,10 @@
 
     // Puts text into LinkedIn's editors: contenteditable (comment box) or textarea (invite note)
     function fill(el, text, append = false) {
+        writing = true;
+        try { fillText(el, text, append); } finally { writing = false; }
+    }
+    function fillText(el, text, append) {
         el.focus();
         if (el.isContentEditable) {
             if (append && clean(el.innerText)) {
@@ -99,12 +104,105 @@
         }
     }
 
-    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    // ── Status and pause: what the extension is doing now (bar at the top), and ⏸ Pausar to hold every automatic
+    // action (filling, clicking Avançar/Enviar, imports, checks) at its next step until ▶ Continuar. Shared by every
+    // tab and the company-site copilot (chrome.storage). A field you typed into is never overwritten, paused or not.
+    let paused = false;
+    let writing = false;   // our own fill in progress (its input events are not yours)
+    const touched = new WeakSet();
+    const mine = (e) => { if (e.isTrusted && !writing && e.target instanceof Element) touched.add(e.target); };
+    document.addEventListener('input', mine, true);
+    document.addEventListener('change', mine, true);
+    const typedByYou = (f) => f.els.some((el) => touched.has(el));
+
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    async function gate() { while (paused) await sleep(300); }
+    const wait = async (ms) => { await sleep(ms); await gate(); };
     async function waitFor(fn, timeout = 4000) {
         const end = Date.now() + timeout;
-        while (Date.now() < end) { const v = fn(); if (v) return v; await wait(150); }
+        while (Date.now() < end) { const v = fn(); if (v) return v; await sleep(150); }
         return null;
     }
+
+    const hud = { el: null, log: [], text: '', hide: null };
+    const clock = () => new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    function remember(text) {
+        if (!text || hud.log[0] && hud.log[0].text === text) return;
+        hud.log.unshift({ at: clock(), text });
+        hud.log.length = Math.min(hud.log.length, 12);
+        if (hud.el && hud.el.__list.style.display !== 'none') renderLog();
+    }
+    function renderLog() {
+        hud.el.__list.replaceChildren(...hud.log.map((l) => {
+            const d = document.createElement('div');
+            d.style.cssText = 'padding:2px 0;border-top:1px solid #eee;color:#444';
+            d.textContent = `${l.at} · ${l.text}`;
+            return d;
+        }));
+        if (!hud.log.length) hud.el.__list.textContent = 'Nada feito ainda nesta aba.';
+    }
+    function buildHud() {
+        const el = document.createElement('div');
+        el.className = 'careerops-card careerops-hud';
+        el.style.cssText = `position:fixed;top:56px;left:50%;transform:translateX(-50%);z-index:2147483647;font:12px/1.4 system-ui,sans-serif;
+            background:#fff;color:#222;border:1px solid ${ACCENT};border-radius:14px;box-shadow:0 4px 14px rgba(0,0,0,.2);padding:4px 6px 4px 10px;
+            width:min(520px,92vw);box-sizing:border-box;display:none`;
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex;align-items:center;gap:6px';
+        const dot = document.createElement('span');
+        dot.style.cssText = 'width:8px;height:8px;border-radius:50%;flex:0 0 auto';
+        const text = document.createElement('span');
+        text.style.cssText = 'flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
+        const list = document.createElement('div');
+        list.style.cssText = 'display:none;max-height:180px;overflow:auto;margin-top:4px;font-size:11px';
+        const more = button('▾', () => { const open = list.style.display === 'none'; list.style.display = open ? 'block' : 'none'; if (open) renderLog(); }, false);
+        more.title = 'O que foi feito nesta aba';
+        const toggle = button('⏸ Pausar', () => setPaused(!paused));
+        toggle.title = 'Segura tudo que a extensão faz sozinha (preencher, avançar, enviar, importar) até você continuar';
+        const close = button('✕', () => { el.style.display = 'none'; }, false);
+        close.title = 'Esconder (volta na próxima ação)';
+        row.append(dot, text, more, toggle, close);
+        el.append(row, list);
+        Object.assign(el, { __dot: dot, __text: text, __list: list, __toggle: toggle });
+        document.documentElement.appendChild(el);
+        return el;
+    }
+    function renderHud() {
+        if (!hud.el) hud.el = buildHud();
+        const el = hud.el;
+        el.__dot.style.background = paused ? '#fdcb6e' : ACCENT;
+        el.__text.textContent = paused ? `⏸ Pausado — nada é preenchido nem clicado até você continuar${hud.text ? ` · parado em: ${hud.text}` : ''}` : (hud.text || 'Pronto');
+        el.__text.title = el.__text.textContent;
+        el.__toggle.textContent = paused ? '▶ Continuar' : '⏸ Pausar';
+        el.__toggle.style.background = paused ? '#00b894' : ACCENT;
+        el.__toggle.style.borderColor = paused ? '#00b894' : ACCENT;
+    }
+    // what is happening now: shown in the bar (hidden again after a while, unless paused or an Auto Apply is running)
+    function activity(text) {
+        if (!text) return;
+        hud.text = text;
+        remember(text);
+        renderHud();
+        hud.el.style.display = 'block';
+        clearTimeout(hud.hide);
+        hud.hide = setTimeout(() => { if (!paused && !(autopilot && !autopilot.done)) hud.el.style.display = 'none'; }, 15000);
+    }
+    function setPaused(v) {
+        try { chrome.storage.local.set({ careeropsPaused: !!v }); } catch (e) { /* extension reloaded */ }
+        applyPaused(v);
+    }
+    function applyPaused(v) {
+        const was = paused;
+        paused = !!v;
+        if (was === paused && hud.el) return;
+        if (paused || hud.el) { renderHud(); if (paused) hud.el.style.display = 'block'; }
+        if (was !== paused) remember(paused ? 'Pausado por você' : 'Continuando');
+        if (was && !paused) { activity('Continuando…'); setTimeout(refresh, 0); }   // steps that appeared meanwhile
+    }
+    try {
+        chrome.storage.local.get('careeropsPaused', (v) => applyPaused(v && v.careeropsPaused));
+        chrome.storage.onChanged.addListener((c, area) => { if (area === 'local' && c.careeropsPaused) applyPaused(c.careeropsPaused.newValue); });
+    } catch (e) { /* extension reloaded */ }
     const byText = (root, selector, words) => [...root.querySelectorAll(selector)]
         .find((el) => words.some((w) => (el.innerText || el.getAttribute('aria-label') || '').toLowerCase().includes(w)));
 
@@ -821,6 +919,8 @@
     }
 
     async function runConnect(prospectId) {
+        activity('Conectando (sem nota) com este perfil…');
+        await gate();
         const result = await connectNoNote();
         const msg = {
             sent: ['Convite enviado (sem nota) e registrado no CareerOps', true],
@@ -1092,7 +1192,8 @@
         if (applyBusy) return null;
         const all = collectFields(modal);
         const fields = all.filter((f) => !f.current);
-        const status = panel.querySelector('.careerops-apply-status');
+        const statusEl = panel.querySelector('.careerops-apply-status');
+        const status = { style: statusEl.style, set textContent(t) { statusEl.textContent = t; activity(`Easy Apply: ${t}`); } };
         note(panel, '');   // the previous step's notice
         const attached = await attachDocuments(modal, (t) => { status.textContent = t; });
         if (attached.length) note(panel, `📎 Anexado: ${attached.join(', ')} (gerado para esta vaga).`, '#00b894');
@@ -1108,11 +1209,13 @@
         });
         applyBusy = false;
         if (!res.ok) { status.textContent = errText(res); status.style.color = '#d63031'; return null; }
+        await gate();   // paused while the AI answered: apply nothing until you continue
         let filled = 0;
         const pending = [];
         const toConfirm = [];
         const sugg = res.data.suggestions || {};
         for (const f of send) {
+            if (typedByYou(f)) continue;   // you answered it meanwhile
             const v = res.data.answers[f.key];
             if (v !== undefined && applyAnswer(f, v)) { mark(f, '#00b894'); filled++; continue; }
             const sg = sugg[f.key];
@@ -1170,7 +1273,7 @@
         // Auto: when a new step shows empty fields, fill them (the user still clicks Next/Submit)
         const panel = modal.querySelector('.careerops-apply');
         const signature = collectFields(modal).map((f) => f.key).join('|');
-        if (panel.__auto && panel.__auto.checked && panel.__filledOnce && signature && signature !== panel.__lastStep) {
+        if (!paused && panel.__auto && panel.__auto.checked && panel.__filledOnce && signature && signature !== panel.__lastStep) {
             panel.__lastStep = signature;
             fillStep(modal, panel);
         }
@@ -1232,6 +1335,8 @@
         for (let i = 0; i < jobs.length; i++) {
             const j = jobs[i];
             if (btn) btn.textContent = `Importando ${i + 1}/${jobs.length}…`;
+            activity(`Importando vaga salva ${i + 1}/${jobs.length}: ${j.title || j.id}`);
+            await gate();
             const extra = await jobPosting(j.id);
             if (!extra.description) noDesc++;
             const res = await backend('POST', '/jobs/import-extension', {
@@ -1362,7 +1467,10 @@
     let autopilot = null;
     let applyChecked = false;
 
-    function apStatus(text, color = '#333') { if (autopilot) { autopilot.status.textContent = text; autopilot.status.style.color = color; } }
+    function apStatus(text, color = '#333') {
+        if (autopilot) { autopilot.status.textContent = text; autopilot.status.style.color = color; }
+        activity(`Auto Apply: ${text}`);
+    }
 
     async function startAutopilot() {
         applyChecked = true;
@@ -1377,8 +1485,10 @@
         const autoSubmit = opts.querySelector('input');
         chrome.storage.local.get('autoSubmit', (v) => { autoSubmit.checked = !!(v && v.autoSubmit); });
         autoSubmit.addEventListener('change', () => chrome.storage.local.set({ autoSubmit: autoSubmit.checked }));
-        const stop = button('Parar', async () => { autopilot.done = true; await message({ action: 'applyStop' }); box.remove(); }, false);
-        box.append(opts, stop);
+        const stop = button('Parar', async () => { autopilot.done = true; await message({ action: 'applyStop' }); box.remove(); activity('Auto Apply encerrado'); }, false);
+        const pause = button('⏸ Pausar', () => setPaused(!paused), false);
+        pause.classList.add('careerops-pause');
+        box.append(opts, pause, stop);
         document.documentElement.appendChild(box);
         autopilot = { jobId: pending.jobId, box, status, autoSubmit, prep: {}, uploaded: false, lastSig: '', running: false, done: false, steps: 0 };
         const res = await backend('POST', `/jobs/${pending.jobId}/auto-apply/prepare`, {});
@@ -1405,7 +1515,8 @@
 
     async function driveAutopilot() {
         const ap = autopilot;
-        if (!ap || ap.done || ap.running || !ap.prep.job) return;
+        if (ap && ap.box) { const b = ap.box.querySelector('.careerops-pause'); if (b) b.textContent = paused ? '▶ Continuar' : '⏸ Pausar'; }
+        if (!ap || ap.done || ap.running || !ap.prep.job || paused) return;   // paused: this step is looked at when you continue
         if ([...document.querySelectorAll('div[role="dialog"], .artdeco-modal, dialog[open]')].some((d) => shown(d) && SENT.test(d.innerText))) { finishApplied(); return; }
         const modal = easyApplyModal();
         if (!modal) return;
@@ -1421,7 +1532,12 @@
             const buttons = [...modal.querySelectorAll('button')].filter((b) => !own(b) && b.offsetParent !== null && !b.disabled);
             const submit = buttons.find((b) => SUBMIT_APP.test(label(b)));
             if (submit) {
-                if (ap.autoSubmit.checked && result && !result.pending) { apStatus('Enviando a candidatura…'); await wait(800); submit.click(); return; }
+                if (ap.autoSubmit.checked && result && !result.pending) {
+                    apStatus('Enviando a candidatura…');
+                    await wait(800);
+                    if (!ap.done && submit.isConnected) submit.click();
+                    return;
+                }
                 submit.style.outline = '3px solid #00b894';
                 apStatus('✓ Tudo preenchido. Revise e clique em "Enviar candidatura" — eu marco a vaga como candidatada.', '#00b894');
                 return;
@@ -1434,7 +1550,8 @@
             if (!next) { apStatus('Não achei o botão Avançar — siga você; continuo quando a etapa mudar.', '#b7791f'); return; }
             ap.steps++;
             apStatus(`Etapa ${ap.steps} preenchida — avançando…`);
-            await wait(700 + Math.random() * 600);
+            await wait(700 + Math.random() * 600);   // a pause here holds the click until you continue
+            if (ap.done || !next.isConnected) return;
             next.click();
             await wait(1800);
             if (modal.querySelector('.artdeco-inline-feedback--error, [data-test-form-element-error-messages]')) {
@@ -1472,6 +1589,7 @@
         }
         checkPanel.__status.textContent = text;
         checkPanel.__status.style.color = color;
+        activity(`Verificação de prospecção: ${text}`);
     };
 
     // Both lists scroll inside their own box (Connections: <main>, Messaging: the conversation <ul>), not the window
