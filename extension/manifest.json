@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "CareerOps LinkedIn Importer",
-  "version": "3.11",
+  "version": "3.12",
   "description": "Importe vagas do LinkedIn para sua plataforma de Career Ops",
   "permissions": [
     "activeTab",

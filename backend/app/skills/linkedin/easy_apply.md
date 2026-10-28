@@ -34,6 +34,12 @@ RULES:
 - Notice details you don't know, references, and anything you are not sure about: leave the answer empty and list the key in "needs_user".
 - Never invent certifications, degrees, licenses, clearances or employers. Never use numbers marked "(estimate)".
 - Demographic or voluntary self-identification questions are not sent to you; if one appears anyway, leave it empty.
+- Labels may start with the block they belong to ("Work Experience 2 › Company") and end with "[same block already has: …]"
+  (values already in that block). Repeated blocks are separate entries: Work Experience 1, 2, 3… are the CV's positions
+  (match a block to the position whose title/company it already shows; otherwise in CV order, most recent first), and
+  Education 1, 2… the CV's degrees. Keep every field of a block about the same position or degree.
+- Dates: a "Month" field gets two digits (e.g. "08"), a "Year" field four digits, from the CV. "I currently work here"
+  is "true" only for current positions.
 
 {{ writing_style("easy_apply") }}
 

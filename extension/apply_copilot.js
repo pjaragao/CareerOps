@@ -90,11 +90,44 @@
         return clean(el.placeholder || el.name || '');
     }
 
+    // The heading a field sits under ("Work Experience 2", "Education 1", "Address"): the same label repeats in each
+    // block of a multi-entry form, and without it the AI can't tell which job a "Company" belongs to
+    const HEADINGS = 'h2, h3, h4, h5, legend, [role="heading"]';
+    function sectionOf(el) {
+        let last = null;
+        for (const h of document.querySelectorAll(HEADINGS)) {
+            if (h.closest('#careerops-apply-copilot') || !visible(h)) continue;
+            if (h.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING) last = h; else break;
+        }
+        const t = last ? clean(last.innerText) : '';
+        return t.length > 1 && t.length < 80 ? t : '';
+    }
+    const withSection = (el, label) => {
+        const sec = sectionOf(el);
+        return sec && !label.toLowerCase().includes(sec.toLowerCase()) ? `${sec} › ${label}` : label;
+    };
+
+    // Workday-style dropdowns: a button that opens a list of options (not a <select>)
+    const DROPDOWN = 'button[aria-haspopup="listbox"], [role="combobox"][aria-haspopup="listbox"]:not(input)';
+    const OPTION = '[role="listbox"] [role="option"], [data-automation-id="promptOption"]';
+    const visibleOptions = () => [...document.querySelectorAll(OPTION)].filter((o) => visible(o) && !o.closest('#careerops-apply-copilot'));
+    // search-and-pick inputs ("How did you hear about us?"): typing shows options to click
+    const isSearchPick = (el) => el.tagName === 'INPUT' && (el.getAttribute('role') === 'combobox' || /searchbox/i.test(el.getAttribute('data-automation-id') || ''));
+
     function collect() {
         const fields = [];
         const seen = new Set();
+        document.querySelectorAll(DROPDOWN).forEach((el, i) => {
+            if (el.closest('#careerops-apply-copilot') || el.disabled || !visible(el)) return;
+            const key = el.id || el.getAttribute('data-automation-id') || el.name || `dd${i}`;
+            if (seen.has(key)) return;
+            seen.add(key);
+            const text = clean(el.innerText || el.getAttribute('aria-label') || '');
+            const label = labelOf(el).replace(text, '').trim() || labelOf(el);
+            fields.push({ key, type: 'select', label: withSection(el, label).slice(0, 300), options: [], current: text && !PLACEHOLDER.test(text) && !/^select one$/i.test(text) ? text : null, els: [el], dropdown: true });
+        });
         document.querySelectorAll('form input, form textarea, form select, [role="form"] input, main input, main textarea, main select').forEach((el, i) => {
-            if (el.closest('#careerops-apply-copilot') || el.disabled || el.readOnly || !visible(el)) return;
+            if (el.closest('#careerops-apply-copilot') || el.disabled || el.readOnly || !visible(el) || el.closest(DROPDOWN)) return;
             const type = el.tagName === 'SELECT' ? 'select' : el.tagName === 'TEXTAREA' ? 'textarea'
                 : el.type === 'radio' ? 'radio' : el.type === 'checkbox' ? 'checkbox' : el.type === 'number' ? 'number'
                 : ['text', 'tel', 'email', 'url', 'date', ''].includes(el.type) ? 'text' : null;
@@ -102,14 +135,14 @@
             const key = type === 'radio' ? `radio:${el.name || i}` : (el.id || el.name || `f${i}`);
             if (seen.has(key)) return;
             seen.add(key);
-            const f = { key, type, label: labelOf(el).slice(0, 300), options: [], current: null, els: [el] };
+            const f = { key, type, label: withSection(el, labelOf(el)).slice(0, 300), options: [], current: null, els: [el], searchPick: isSearchPick(el) };
             if (type === 'select') {
                 f.options = [...el.options].map((o) => o.text.trim()).filter((t) => t && !PLACEHOLDER.test(t));
                 const sel = el.options[el.selectedIndex];
                 f.current = sel && sel.value && !PLACEHOLDER.test(sel.text.trim()) ? sel.text.trim() : null;
             } else if (type === 'radio') {
                 f.els = [...document.querySelectorAll(`input[type="radio"][name="${CSS.escape(el.name)}"]`)];
-                f.label = labelOf(el.closest('fieldset, [role="radiogroup"]') || el).slice(0, 300);
+                f.label = withSection(el, labelOf(el.closest('fieldset, [role="radiogroup"]') || el)).slice(0, 300);
                 f.options = f.els.map((r) => labelOf(r) || r.value);
                 const on = f.els.find((r) => r.checked);
                 f.current = on ? f.options[f.els.indexOf(on)] : null;
@@ -126,15 +159,81 @@
     function setValue(el, text) {
         el.focus();
         const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : el.tagName === 'SELECT' ? HTMLSelectElement.prototype : HTMLInputElement.prototype;
-        Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, text);   // React-controlled inputs need the native setter
-        el.dispatchEvent(new Event('input', { bubbles: true }));
-        el.dispatchEvent(new Event('change', { bubbles: true }));
+        // date segments (Workday's month/year) and other key-driven widgets ignore a set value: type it instead
+        if (el.getAttribute('role') !== 'spinbutton' || el.tagName === 'SELECT') {
+            Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, text);   // React-controlled inputs need the native setter
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+        if (el.tagName !== 'SELECT' && el.value !== text) typeText(el, text);
         el.blur();
     }
+    // like the user typing: the page's own key handlers see each insertion
+    function typeText(el, text) {
+        el.focus();
+        if (el.select) el.select();
+        document.execCommand('insertText', false, text);
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+    }
 
-    function apply(f, value) {
+    const norm = (t) => clean(t).toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '');
+    const pick = (options, value) => {
+        const v = norm(value);
+        return options.find((o) => norm(o.innerText) === v) || options.find((o) => norm(o.innerText).startsWith(v))
+            || options.find((o) => v.length > 3 && norm(o.innerText).includes(v));
+    };
+    const closeList = (el) => { el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); document.body.click(); };
+
+    // Opens a dropdown and reads its options (long lists are scrolled to load all of them), then closes it
+    async function readOptions(f) {
+        const el = f.els[0];
+        el.click();
+        const first = await until(() => visibleOptions().length && visibleOptions(), 2000);
+        if (!first) { closeList(el); return []; }
+        const names = new Set(first.map((o) => clean(o.innerText)));
+        const list = first[0].closest('[role="listbox"]') || first[0].parentElement;
+        for (let k = 0; k < 30 && list && list.scrollHeight > list.clientHeight + 5; k++) {
+            const before = names.size;
+            list.scrollTop += list.clientHeight;
+            await wait(120);
+            visibleOptions().forEach((o) => names.add(clean(o.innerText)));
+            if (names.size === before && list.scrollTop + list.clientHeight >= list.scrollHeight - 2) break;
+        }
+        closeList(el);
+        await wait(150);
+        return [...names].filter((t) => t && !PLACEHOLDER.test(t) && !/^select one$/i.test(t)).slice(0, 300);
+    }
+
+    // Picks an option in a dropdown or a search-and-pick box; false when no option matches
+    async function choose(f, value) {
+        const el = f.els[0];
+        if (f.searchPick) typeText(el, value); else el.click();
+        const list = await until(() => visibleOptions().length && visibleOptions(), 2500);
+        if (!list) { closeList(el); return false; }
+        let opt = pick(list, value);
+        const box = list[0].closest('[role="listbox"]') || list[0].parentElement;
+        for (let k = 0; !opt && box && k < 30; k++) {   // virtualised lists: scroll until it shows up
+            box.scrollTop += box.clientHeight;
+            await wait(120);
+            opt = pick(visibleOptions(), value);
+        }
+        if (!opt) { closeList(el); return false; }
+        opt.scrollIntoView({ block: 'nearest' });
+        opt.click();
+        await wait(250);
+        return true;
+    }
+    async function until(fn, timeout) {
+        const end = Date.now() + timeout;
+        while (Date.now() < end) { const v = fn(); if (v) return v; await wait(100); }
+        return null;
+    }
+
+    async function apply(f, value) {
         if (value === undefined || value === null || value === '') return false;
+        if (!f.els[0].isConnected) return false;   // the form moved to another step meanwhile
         value = String(value);
+        if (f.dropdown || f.searchPick) return choose(f, value);
         if (f.type === 'select') {
             const opt = [...f.els[0].options].find((o) => o.text.trim().toLowerCase() === value.toLowerCase());
             if (!opt) return false;
@@ -189,11 +288,26 @@
         await attachFiles(false);
         if (!empty.length) { if (manual) status('Nada vazio para preencher nesta etapa.'); return; }
         busy = true;
+        todo('');   // the previous step's list
+        // what is already filled in the same block helps the AI ("Work Experience 2: Job Title = Engineer" → Company)
+        const bySection = new Map();
+        for (const f of all) {
+            const sec = f.label.includes(' › ') ? f.label.split(' › ')[0] : '';
+            if (sec && f.current) bySection.set(sec, [...(bySection.get(sec) || []), `${f.label.split(' › ').slice(1).join(' › ')} = ${String(f.current).slice(0, 60)}`]);
+        }
+        for (const f of empty) {
+            const sec = f.label.includes(' › ') ? f.label.split(' › ')[0] : '';
+            if (sec && bySection.get(sec)) f.label = `${f.label} [same block already has: ${bySection.get(sec).slice(0, 4).join('; ')}]`.slice(0, 300);
+        }
+        for (const f of empty.filter((x) => x.dropdown).slice(0, 15)) {
+            status(`Lendo as opções de "${f.label.slice(0, 40)}"…`);
+            f.options = await readOptions(f);
+        }
         let filled = 0;
         const pending = [];
         const toAsk = [];
         for (const f of empty) {
-            if (f.type === 'textarea' && COVER.test(f.label) && prep.cover_letter) { apply(f, prep.cover_letter); mark(f, '#00b894'); filled++; continue; }
+            if (f.type === 'textarea' && COVER.test(f.label) && prep.cover_letter) { await apply(f, prep.cover_letter); mark(f, '#00b894'); filled++; continue; }
             if (DEMOGRAPHIC.test(f.label)) { mark(f, '#e17055'); pending.push(f.label); continue; }
             toAsk.push(f);
         }
@@ -201,21 +315,25 @@
         for (let i = 0; i < toAsk.length; i += 25) {
             const chunk = toAsk.slice(i, i + 25);
             const res = await copilot('POST', '/easy-apply/answers', {
-                job: prep.job, fields: chunk.map(({ key, type, label, options, current }) => ({ key, type, label, options, current })),
+                // a dropdown whose options could not be read goes as text: the answer is then matched to the options when picked
+                job: prep.job, fields: chunk.map(({ key, type, label, options, current }) => ({ key, type: type === 'select' && !options.length ? 'text' : type, label, options, current })),
             });
             if (!res.ok) { status(errText(res)); busy = false; return; }
             const sugg = res.data.suggestions || {};
             for (const f of chunk) {
-                if (apply(f, res.data.answers[f.key])) { mark(f, '#00b894'); filled++; continue; }
+                if (await apply(f, res.data.answers[f.key])) { mark(f, '#00b894'); filled++; continue; }
                 const sg = sugg[f.key];
-                if (sg && apply(f, sg.value)) { mark(f, '#fdcb6e'); pending.push(`${f.label} (sugestão: ${sg.value} — confirme)`); continue; }
+                if (sg && await apply(f, sg.value)) { mark(f, '#fdcb6e'); pending.push(`${f.label} (sugestão: ${sg.value} — confirme)`); continue; }
                 mark(f, '#e17055');
                 pending.push(f.label || f.key);
             }
         }
         busy = false;
         status(`✓ ${filled} campo(s) preenchido(s) em verde. Revise e clique em enviar/avançar — o envio é seu.`);
-        todo(pending.length ? `Com você (laranja/amarelo):\n• ${pending.slice(0, 8).map((p) => p.slice(0, 90)).join('\n• ')}` : '');
+        todo(pending.length ? `Com você (laranja/amarelo):\n• ${pending.slice(0, 8).map((p) => p.split(' [same block')[0].slice(0, 90)).join('\n• ')}` : '');
+        // the form moved to another step while the AI answered: fill the new one
+        const now = collect();
+        if (ui.auto && ui.auto.checked && now.map((x) => x.key).join('|') !== lastSignature && now.some((x) => !x.current)) fillPage(false);
     }
 
     // New step of a multi-page form (Workday, Gupy…): fill it too
