@@ -30,7 +30,8 @@ CANDIDATE MASTER CV{% if resume_sent %} (only for what the attached CV leaves ou
 CANDIDATE KNOWLEDGE BASE:
 {% include 'common/user_context.md' %}
 
-FIELDS ON THIS STEP (key, type, label, options, current value):
+FIELDS ON THIS STEP (key, type, label, options, current value). Fields WITHOUT a current value are to be filled
+("answers"); fields WITH one were prefilled by the site (often from a badly parsed resume) and are to be CHECKED:
 {% for f in fields %}- key={{ f.key }} | type={{ f.type }} | label={{ f.label }}{% if f.options %} | options={{ f.options | join(" / ") }}{% endif %}{% if f.current %} | current={{ f.current }}{% endif %}
 {% endfor %}
 
@@ -40,6 +41,13 @@ RULES:
   copy that text exactly as it is in the CV (a description field gets that position's bullets, joined with line
   breaks, without "-" or "**"). Never reword, shorten into new phrasing, translate, or add anything to it. The form
   must match the CV the recruiter receives.
+- CHECKING PREFILLED FIELDS: for each field that has a current value, put it in "corrections" ONLY when it contradicts a
+  fact in the CV: wrong company, job title, location, start/end month or year, "I currently work here" checked for a
+  position that ended (or unchecked for a current one), wrong school, degree, field of study or years, wrong language
+  level. The value is what the CV says, in the field's format (for a dropdown, the option's text). Leave alone what is
+  merely worded differently, formatted differently, or not covered by the CV — and never "correct" a long description
+  unless it belongs to a different position. Each block must stay one position/degree: if the site merged or split
+  positions, fix the block's fields to match ONE CV entry consistently.
 - Your job is to decide WHERE each piece of the CV goes (which position fills which block, which line answers which
   field). Write new text only for questions the CVs don't answer (e.g. "Why do you want to work here?"), and keep it
   consistent with the CV.
@@ -52,11 +60,13 @@ RULES:
   (values already in that block). Repeated blocks are separate entries: Work Experience 1, 2, 3… are the CV's positions
   (match a block to the position whose title/company it already shows; otherwise in CV order, most recent first), and
   Education 1, 2… the CV's degrees. Keep every field of a block about the same position or degree.
-- Dates: a "Month" field gets two digits (e.g. "08"), a "Year" field four digits, from the CV. "I currently work here"
+- Dates: only dates written in the CVs or the knowledge base. A start date that is not stated stays EMPTY (put the key
+  in "needs_user") — never estimate it from a typical duration (e.g. "MBA ended 2015" says nothing about its start).
+- A "Month" field gets two digits (e.g. "08"), a "Year" field four digits, from the CV. "I currently work here"
   is "true" only for current positions.
 
 {{ writing_style("easy_apply") }}
 
 {% include 'common/output_format.md' %}
 Return JSON:
-{"answers": {"<key>": "<value>"}, "salary_suggestions": {"<key>": {"value": "<number or text as the field expects>", "basis": "<role · location · seniority, one line>"}}, "needs_user": ["<key>"], "notes": "one short sentence for the candidate, optional"}
+{"answers": {"<key>": "<value>"}, "corrections": {"<key of a prefilled field>": {"value": "<what the CV says>", "why": "<short, in Portuguese>"}}, "salary_suggestions": {"<key>": {"value": "<number or text as the field expects>", "basis": "<role · location · seniority, one line>"}}, "needs_user": ["<key>"], "notes": "one short sentence for the candidate, optional"}

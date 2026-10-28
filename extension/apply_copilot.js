@@ -92,7 +92,8 @@
 
     // The heading a field sits under ("Work Experience 2", "Education 1", "Address"): the same label repeats in each
     // block of a multi-entry form, and without it the AI can't tell which job a "Company" belongs to
-    const HEADINGS = 'h2, h3, h4, h5, legend, [role="heading"]';
+    // (a fieldset legend such as "From*" names a group inside a block, not the block: it goes between block and label)
+    const HEADINGS = 'h2, h3, h4, h5, h6, [role="heading"]';
     function sectionOf(el) {
         let last = null;
         for (const h of document.querySelectorAll(HEADINGS)) {
@@ -103,22 +104,40 @@
         return t.length > 1 && t.length < 80 ? t : '';
     }
     const withSection = (el, label) => {
+        const fs = el.closest('fieldset');
+        const legend = fs && fs.querySelector('legend') ? clean(fs.querySelector('legend').innerText).replace(/\*$/, '') : '';
+        if (legend && !label.toLowerCase().includes(legend.toLowerCase())) label = `${legend} › ${label}`;
         const sec = sectionOf(el);
         return sec && !label.toLowerCase().includes(sec.toLowerCase()) ? `${sec} › ${label}` : label;
     };
 
     // Workday-style dropdowns: a button that opens a list of options (not a <select>)
     const DROPDOWN = 'button[aria-haspopup="listbox"], [role="combobox"][aria-haspopup="listbox"]:not(input)';
-    const OPTION = '[role="listbox"] [role="option"], [data-automation-id="promptOption"]';
-    const visibleOptions = () => [...document.querySelectorAll(OPTION)].filter((o) => visible(o) && !o.closest('#careerops-apply-copilot'));
-    // search-and-pick inputs ("How did you hear about us?"): typing shows options to click
-    const isSearchPick = (el) => el.tagName === 'INPUT' && (el.getAttribute('role') === 'combobox' || /searchbox/i.test(el.getAttribute('data-automation-id') || ''));
+    const OPTION = '[role="option"], [data-automation-id="promptOption"]';
+    // Workday shows what is already chosen in a search box as items built like options: never take them for a list
+    const SELECTED = '[data-automation-id="selectedItemList"], [data-automation-id="selectedItem"]';
+    // the options of THIS control: the list its aria-controls points to; else any open list except those seen before
+    function optionsFor(el, before) {
+        const ctrl = el.getAttribute('aria-controls');
+        const root = ctrl && document.getElementById(ctrl);
+        const pool = root ? root.querySelectorAll(OPTION) : document.querySelectorAll(`[role="listbox"] [role="option"], [data-automation-id="promptOption"]`);
+        return [...pool].filter((o) => visible(o) && !o.closest(SELECTED) && !o.closest('#careerops-apply-copilot') && !(before && before.has(o)));
+    }
+    // search-and-pick inputs ("How did you hear about us?", phone country code): typing shows options to click
+    const isSearchPick = (el) => el.tagName === 'INPUT' && (el.getAttribute('role') === 'combobox' || /searchbox/i.test(el.getAttribute('data-automation-id') || '')
+        || el.getAttribute('data-uxi-widget-type') === 'selectinput' || !!el.closest('[data-automation-id="multiselectInputContainer"]'));
+    const pickedIn = (el) => {   // what a search-and-pick box already has chosen
+        const box = el.closest('[data-automation-id="multiSelectContainer"]') || el.parentElement;
+        return [...box.querySelectorAll('[data-automation-id="selectedItem"]')].map((i) => clean(i.innerText)).filter(Boolean).join(', ') || null;
+    };
+    // the form only: the site's own header menus (language, settings) are dropdowns too
+    const inForm = (el) => !el.closest('header, nav, [role="banner"], [role="navigation"]');
 
     function collect() {
         const fields = [];
         const seen = new Set();
         document.querySelectorAll(DROPDOWN).forEach((el, i) => {
-            if (el.closest('#careerops-apply-copilot') || el.disabled || !visible(el)) return;
+            if (el.closest('#careerops-apply-copilot') || el.disabled || !visible(el) || !inForm(el)) return;
             const key = el.id || el.getAttribute('data-automation-id') || el.name || `dd${i}`;
             if (seen.has(key)) return;
             seen.add(key);
@@ -135,6 +154,7 @@
             const key = type === 'radio' ? `radio:${el.name || i}` : (el.id || el.name || `f${i}`);
             if (seen.has(key)) return;
             seen.add(key);
+            if (!inForm(el)) return;
             const f = { key, type, label: withSection(el, labelOf(el)).slice(0, 300), options: [], current: null, els: [el], searchPick: isSearchPick(el) };
             if (type === 'select') {
                 f.options = [...el.options].map((o) => o.text.trim()).filter((t) => t && !PLACEHOLDER.test(t));
@@ -149,7 +169,7 @@
             } else if (type === 'checkbox') {
                 f.current = el.checked ? 'true' : null;
             } else {
-                f.current = el.value || null;
+                f.current = el.value || (f.searchPick ? pickedIn(el) : null);
             }
             fields.push(f);
         });
@@ -182,45 +202,67 @@
         return options.find((o) => norm(o.innerText) === v) || options.find((o) => norm(o.innerText).startsWith(v))
             || options.find((o) => v.length > 3 && norm(o.innerText).includes(v));
     };
-    const closeList = (el) => { el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); document.body.click(); };
+    const key = (target, k, code) => target.dispatchEvent(new KeyboardEvent('keydown', { key: k, code: k, keyCode: code, bubbles: true }));
+    // A dropdown button closes its list when clicked again (Workday ignores Escape once focus is in the list);
+    // search boxes close on a click outside them
+    const press = (target) => { for (const t of ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click']) target.dispatchEvent(new MouseEvent(t, { bubbles: true, cancelable: true, view: window })); };
+    const clickOutside = () => {
+        press(document.querySelector('main h2, main h3, h2, h3') || document.body);
+    };
+    const closeList = async (el) => {
+        if (el.tagName === 'BUTTON' && el.getAttribute('aria-expanded') === 'true') el.click();
+        else if (el.tagName === 'INPUT') clickOutside();
+        else key(document.activeElement || el, 'Escape', 27);
+        await wait(300);
+        if (el.getAttribute('aria-expanded') === 'true') { key(el, 'Escape', 27); await wait(200); }
+    };
 
     // Opens a dropdown and reads its options (long lists are scrolled to load all of them), then closes it
     async function readOptions(f) {
         const el = f.els[0];
+        const before = new Set(optionsFor(el));
         el.click();
-        const first = await until(() => visibleOptions().length && visibleOptions(), 2000);
-        if (!first) { closeList(el); return []; }
+        const first = await until(() => optionsFor(el, before).length && optionsFor(el, before), 2500);
+        if (!first) { await closeList(el); return []; }
         const names = new Set(first.map((o) => clean(o.innerText)));
         const list = first[0].closest('[role="listbox"]') || first[0].parentElement;
-        for (let k = 0; k < 30 && list && list.scrollHeight > list.clientHeight + 5; k++) {
-            const before = names.size;
+        for (let k = 0; k < 80 && list && list.scrollHeight > list.clientHeight + 5; k++) {
+            const size = names.size;
             list.scrollTop += list.clientHeight;
             await wait(120);
-            visibleOptions().forEach((o) => names.add(clean(o.innerText)));
-            if (names.size === before && list.scrollTop + list.clientHeight >= list.scrollHeight - 2) break;
+            optionsFor(el, before).forEach((o) => names.add(clean(o.innerText)));
+            if (names.size === size && list.scrollTop + list.clientHeight >= list.scrollHeight - 2) break;
         }
-        closeList(el);
-        await wait(150);
-        return [...names].filter((t) => t && !PLACEHOLDER.test(t) && !/^select one$/i.test(t)).slice(0, 300);
+        await closeList(el);
+        return [...names].filter((t) => t && !PLACEHOLDER.test(t) && !/^select one$/i.test(t)).slice(0, 400);
     }
 
     // Picks an option in a dropdown or a search-and-pick box; false when no option matches
     async function choose(f, value) {
         const el = f.els[0];
-        if (f.searchPick) typeText(el, value); else el.click();
-        const list = await until(() => visibleOptions().length && visibleOptions(), 2500);
-        if (!list) { closeList(el); return false; }
+        if (f.searchPick && f.current) {   // replacing a wrong pick: remove what is there first
+            const box = el.closest('[data-automation-id="multiSelectContainer"]') || el.parentElement;
+            for (const del of box.querySelectorAll('[data-automation-id="DELETE_charm"]')) { del.click(); await wait(250); }
+        }
+        const before = new Set(optionsFor(el));
+        el.click();   // Workday's search boxes list every option on click; typing does not filter them
+        const list = await until(() => optionsFor(el, before).length && optionsFor(el, before), 3000);
+        if (!list) { await closeList(el); return false; }
         let opt = pick(list, value);
         const box = list[0].closest('[role="listbox"]') || list[0].parentElement;
-        for (let k = 0; !opt && box && k < 30; k++) {   // virtualised lists: scroll until it shows up
+        for (let k = 0; !opt && box && k < 80; k++) {   // virtualised lists: scroll until it shows up (or the end)
+            if (box.scrollTop + box.clientHeight >= box.scrollHeight - 2) break;
             box.scrollTop += box.clientHeight;
             await wait(120);
-            opt = pick(visibleOptions(), value);
+            opt = pick(optionsFor(el, before), value);
         }
-        if (!opt) { closeList(el); return false; }
+        if (!opt) { await closeList(el); return false; }
         opt.scrollIntoView({ block: 'nearest' });
-        opt.click();
-        await wait(250);
+        // Workday's search-box options are checkboxes inside the option: a bare click() is ignored, the full
+        // pointer sequence on the inner node is what selects
+        press(opt.querySelector('[data-automation-id="promptLeafNode"]') || opt);
+        await wait(400);
+        if (f.searchPick) await closeList(el);   // multi-select boxes stay open after a pick
         return true;
     }
     async function until(fn, timeout) {
@@ -233,6 +275,11 @@
         if (value === undefined || value === null || value === '') return false;
         if (!f.els[0].isConnected) return false;   // the form moved to another step meanwhile
         value = String(value);
+        if (f.searchPick && (f.options || []).length < 20 && /[,;]/.test(value)) {   // free multi-select (skills…): one pick per item
+            let any = false;
+            for (const item of value.split(/[,;]/).map((x) => x.trim()).filter(Boolean).slice(0, 10)) any = (await choose(f, item)) || any;
+            return any;
+        }
         if (f.dropdown || f.searchPick) return choose(f, value);
         if (f.type === 'select') {
             const opt = [...f.els[0].options].find((o) => o.text.trim().toLowerCase() === value.toLowerCase());
@@ -284,56 +331,69 @@
         if (busy) return;
         const all = collect();
         lastSignature = all.map((f) => f.key).join('|');
-        const empty = all.filter((f) => !f.current);
         await attachFiles(false);
-        if (!empty.length) { if (manual) status('Nada vazio para preencher nesta etapa.'); return; }
+        if (!all.length) { if (manual) status('Nenhum campo nesta etapa.'); return; }
         busy = true;
         todo('');   // the previous step's list
-        // what is already filled in the same block helps the AI ("Work Experience 2: Job Title = Engineer" → Company)
-        const bySection = new Map();
-        for (const f of all) {
-            const sec = f.label.includes(' › ') ? f.label.split(' › ')[0] : '';
-            if (sec && f.current) bySection.set(sec, [...(bySection.get(sec) || []), `${f.label.split(' › ').slice(1).join(' › ')} = ${String(f.current).slice(0, 60)}`]);
-        }
-        for (const f of empty) {
-            const sec = f.label.includes(' › ') ? f.label.split(' › ')[0] : '';
-            if (sec && bySection.get(sec)) f.label = `${f.label} [same block already has: ${bySection.get(sec).slice(0, 4).join('; ')}]`.slice(0, 300);
-        }
-        for (const f of empty.filter((x) => x.dropdown).slice(0, 15)) {
-            status(`Lendo as opções de "${f.label.slice(0, 40)}"…`);
-            f.options = await readOptions(f);
-        }
         let filled = 0;
         const pending = [];
+        const fixed = [];
         const toAsk = [];
-        for (const f of empty) {
-            if (f.type === 'textarea' && COVER.test(f.label) && prep.cover_letter) { await apply(f, prep.cover_letter); mark(f, '#00b894'); filled++; continue; }
-            if (DEMOGRAPHIC.test(f.label)) { mark(f, '#e17055'); pending.push(f.label); continue; }
-            toAsk.push(f);
+        for (const f of all) {
+            if (DEMOGRAPHIC.test(f.label)) { if (!f.current) { mark(f, '#e17055'); pending.push(f.label); } continue; }
+            if (!f.current && f.type === 'textarea' && COVER.test(f.label) && prep.cover_letter) { await apply(f, prep.cover_letter); mark(f, '#00b894'); filled++; continue; }
+            toAsk.push(f);   // empty ones are filled; filled ones are checked against the CV (sites prefill from a parsed resume, often wrongly)
         }
-        status(`Preenchendo ${toAsk.length} campo(s) com IA…`);
-        for (let i = 0; i < toAsk.length; i += 25) {
-            const chunk = toAsk.slice(i, i + 25);
-            const res = await copilot('POST', '/easy-apply/answers', {
-                // a dropdown whose options could not be read goes as text: the answer is then matched to the options when picked
-                job: prep.job, fields: chunk.map(({ key, type, label, options, current }) => ({ key, type: type === 'select' && !options.length ? 'text' : type, label, options, current })),
-            });
-            if (!res.ok) { status(errText(res)); busy = false; return; }
-            const sugg = res.data.suggestions || {};
-            for (const f of chunk) {
-                if (await apply(f, res.data.answers[f.key])) { mark(f, '#00b894'); filled++; continue; }
-                const sg = sugg[f.key];
-                if (sg && await apply(f, sg.value)) { mark(f, '#fdcb6e'); pending.push(`${f.label} (sugestão: ${sg.value} — confirme)`); continue; }
-                mark(f, '#e17055');
-                pending.push(f.label || f.key);
+        // options of every list on the step (filled ones too: a correction must be an option that exists); the same
+        // list repeated in each block ("Field of Study", language levels) is read once
+        const lists = new Map();
+        for (const f of toAsk.filter((x) => x.dropdown || x.searchPick).slice(0, 40)) {
+            const name = f.label.split(' › ').pop();
+            if (!lists.has(name)) {
+                status(`Lendo as opções de "${name.slice(0, 40)}"…`);
+                lists.set(name, await readOptions(f));
             }
+            f.options = lists.get(name);
+        }
+        status(`Preenchendo ${toAsk.filter((f) => !f.current).length} campo(s) e conferindo ${toAsk.filter((f) => f.current).length} com o CV…`);
+        // one call for the whole step: the AI sees every block complete (Work Experience 1…n, Education 1…n)
+        const res = await copilot('POST', '/easy-apply/answers', {
+            // a dropdown whose options could not be read goes as text: the answer is then matched to the options when picked
+            job: prep.job, fields: toAsk.slice(0, 100).map(({ key, type, label, options, current, searchPick }) => ({
+                key, label, current,
+                // a list read whole is a choice among its options; a search box that lists only a few (Skills) is free search, left to you
+                type: (searchPick && options.length >= 20) ? 'select' : (type === 'select' && !options.length ? 'text' : type),
+                options: searchPick && options.length < 20 ? [] : options,
+            })),
+        });
+        if (!res.ok) { status(errText(res)); busy = false; return; }
+        const sugg = res.data.suggestions || {};
+        const corrections = res.data.corrections || {};
+        for (const f of toAsk) {
+            if (f.current) {
+                const c = corrections[f.key];
+                if (c && c.value !== undefined && String(c.value) !== String(f.current) && await apply(f, c.value)) {
+                    mark(f, '#0984e3');
+                    fixed.push(`${f.label.split(' › ').slice(0, 1).concat(f.label.split(' › ').slice(-1)).join(' › ')}: ${String(f.current).slice(0, 30)} → ${String(c.value).slice(0, 40)}`);
+                }
+                continue;
+            }
+            if (await apply(f, res.data.answers[f.key])) { mark(f, '#00b894'); filled++; continue; }
+            const sg = sugg[f.key];
+            if (sg && await apply(f, sg.value)) { mark(f, '#fdcb6e'); pending.push(`${f.label} (sugestão: ${sg.value} — confirme)`); continue; }
+            if (f.type === 'checkbox') continue;   // left unchecked is an answer too ("I currently work here" on a past job)
+            mark(f, '#e17055');
+            pending.push(f.label || f.key);
         }
         busy = false;
-        status(`✓ ${filled} campo(s) preenchido(s) em verde. Revise e clique em enviar/avançar — o envio é seu.`);
-        todo(pending.length ? `Com você (laranja/amarelo):\n• ${pending.slice(0, 8).map((p) => p.split(' [same block')[0].slice(0, 90)).join('\n• ')}` : '');
+        status(`✓ ${filled} preenchido(s) em verde${fixed.length ? `, ${fixed.length} corrigido(s) em azul (diferiam do CV)` : ''}. Revise e clique em enviar/avançar — o envio é seu.`);
+        todo([
+            fixed.length ? `Corrigidos pelo CV (azul):\n• ${fixed.slice(0, 8).join('\n• ')}` : '',
+            pending.length ? `Com você (laranja/amarelo):\n• ${pending.slice(0, 8).map((p) => p.slice(0, 90)).join('\n• ')}` : '',
+        ].filter(Boolean).join('\n'));
         // the form moved to another step while the AI answered: fill the new one
         const now = collect();
-        if (ui.auto && ui.auto.checked && now.map((x) => x.key).join('|') !== lastSignature && now.some((x) => !x.current)) fillPage(false);
+        if (ui.auto && ui.auto.checked && now.map((x) => x.key).join('|') !== lastSignature && now.length) fillPage(false);
     }
 
     // New step of a multi-page form (Workday, Gupy…): fill it too
@@ -342,7 +402,7 @@
         observer.t = setTimeout(() => {
             if (!ui.auto || !ui.auto.checked || busy) return;
             const sig = collect().map((f) => f.key).join('|');
-            if (sig && sig !== lastSignature && collect().some((f) => !f.current)) fillPage(false);
+            if (sig && sig !== lastSignature) fillPage(false);
         }, 1200);
     });
 

@@ -662,6 +662,18 @@ class LinkedInCopilotService:
         raw = ai.get("answers") or {}
         raw_sugg = ai.get("salary_suggestions") or {}
         suggestions: Dict[str, dict] = {}
+        # fields that came filled (sites prefill from a parsed resume): only values that contradict the CV come back
+        corrections: Dict[str, dict] = {}
+        for f in usable:
+            if not f.get("current"):
+                continue
+            c = (ai.get("corrections") or {}).get(f["key"])
+            value = c.get("value") if isinstance(c, dict) else c
+            # a dropdown read without options takes the text and the extension matches it to the list
+            v = LinkedInCopilotService._coerce(f, value) if f.get("options") or f.get("type") != "select" else (str(value).strip() if value else None)
+            if v is not None and v.strip().lower() != str(f["current"]).strip().lower():
+                corrections[f["key"]] = {"value": v, "why": (c.get("why") if isinstance(c, dict) else "") or ""}
+        usable = [f for f in usable if not f.get("current")]
         for f in usable:
             v = LinkedInCopilotService._coerce(f, raw.get(f["key"]))
             if v is not None:
@@ -672,9 +684,11 @@ class LinkedInCopilotService:
             if sv is not None:
                 suggestions[f["key"]] = {"value": sv, "basis": (s.get("basis") if isinstance(s, dict) else "") or ""}
         done = set(answers) | set(suggestions)
-        needs = [k for k in (ai.get("needs_user") or []) if k not in done] + skipped
+        empty_keys = {f["key"] for f in usable}
+        needs = [k for k in (ai.get("needs_user") or []) if k not in done and k in empty_keys] + skipped
         needs += [f["key"] for f in usable if f["key"] not in done and f["key"] not in needs]
-        return {"answers": answers, "suggestions": suggestions, "needs_user": needs, "notes": ai.get("notes") or "", "language": lang}
+        return {"answers": answers, "suggestions": suggestions, "corrections": corrections, "needs_user": needs,
+                "notes": ai.get("notes") or "", "language": lang}
 
     # ── Capture (browser extension) ──────────────────────────────────────
     @staticmethod

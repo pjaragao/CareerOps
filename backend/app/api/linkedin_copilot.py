@@ -461,7 +461,7 @@ class EasyApplyField(BaseModel):
 
 class EasyApplyIn(BaseModel):
     job: dict = {}
-    fields: List[EasyApplyField] = Field(..., max_length=40)
+    fields: List[EasyApplyField] = Field(..., max_length=100)   # a whole step, filled fields included (they are checked)
 
 
 @router.post("/easy-apply/answers")
