@@ -242,7 +242,7 @@ async function performFullExtraction() {
 
             updateVisualStatus('✅ Sincronizando Perfil Global...');
             careerops_import_data.full_page_text = document.documentElement.outerHTML;
-            chrome.runtime.sendMessage({ action: 'importProfile', data: careerops_import_data });
+            chrome.runtime.sendMessage({ action: 'importProfile', data: careerops_import_data }, () => { void chrome.runtime.lastError; });
             await chrome.storage.local.remove(['careerops_import_active', 'careerops_import_data']);
             
             setTimeout(() => {
@@ -324,7 +324,7 @@ async function performJobExtraction() {
         }
 
         updateVisualStatus('✅ Sincronizando vaga...');
-        chrome.runtime.sendMessage({ action: 'importJob', data: jobData });
+        chrome.runtime.sendMessage({ action: 'importJob', data: jobData }, () => { void chrome.runtime.lastError; });
         
         setTimeout(() => {
             chrome.storage.local.remove(['careerops_import_active', 'careerops_status']);
@@ -348,7 +348,7 @@ async function performUniversalExtraction() {
         chrome.runtime.sendMessage({ 
             action: 'importUniversal', 
             data: { raw_text: rawText, url: url } 
-        });
+        }, () => { void chrome.runtime.lastError; });
 
         setTimeout(() => {
             chrome.storage.local.remove(['careerops_import_active', 'careerops_status']);
@@ -387,7 +387,7 @@ document.addEventListener('click', async (e) => {
         const jobId = urlParams.get('currentJobId') || window.location.pathname.match(/\/view\/(\d+)/)?.[1];
         if (jobId) {
             console.log('CareerOps: Application detected for job', jobId);
-            chrome.runtime.sendMessage({ action: 'markAsApplied', jobId });
+            chrome.runtime.sendMessage({ action: 'markAsApplied', jobId }, () => { void chrome.runtime.lastError; });
         }
     }
 });

@@ -175,9 +175,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         await chrome.storage.local.set({ careerops_import_active: true, careerops_status: 'Iniciando…', careerops_import_data: { step: 'start' } });
         await ensureContentScript(tab);
-        if (pageKind === 'profile' || pageKind === 'profile-edit') chrome.tabs.sendMessage(tab.id, { action: 'extractProfile' });
-        else if (pageKind === 'job') chrome.tabs.sendMessage(tab.id, { action: 'extractJob' });
-        else chrome.tabs.sendMessage(tab.id, { action: 'extractUniversal' });
+        const action = pageKind === 'profile' || pageKind === 'profile-edit' ? 'extractProfile' : pageKind === 'job' ? 'extractJob' : 'extractUniversal';
+        chrome.tabs.sendMessage(tab.id, { action }).catch(async () => {
+            await chrome.storage.local.set({ careerops_import_active: false, careerops_status: '❌ Recarregue a página (F5) e tente de novo' });
+            updateUI();
+        });
     });
 
     cancelBtn.addEventListener('click', async () => {

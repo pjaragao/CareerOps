@@ -1723,7 +1723,7 @@
             line(checkPanel, `Lidos: ${d.read.connections} conexões, ${d.read.sent}${state.sentTotal ? ` de ${state.sentTotal}` : ''} convites enviados, ${d.read.conversations} conversas.`, '#999');
             if (state.sentTotal && d.read.sent < state.sentTotal) line(checkPanel, `Faltaram ${state.sentTotal - d.read.sent} convites enviados (a lista não carregou toda)${state.hidden ? ': a aba ficou oculta — o Chrome não carrega listas em abas de fundo; deixe-a visível durante a verificação' : ''}.`, '#b7791f');
         }
-        try { chrome.runtime.sendMessage({ action: 'prospectCheckDone', ok: res.ok, result: res.data, summary, background: !!state.background }); } catch (e) { /* extension reloaded */ }
+        try { chrome.runtime.sendMessage({ action: 'prospectCheckDone', ok: res.ok, result: res.data, summary, background: !!state.background }, () => { void chrome.runtime.lastError; }); } catch (e) { /* extension reloaded */ }
     }
 
     function startProspectCheck() {

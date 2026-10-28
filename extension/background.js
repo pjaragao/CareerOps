@@ -53,6 +53,11 @@ async function callBackend(path, method, body) {
 }
 
 
+// The popup is usually closed when an import ends: nobody receives the result, and that is fine
+function notifyPopup(msg) {
+    chrome.runtime.sendMessage(msg, () => { void chrome.runtime.lastError; });
+}
+
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === 'importProfile') {
         console.log('Background: Received profile data, attempting multi-IP sync...');
@@ -112,7 +117,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         }
 
         trySyncJob().then(success => {
-            chrome.runtime.sendMessage({
+            notifyPopup({
                 action: 'importResult',
                 success: success,
                 error: success ? null : 'Erro ao sincronizar vaga'
@@ -140,7 +145,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         }
 
         trySyncUniversal().then(success => {
-            chrome.runtime.sendMessage({
+            notifyPopup({
                 action: 'importResult',
                 success: success,
                 error: success ? null : 'Erro ao processar vaga universal'
