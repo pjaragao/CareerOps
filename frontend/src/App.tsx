@@ -1,11 +1,12 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { FileText, BookOpen, Globe, Briefcase, MessageSquare, Key, Puzzle, PenLine, Search } from 'lucide-react';
+import { FileText, Files, BookOpen, Globe, Briefcase, MessageSquare, Key, Puzzle, PenLine, Search } from 'lucide-react';
 import MainLayout from './layouts/MainLayout';
 import TabbedPage from './components/TabbedPage';
 import Home from './pages/Home';
 import Profile from './pages/Profile';
 import DocumentRepository from './pages/DocumentRepository';
 import LinkedInTexts from './pages/LinkedInTexts';
+import GeneralResumes from './pages/GeneralResumes';
 import JobBoard from './pages/JobBoard';
 import JobSearch from './pages/JobSearch';
 import Interview from './pages/Interview';
@@ -18,6 +19,7 @@ import AISettings from './pages/AISettings';
 const MyProfile = () => (
   <TabbedPage tabs={[
     { id: 'cv', label: 'Dados e CVs', icon: <FileText size={16} />, render: () => <Profile /> },
+    { id: 'cvs-gerais', label: 'CVs gerais', icon: <Files size={16} />, render: () => <GeneralResumes /> },
     { id: 'conhecimento', label: 'Base de conhecimento', icon: <BookOpen size={16} />, render: () => <DocumentRepository /> },
     { id: 'linkedin', label: 'Textos do LinkedIn', icon: <Globe size={16} />, render: () => <LinkedInTexts /> },
   ]} />

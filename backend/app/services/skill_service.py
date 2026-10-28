@@ -39,7 +39,7 @@ class SkillService:
     _env.globals["line_of_thought"] = _line_of_thought.__func__
 
     # Skills that write text people will read use the "writing" model; the rest use the default one
-    WRITING_SKILLS = {"jobs/resume.md", "jobs/cover_letter.md", "jobs/outreach.md", "interview/stories.md", "interview/simulate.md"}
+    WRITING_SKILLS = {"jobs/resume.md", "resumes/improve.md", "jobs/cover_letter.md", "jobs/outreach.md", "interview/stories.md", "interview/simulate.md"}
 
     @classmethod
     async def render_prompt(cls, skill_path: str, context: Dict[str, Any]) -> str:
@@ -62,6 +62,7 @@ class SkillService:
             "onboarding": "import",
             "knowledge": "import",
             "jobs": "optimizer",
+            "resumes": "optimizer",
             "interview": "interview",
             "analytics": "optimizer",
             "linkedin": "outreach"

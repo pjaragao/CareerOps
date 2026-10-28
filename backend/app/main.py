@@ -3,7 +3,7 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
-from app.api import jobs, interview, profile, actions, settings as settings_api, documents, linkedin_copilot, ai_settings
+from app.api import jobs, interview, profile, actions, settings as settings_api, documents, linkedin_copilot, ai_settings, general_resumes
 from app.services.linkedin_copilot_service import LinkedInCopilotService
 
 app = FastAPI(
@@ -29,6 +29,7 @@ app.include_router(settings_api.router, prefix="/api")
 app.include_router(documents.router, prefix="/api/documents")
 app.include_router(linkedin_copilot.router, prefix="/api")
 app.include_router(ai_settings.router, prefix="/api")
+app.include_router(general_resumes.router, prefix="/api")
 
 
 async def _publish_scheduled_posts():
@@ -75,6 +76,11 @@ async def start_scheduler():
         await asyncio.to_thread(ensure_jobs_schema)   # migrations_v13: eligibility check of jobs
     except Exception as e:
         logging.getLogger("job_pipeline").warning("migrations_v13 not applied: %s", e)
+    try:
+        from app.services.general_resume_service import ensure_schema as ensure_resumes_schema
+        await asyncio.to_thread(ensure_resumes_schema)   # migrations_v14: general CVs for job boards
+    except Exception as e:
+        logging.getLogger("general_resumes").warning("migrations_v14 not applied: %s", e)
     app.state.linkedin_scheduler = asyncio.create_task(_publish_scheduled_posts())
     app.state.job_pipeline = asyncio.create_task(_job_pipeline())
     app.state.linkedin_drafts = asyncio.create_task(_auto_drafts())
