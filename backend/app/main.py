@@ -41,6 +41,18 @@ async def _publish_scheduled_posts():
         await asyncio.sleep(60)
 
 
+async def _job_pipeline():
+    """On startup and every 10 min: eligibility check, then CV and cover letter, for jobs still waiting (imported
+    while the app was down, or whose AI call failed). New jobs are handled right away by the import endpoints."""
+    from app.services.job_pipeline_service import JobPipelineService
+    while True:
+        try:
+            await asyncio.to_thread(JobPipelineService.run_pending)
+        except Exception as e:
+            logging.getLogger("job_pipeline").warning("pipeline tick failed: %s", e)
+        await asyncio.sleep(600)
+
+
 async def _auto_drafts():
     """Every 30 min: a draft from the newest unused saved theme when fewer than two drafts are waiting."""
     while True:
@@ -58,7 +70,13 @@ async def start_scheduler():
         await asyncio.to_thread(ensure_schema)   # migrations_v12: line of thought and networking plans
     except Exception as e:
         logging.getLogger("linkedin_copilot").warning("migrations_v12 not applied: %s", e)
+    try:
+        from app.services.job_pipeline_service import ensure_schema as ensure_jobs_schema
+        await asyncio.to_thread(ensure_jobs_schema)   # migrations_v13: eligibility check of jobs
+    except Exception as e:
+        logging.getLogger("job_pipeline").warning("migrations_v13 not applied: %s", e)
     app.state.linkedin_scheduler = asyncio.create_task(_publish_scheduled_posts())
+    app.state.job_pipeline = asyncio.create_task(_job_pipeline())
     app.state.linkedin_drafts = asyncio.create_task(_auto_drafts())
 
 @app.get("/")

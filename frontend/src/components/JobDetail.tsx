@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { Job, jobService, startAutoApply } from '../services/jobService';
-import { X, FileText, MessageSquare, Wand2, RefreshCw, Copy, Download, Send, ExternalLink, Rocket, Mail, MessageCircle, ChevronDown, ChevronUp, MapPin, Building2 } from 'lucide-react';
+import { X, FileText, MessageSquare, Wand2, RefreshCw, Copy, Download, Send, ExternalLink, Rocket, Mail, MessageCircle, ChevronDown, ChevronUp, MapPin, Building2, AlertTriangle } from 'lucide-react';
 import api from '../services/api';
 
 export type JobTab = 'info' | 'docs' | 'chat';
@@ -114,6 +114,13 @@ const JobDetail: React.FC<JobDetailProps> = ({ job: initialJob, onClose, initial
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
+  const recheck = async () => {
+    busy('eligibility', true);
+    try { await jobService.recheckEligibility(job.id); await refresh(); }
+    catch (e) { setNotice({ text: errText(e), ok: false }); }
+    finally { busy('eligibility', false); }
+  };
+
   const setStatus = async (status: string) => {
     setJob(j => ({ ...j, status }));
     try { await jobService.updateStatus(job.id, status); onChanged?.(); } catch { setNotice({ text: 'Não consegui mudar o status', ok: false }); }
@@ -195,6 +202,28 @@ const JobDetail: React.FC<JobDetailProps> = ({ job: initialJob, onClose, initial
               </a>
             )}
           </div>
+          {(job.eligibility_status === 'blocked' || job.eligibility_status === 'warning') && (() => {
+            const blocked = job.eligibility_status === 'blocked';
+            const color = blocked ? '#ff5c5c' : '#f5c542';
+            return (
+              <div style={{ border: `1px solid ${color}66`, background: `${color}14`, borderRadius: 10, padding: '0.6rem 0.9rem', fontSize: '0.8rem', color: '#e8e8ee' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 800, color }}>
+                  <AlertTriangle size={15} />
+                  {blocked ? 'A vaga exige residência ou visto que você não tem' : 'Atenção: a vaga pode exigir residência ou visto'}
+                  <button className="btn btn-secondary" onClick={recheck} disabled={!!running.eligibility} style={{ marginLeft: 'auto', padding: '2px 8px', fontSize: '0.7rem', gap: 4 }}>
+                    {running.eligibility ? <RefreshCw size={11} className="animate-spin" /> : <RefreshCw size={11} />} Verificar de novo
+                  </button>
+                </div>
+                {(job.eligibility_issues || []).map((i, n) => (
+                  <div key={n} style={{ marginTop: 6 }}>
+                    <span style={{ fontWeight: 700 }}>{i.type === 'residency' ? 'Residência' : 'Visto / autorização de trabalho'}:</span>{' '}
+                    <i>“{i.quote}”</i>{i.reason && <span style={{ color: 'var(--text-muted)' }}> — {i.reason}</span>}
+                  </div>
+                ))}
+                {blocked && !job.resume_markdown && <div style={{ marginTop: 6, color: 'var(--text-muted)' }}>CV e carta não foram gerados automaticamente. Use “Gerar CV” / “Gerar carta” se quiser se candidatar mesmo assim.</div>}
+              </div>
+            );
+          })()}
           {notice && <div style={{ fontSize: '0.8rem', color: notice.ok ? '#10b981' : 'var(--error, #ff4d4d)' }}>{notice.text}</div>}
         </div>
 

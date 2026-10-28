@@ -21,6 +21,16 @@ export interface Job {
   logo_url?: string;
   company_type?: string;
   career_site_url?: string;
+  // ad requires living in a region / a work visa the candidate lacks (checked when the job is added)
+  eligibility_status?: 'ok' | 'warning' | 'blocked' | null;
+  eligibility_issues?: EligibilityIssue[];
+  eligibility_checked_at?: string | null;
+}
+
+export interface EligibilityIssue {
+  type: 'residency' | 'work_authorization';
+  quote: string;
+  reason?: string;
 }
 
 export interface AIOptions {
@@ -48,6 +58,10 @@ export const jobService = {
   },
   deleteJob: async (id: number) => {
     const response = await api.delete(`/jobs/${id}`);
+    return response.data;
+  },
+  recheckEligibility: async (id: number) => {
+    const response = await api.post<{ status: string; issues: EligibilityIssue[] }>(`/jobs/${id}/eligibility`);
     return response.data;
   },
   updateStatus: async (id: number, status: string) => {

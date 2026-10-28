@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { jobService, Job } from '../services/jobService';
 import {
   Plus, MapPin, Trash2, LayoutDashboard, List as ListIcon, ExternalLink, Rocket, FileText, Mail, MessageSquare,
-  Search, ChevronDown, ChevronLeft, ChevronRight, ArrowUpDown, Check, X,
+  Search, ChevronDown, ChevronLeft, ChevronRight, ArrowUpDown, Check, X, AlertTriangle,
 } from 'lucide-react';
 import JobDetail, { JobTab, JobAction } from '../components/JobDetail';
 
@@ -112,6 +112,22 @@ const StatusPill = ({ status, onClick }: { status: string; onClick?: (e: React.M
   );
 };
 
+// The ad asks to live in a region / for a work visa the candidate lacks: red = requirement, yellow = soft or unclear
+const ELIGIBILITY_LABEL = { residency: 'Residência', work_authorization: 'Visto' } as const;
+export const EligibilityBadge = ({ job }: { job: Job }) => {
+  if (job.eligibility_status !== 'blocked' && job.eligibility_status !== 'warning') return null;
+  const issues = job.eligibility_issues || [];
+  const color = job.eligibility_status === 'blocked' ? '#ff5c5c' : '#f5c542';
+  const kinds = [...new Set(issues.map(i => ELIGIBILITY_LABEL[i.type] || i.type))].join(' + ') || 'Elegibilidade';
+  const tip = issues.map(i => `"${i.quote}"${i.reason ? ` — ${i.reason}` : ''}`).join('\n');
+  return (
+    <span title={tip} style={{ display: 'inline-flex', alignItems: 'center', gap: 3, flexShrink: 0, padding: '1px 6px', borderRadius: 6, fontSize: '0.66rem',
+      fontWeight: 800, color, background: `${color}1f`, border: `1px solid ${color}55` }}>
+      <AlertTriangle size={10} /> {kinds}
+    </span>
+  );
+};
+
 const JobBoard = () => {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
@@ -144,6 +160,15 @@ const JobBoard = () => {
   useEffect(() => {
     fetchAll().then(setJobs).catch(e => console.error('[JobBoard] Failed to load jobs', e)).finally(() => setLoading(false));
   }, []);
+  // New jobs are checked (residency / visa) and get CV + cover letter in the background: refresh until they're done
+  useEffect(() => {
+    const recent = Date.now() - 15 * 60_000;
+    const processing = jobs.some(j => ['scraped', 'new'].includes(j.status) && !!j.description && (!j.eligibility_checked_at ||
+      (j.eligibility_status !== 'blocked' && (!j.resume_markdown || !j.cover_letter) && new Date(j.eligibility_checked_at).getTime() > recent)));
+    if (!processing) return;
+    const t = setTimeout(loadJobs, 20_000);
+    return () => clearTimeout(t);
+  }, [jobs, loadJobs]);
 
   const setStatus = async (job: Job, status: string) => {
     if (job.status === status) return;
@@ -289,7 +314,10 @@ const JobBoard = () => {
                 {shown.map(job => (
                   <tr key={job.id} className="jb-row" onClick={() => setSelected({ job })}>
                     <td className="jb-td" style={{ maxWidth: 0, width: '100%' }}>
-                      <div style={{ fontWeight: 700, color: '#fff', fontSize: '0.88rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{job.job_title}</div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                        <span style={{ fontWeight: 700, color: '#fff', fontSize: '0.88rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{job.job_title}</span>
+                        <EligibilityBadge job={job} />
+                      </div>
                       <div style={{ fontSize: '0.76rem', color: 'var(--text-muted)', display: 'flex', gap: 10, overflow: 'hidden', whiteSpace: 'nowrap' }}>
                         <span style={{ color: 'var(--accent-light)', fontWeight: 600 }}>{job.company}</span>
                         {job.location && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, overflow: 'hidden', textOverflow: 'ellipsis' }}><MapPin size={11} /> {job.location}</span>}
@@ -352,6 +380,7 @@ const JobBoard = () => {
                       <div key={job.id} draggable onDragStart={e => e.dataTransfer.setData('jobId', String(job.id))} onClick={() => setSelected({ job })}
                         className="card-hover" style={{ padding: '0.8rem', borderRadius: 12, cursor: 'grab', background: 'rgba(30,30,42,.6)', border: '1px solid var(--border)', borderLeft: `3px solid ${col.color}` }}>
                         <div style={{ fontWeight: 700, fontSize: '0.84rem', color: '#fff', marginBottom: 2 }}>{job.job_title}</div>
+                        {(job.eligibility_status === 'blocked' || job.eligibility_status === 'warning') && <div style={{ marginBottom: 4 }}><EligibilityBadge job={job} /></div>}
                         <div style={{ fontSize: '0.74rem', color: 'var(--accent-light)', marginBottom: 8 }}>{job.company}</div>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6 }}>
                           <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 4, minWidth: 0, overflow: 'hidden', whiteSpace: 'nowrap' }}><MapPin size={11} /> {job.location || 'Remoto'}</span>

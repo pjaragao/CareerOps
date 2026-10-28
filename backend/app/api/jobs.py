@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException, Query, Request
 from typing import List, Optional
 from app.services.job_service import JobService
+from app.services.job_pipeline_service import JobPipelineService
 from pydantic import BaseModel
 
 router = APIRouter(tags=["jobs"])
@@ -57,6 +58,7 @@ async def add_manual_job(job: ManualJobCreate):
     )
     if not success:
         raise HTTPException(status_code=500, detail="Failed to add manual job")
+    JobPipelineService.kick()   # eligibility check, then CV and cover letter
     return {"ok": True}
 
 class StatusUpdate(BaseModel):
@@ -124,6 +126,7 @@ async def import_job_extension(request: Request):
                     NetworkingService.save_hiring_team(data.get("linkedin_job_id"), data.get("url"), data["hiringTeam"])
                 except Exception as e:
                     print(f"DEBUG: hiring team not saved: {e}")
+            JobPipelineService.kick()
 
         return {"ok": success}
     except Exception as e:
@@ -141,6 +144,8 @@ async def import_job_universal(request: Request):
             data.get("raw_text", ""),
             data.get("url", "")
         )
+        if success:
+            JobPipelineService.kick()
         return {"ok": success}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -151,3 +156,12 @@ async def evaluate_job(job_id: int):
     if not result:
         raise HTTPException(status_code=500, detail="Failed to evaluate job")
     return result
+
+@router.post("/{job_id}/eligibility")
+async def recheck_eligibility(job_id: int):
+    """Reads the ad again for residency / work visa requirements (the automatic check runs when the job is added)."""
+    import asyncio
+    try:
+        return await asyncio.to_thread(lambda: asyncio.run(JobPipelineService.check_eligibility(job_id)))
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Verificação falhou: {e}")

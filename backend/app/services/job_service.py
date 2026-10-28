@@ -92,7 +92,12 @@ class JobService:
                         status = CASE WHEN job_listings.status IN ('applied', 'interviewing', 'offer', 'rejected', 'done')
                                       THEN job_listings.status ELSE 'scraped' END,
                         scraped_at = EXCLUDED.scraped_at,
-                        company_id = EXCLUDED.company_id
+                        company_id = EXCLUDED.company_id,
+                        -- a new description is read again (eligibility check, then CV and cover letter if missing)
+                        eligibility_checked_at = CASE WHEN job_listings.description IS DISTINCT FROM EXCLUDED.description
+                                                      THEN NULL ELSE job_listings.eligibility_checked_at END,
+                        auto_docs_at = CASE WHEN job_listings.description IS DISTINCT FROM EXCLUDED.description
+                                            THEN NULL ELSE job_listings.auto_docs_at END
                     WHERE public.job_listings.status != 'applied'
                 """, (linkedin_job_id, url, job_title, company, location, description, datetime.now(timezone.utc), company_id))
             conn.commit()
