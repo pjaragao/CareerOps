@@ -246,11 +246,20 @@ select option {
 }
 
 /* Animations */
+/* ends at "transform: none": any other transform (even translateY(0)) makes the page the containing block of every
+   position:fixed child, and modals open where the page is instead of on screen */
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
+  to { opacity: 1; transform: none; }
 }
 
 .animate-fade-in {
   animation: fadeIn 0.4s ease-out forwards;
 }
+
+/* Job window: opens with a short scale-in (ends at transform: none, see fadeIn) */
+@keyframes windowIn {
+  from { opacity: 0; transform: translateY(8px) scale(0.985); }
+  to { opacity: 1; transform: none; }
+}
+.job-window { animation: windowIn 0.18s ease-out; }

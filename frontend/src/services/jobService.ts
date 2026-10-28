@@ -10,6 +10,9 @@ export interface Job {
   description: string;
   status: string;
   created_at: string;
+  updated_at?: string | null;
+  evaluation_score?: number | string | null;   // 0–5 from the AI evaluation
+  archetype?: string | null;
   easy_apply: boolean;
   resume_markdown?: string;
   cover_letter?: string;

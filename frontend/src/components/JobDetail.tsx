@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Job, jobService, startAutoApply } from '../services/jobService';
 import { X, FileText, MessageSquare, Wand2, RefreshCw, Copy, Download, Send, ExternalLink, Rocket, Mail, MessageCircle, ChevronDown, ChevronUp, MapPin, Building2 } from 'lucide-react';
 import api from '../services/api';
@@ -100,6 +101,13 @@ const JobDetail: React.FC<JobDetailProps> = ({ job: initialJob, onClose, initial
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoRun]);
 
+  // the page behind stays where it was: no scrolling under the window, nothing jumps when it closes
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  }, []);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
     window.addEventListener('keydown', onKey);
@@ -148,9 +156,10 @@ const JobDetail: React.FC<JobDetailProps> = ({ job: initialJob, onClose, initial
 
   const description = formatDescription(job.description || '');
 
-  return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(5, 5, 10, 0.8)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(10px)', padding: 20 }}>
-      <div onClick={e => e.stopPropagation()} className="panel animate-fade-in" style={{
+  // portal: on top of the screen wherever the list is scrolled (inside the page it was placed relative to the page)
+  return createPortal(
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(5, 5, 10, 0.78)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(10px)', padding: 20 }}>
+      <div onClick={e => e.stopPropagation()} className="panel job-window" style={{
         width: '100%', maxWidth: 1100, height: '90vh', display: 'flex', flexDirection: 'column', padding: 0, overflow: 'hidden',
         border: '1px solid rgba(108, 99, 255, 0.3)', boxShadow: '0 20px 50px rgba(0,0,0,0.5)', background: 'var(--bg-card)',
       }}>
@@ -300,7 +309,8 @@ const JobDetail: React.FC<JobDetailProps> = ({ job: initialJob, onClose, initial
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 };
 
