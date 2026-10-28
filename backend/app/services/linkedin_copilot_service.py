@@ -646,9 +646,16 @@ class LinkedInCopilotService:
                 usable.append(f)
         if not usable:
             return {"answers": answers, "suggestions": {}, "needs_user": skipped, "notes": "", "language": lang}
+        # the CV generated for this job (the one attached to the application): the fields copy from it
+        saved = None
+        if str(job.get("id") or "").isdigit():
+            saved = _one("SELECT resume_markdown FROM public.job_listings WHERE id = %s", (int(job["id"]),))
+        elif job.get("linkedin_job_id"):
+            saved = _one("SELECT resume_markdown FROM public.job_listings WHERE linkedin_job_id = %s", (str(job["linkedin_job_id"]),))
         ai = await _skill("linkedin/easy_apply.md", {
             "job_title": job.get("title"), "company": job.get("company"), "location": job.get("location"),
             "job_description": desc, "lang_name": lang, "facts": LinkedInCopilotService._facts_text(),
+            "resume_sent": (saved or {}).get("resume_markdown") or "",
             "resume_base": ProfileService.get_resume_base("pt" if lang == "Portuguese" else "en"),
             "fields": usable,
         }, model_key="ai_model_writing")

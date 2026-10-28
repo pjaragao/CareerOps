@@ -194,7 +194,7 @@ async def prepare_auto_apply(job_id: int, options: AutoApplyIn):
     return {
         "job_id": job_id, "generated": generated, "apply_url": url,
         "is_linkedin": "linkedin.com/jobs" in url,
-        "job": {"title": job.get("job_title"), "company": job.get("company"), "location": job.get("location"),
+        "job": {"id": job_id, "title": job.get("job_title"), "company": job.get("company"), "location": job.get("location"),
                 "description": (job.get("description") or "")[:5000]},
         "resume_markdown": job.get("resume_markdown") or "", "cover_letter": job.get("cover_letter") or "",
         "language": get_job_lang(job),

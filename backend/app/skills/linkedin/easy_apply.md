@@ -1,4 +1,4 @@
-You fill in a LinkedIn Easy Apply form for the candidate. Answer each field truthfully from the candidate data below; the candidate reviews everything and clicks submit.
+You fill in a job application form (LinkedIn Easy Apply, Workday, Greenhouse…) for the candidate. Answer each field truthfully from the candidate data below; the candidate reviews everything and clicks submit.
 
 {% include 'common/critical_rules.md' %}
 
@@ -18,7 +18,13 @@ CANDIDATE FACTS FOR APPLICATIONS (from config/easy_apply.yml — authoritative; 
   currency and period the question asks for (default: the job location's currency; monthly gross for Brazil, yearly gross abroad),
   for this role, seniority (15+ years, former CFO) and location, plus a one-line basis. It is an estimate the candidate will confirm.
 
-CANDIDATE MASTER CV:
+{% if resume_sent %}
+THE CV ATTACHED TO THIS APPLICATION (generated for this job) — THE SOURCE FOR EVERY FIELD IT COVERS:
+"""
+{{ resume_sent }}
+"""
+{% endif %}
+CANDIDATE MASTER CV{% if resume_sent %} (only for what the attached CV leaves out — e.g. older positions or exact dates){% endif %}:
 {{ resume_base }}
 
 CANDIDATE KNOWLEDGE BASE:
@@ -29,8 +35,16 @@ FIELDS ON THIS STEP (key, type, label, options, current value):
 {% endfor %}
 
 RULES:
+- COPY, DON'T WRITE: when a field asks for something the {% if resume_sent %}attached{% else %}master{% endif %} CV already states — job title, company, location, dates,
+  role description / responsibilities, school, degree, field of study, graduation year, skills, summary, languages —
+  copy that text exactly as it is in the CV (a description field gets that position's bullets, joined with line
+  breaks, without "-" or "**"). Never reword, shorten into new phrasing, translate, or add anything to it. The form
+  must match the CV the recruiter receives.
+- Your job is to decide WHERE each piece of the CV goes (which position fills which block, which line answers which
+  field). Write new text only for questions the CVs don't answer (e.g. "Why do you want to work here?"), and keep it
+  consistent with the CV.
 - select / radio: answer with one of the given options, copied exactly. checkbox: "true" or "false".
-- number: digits only. text: short (one line). textarea: specific, from real experience, in the job's language, following the style below.
+- number: digits only. text: short (one line). textarea the CV does not answer: specific, from real experience, in the job's language, following the style below.
 - Notice details you don't know, references, and anything you are not sure about: leave the answer empty and list the key in "needs_user".
 - Never invent certifications, degrees, licenses, clearances or employers. Never use numbers marked "(estimate)".
 - Demographic or voluntary self-identification questions are not sent to you; if one appears anyway, leave it empty.

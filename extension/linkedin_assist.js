@@ -1000,6 +1000,7 @@
             company: q('.job-details-jobs-unified-top-card__company-name, .jobs-unified-top-card__company-name'),
             location: q('.job-details-jobs-unified-top-card__primary-description-container, .jobs-unified-top-card__bullet'),
             description: q('#job-details, .jobs-description__content, .jobs-description-content__text').slice(0, 5000),
+            linkedin_job_id: currentJobId() || null,   // the backend uses the CV generated for this job
         };
     }
 
