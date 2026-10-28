@@ -697,6 +697,16 @@
         promptRow(box, 'Refazer com um pedido (ex.: discorde com educação, cite um exemplo)', again);
     }
 
+    // ▾ next to "✨ Responder": you say what you want in the reply, then the AI writes it
+    function replyPromptCard(replyBtn, post) {
+        const block = commentBlock(replyBtn, post);
+        block.parentElement.querySelectorAll(':scope > .careerops-card').forEach((c) => c.remove());
+        const box = card('CareerOps · resposta com pedido');
+        block.insertAdjacentElement('afterend', box);
+        line(box, 'Diga o que quer na resposta: seu ponto, tom, concordar ou discordar, um exemplo a citar…');
+        promptRow(box, 'Ex.: concorde sobre o lock-in e cite a migração de ERP que conduzi', (v) => { box.remove(); draftReply(replyBtn, post, { instruction: v }); }).focus();
+    }
+
     // Adds "✨ Responder" next to each comment's Responder; highlights replies to your own comments
     function decorateReplies() {
         findPosts().forEach((post) => {
@@ -708,11 +718,19 @@
                 rb.dataset.careeropsSeen = '1';
                 const thread = threadOf(block, post);
                 const toMe = thread !== block && [...thread.querySelectorAll('a[href*="/in/"]')].some((a) => !block.contains(a) && isSelf(a.innerText || ''));
+                // [✨ Responder | ▾] like the post's [✨ IA | ▾]: the arrow lets you say what you want in the reply
+                const split = document.createElement('span');
+                split.className = 'careerops-reply';
+                split.style.cssText = 'display:inline-flex;margin-left:6px;vertical-align:middle';
                 const b = button(toMe ? '✨ Responder (para você)' : '✨ Responder', () => draftReply(rb, post), toMe);
-                b.classList.add('careerops-reply');
                 b.title = 'Rascunho de resposta com IA: continua a conversa ou agradece e encerra';
-                b.style.cssText += ';font-size:11px;padding:2px 8px;margin-left:6px';
-                rb.insertAdjacentElement('afterend', b);
+                b.style.cssText += ';font-size:11px;padding:2px 8px;margin:0;border-radius:14px 0 0 14px';
+                const arrow = button('▾', () => replyPromptCard(rb, post), toMe);
+                arrow.title = 'Responder com um pedido seu (o que dizer, tom, concordar ou discordar)';
+                arrow.style.cssText += `;font-size:11px;padding:2px 7px;margin:0;border-radius:0 14px 14px 0;border-left:1px solid ${toMe ? 'rgba(255,255,255,.45)' : '#c9c9d6'}`;
+                if (!toMe) arrow.style.borderLeftWidth = '0';
+                split.append(b, arrow);
+                rb.insertAdjacentElement('afterend', split);
             });
         });
     }
