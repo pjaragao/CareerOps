@@ -99,11 +99,11 @@ document.addEventListener('DOMContentLoaded', () => {
             btn = 'Importar esta vaga';
         } else if (li && /^\/in\/[^/]+\/?$/.test(path)) {
             kind = 'profile'; title = 'Perfil de pessoa';
-            actions = ['🤝 Conectar (CareerOps) ao lado do Conectar: avalia o encaixe e convida sem nota.', 'No seu próprio perfil: botão CareerOps · Perfil com os textos EN/PT.'];
+            actions = ['🤝 Conectar (CareerOps) ao lado do Conectar: avalia o encaixe e convida sem nota.', 'No seu próprio perfil: “📝 Textos do meu perfil” aqui no popup.'];
             btn = 'Importar como MEU perfil (só no seu)';
         } else if (li && /^\/in\/[^/]+\/(details|edit)/.test(path)) {
             kind = 'profile-edit'; title = 'Edição do seu perfil';
-            actions = ['CareerOps · Perfil (canto inferior esquerdo): clique no campo do LinkedIn e em “Inserir”.'];
+            actions = ['📝 Textos do meu perfil (aqui no popup): clique no campo do LinkedIn e em “Inserir”.'];
             btn = 'Importar meu perfil';
         } else if (li && /^\/(my-items\/saved-jobs|jobs-tracker)/.test(path)) {
             kind = 'saved'; title = 'Suas vagas salvas';
@@ -127,6 +127,7 @@ document.addEventListener('DOMContentLoaded', () => {
         $('page-actions').innerHTML = '';
         actions.forEach((a) => { const li2 = document.createElement('li'); li2.textContent = a; $('page-actions').appendChild(li2); });
         importBtn.style.display = btn ? 'block' : 'none';
+        showFiller(tab, kind);
         if (btn) importBtn.dataset.label = btn;
     }
 
@@ -158,6 +159,20 @@ document.addEventListener('DOMContentLoaded', () => {
             await new Promise((r) => setTimeout(r, 500));
         }
     }
+
+    // "Textos do meu perfil": only when the tab is YOUR profile (the content script tells)
+    const fillerBtn = $('filler-btn');
+    function showFiller(tab, kind) {
+        if (!tab || !['profile', 'profile-edit'].includes(kind)) { fillerBtn.style.display = 'none'; return; }
+        chrome.tabs.sendMessage(tab.id, { action: 'fillerAvailable' }, (res) => {
+            void chrome.runtime.lastError;
+            fillerBtn.style.display = res && res.own ? 'block' : 'none';
+        });
+    }
+    fillerBtn.addEventListener('click', async () => {
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        chrome.tabs.sendMessage(tab.id, { action: 'openProfileFiller' }, () => { void chrome.runtime.lastError; window.close(); });
+    });
 
     importBtn.addEventListener('click', async () => {
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });

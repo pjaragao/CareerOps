@@ -480,12 +480,19 @@
         for (let k = 0; k < 6 && BADGE.test(n); k++) n = n.replace(BADGE, '').trim();
         return n;
     }
+    // "Ana Lima • 1st" / "1º": already a connection, never a prospect to invite
+    const FIRST_DEGREE = /(^|[\s•·])(1st|1º)(\s|$)/i;
+    const isFirstDegree = (text) => clean(text).split('\n').slice(0, 4).some((l) => FIRST_DEGREE.test(l));
+    // Tells the backend these people are connections: matching prospects move to "aceitou" (no AI call)
+    function markConnected(people) {
+        if (people.length) api('POST', '/prospects/check', { connections: people, sent: [], conversations: [] });
+    }
     const isSelf = (raw) => /(^|\s)(you|voc[eê])\s*$/i.test(clean(raw).split('\n')[0]);
     const NOT_HEADLINE = /^(like|gostei|reply|responder|curtir|author|autor|you|voc[eê]|verified profile|premium profile|perfil verificado|edited|editado|see more|ver mais|…|\d+\s*(likes?|reactions?|curtidas|rea[cç][oõ]es|replies|respostas)?)$/i;
 
     async function harvestPeople(post, info) {
         await openComments(post);
-        const seen = new Map();
+        const seen = new Map(), connected = new Map();
         post.querySelectorAll('a[href*="/in/"]').forEach((a) => {
             if (own(a)) return;
             const m = a.href.match(/https:\/\/www\.linkedin\.com\/in\/([^/?#]+)/);
@@ -494,6 +501,7 @@
             const name = personName(raw);
             if (!name || name.length > 80 || /^(view|ver)\b/i.test(name)) return;
             if (isSelf(raw)) { seen.set(m[0], null); return; }
+            if (isFirstDegree(raw) || isFirstDegree((a.parentElement || a).innerText || '')) { connected.set(m[0], { profile_url: m[0], name }); seen.set(m[0], null); return; }
             // LinkedIn's classes are obfuscated: climb from the link to the largest block that is still only about this
             // person (no link to anyone else) and take the first line after the name that reads like a headline
             let headline = null;
@@ -511,6 +519,7 @@
             if (!headline && info.author_name && personName(info.author_name) === name) headline = info.author_headline;
             seen.set(m[0], { profile_url: m[0], name, headline: headline ? headline.slice(0, 300) : null });
         });
+        markConnected([...connected.values()]);
         const found = [...seen.values()].filter(Boolean);
         const people = found.filter((p) => p.headline).slice(0, 25);
         if (!people.length) {
@@ -1068,7 +1077,7 @@
                 .filter((s) => !/^(conectar|connect|seguir|follow|mensagem|message|ver perfil|view profile|•|\d+º|\d+(st|nd|rd|th))$/i.test(s));
             const prev = seen.get(url);
             if (prev && prev.text.length >= text.length) return;
-            seen.set(url, { url, anchor: a, container, text, name: lines[0] || '', headline: lines.slice(1, 4).join(' · ') });
+            seen.set(url, { url, anchor: a, container, text, name: lines[0] || '', headline: lines.slice(1, 4).join(' · '), first: isFirstDegree(text) });
         });
         return [...seen.values()].slice(0, 25);
     }
@@ -1088,7 +1097,9 @@
     }
 
     async function scorePage(btn) {
-        const people = visiblePeople();
+        const all = visiblePeople();
+        markConnected(all.filter((p) => p.first).map((p) => ({ profile_url: p.url, name: p.name })));
+        const people = all.filter((p) => !p.first);
         if (!people.length) { toast('Nenhuma pessoa visível nesta página', false); return; }
         btn.disabled = true;
         btn.textContent = `Avaliando ${people.length}…`;
@@ -1864,6 +1875,18 @@
             inviteBtn.style.cssText += ';' + inviteFloat;
         }
     }
+    // Visiting a connection's profile (degree "1st"/"1º" on the top card) marks them accepted in Prospecção
+    let degreeCheckedFor = null;
+    function checkProfileDegree() {
+        if (!isProfilePage() || degreeCheckedFor === location.pathname) return;
+        const head = profileHeading();
+        const card = head && profileTopCard();
+        if (!card) return;
+        degreeCheckedFor = location.pathname;
+        if (isFirstDegree(clean(card.innerText).split('\n').slice(0, 6).join('\n')) || [...card.querySelectorAll('span')].some((sp) => /^[·•]?\s*(1st|1º)$/i.test(clean(sp.innerText)))) {
+            markConnected([{ profile_url: location.origin + (location.pathname.match(/^\/in\/[^/]+/) || [location.pathname])[0], name: clean(head.innerText) }]);
+        }
+    }
     const scoreBtn = button('⭐ Avaliar pessoas da página', () => scorePage(scoreBtn));
     const savedBtn = button('📥 Importar vagas salvas', () => importSavedJobs(savedBtn));
     fab.append(scoreBtn, savedBtn);
@@ -1881,6 +1904,7 @@
         // the job pane is reused when another job is opened: reset our button for the new job
         document.querySelectorAll('.careerops-jobbtn').forEach((b) => { if (b.dataset.job !== String(currentJobId())) b.remove(); });
         placeInvite();
+        checkProfileDegree();
         const listPage = /\/search\/results\/people|\/mynetwork/.test(location.pathname);
         scoreBtn.style.display = listPage ? '' : 'none';
         savedBtn.style.display = isSavedJobsPage() ? '' : 'none';

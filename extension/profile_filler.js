@@ -62,9 +62,7 @@
     root.innerHTML = `
       <style>
         :host { all: initial; }
-        .fab { position: fixed; left: 16px; bottom: 16px; z-index: 2147483646; background: #6c5ce7; color: #fff; border: 0;
-               border-radius: 22px; padding: 10px 16px; font: 600 13px system-ui, sans-serif; cursor: pointer; box-shadow: 0 4px 14px rgba(0,0,0,.25); }
-        .panel { position: fixed; left: 16px; bottom: 64px; width: 420px; max-height: 78vh; overflow: auto; z-index: 2147483647;
+        .panel { position: fixed; left: 16px; bottom: 16px; width: 420px; max-height: 78vh; overflow: auto; z-index: 2147483647;
                  background: #14141c; color: #e8e8f0; border: 1px solid #2c2c3a; border-radius: 14px; padding: 14px;
                  font: 13px/1.45 system-ui, sans-serif; box-shadow: 0 10px 30px rgba(0,0,0,.4); display: none; }
         .panel.open { display: block; }
@@ -82,13 +80,11 @@
         .hint { color: #9a9ab0; font-size: 12px; margin-bottom: 6px; }
         .err { color: #ff8a8a; }
         .chips span { display: inline-block; background: #262636; border-radius: 6px; padding: 2px 6px; margin: 2px; font-size: 12px; }
-        .toast { position: fixed; left: 16px; bottom: 110px; z-index: 2147483647; background: #00b894; color: #fff; padding: 8px 12px;
+        .toast { position: fixed; left: 16px; top: 72px; z-index: 2147483647; background: #00b894; color: #fff; padding: 8px 12px;
                  border-radius: 8px; font: 13px system-ui, sans-serif; display: none; }
       </style>
-      <button class="fab">CareerOps · Perfil</button>
       <div class="panel"></div>
       <div class="toast"></div>`;
-    const fab = root.querySelector('.fab');
     const panel = root.querySelector('.panel');
     const toast = root.querySelector('.toast');
 
@@ -224,9 +220,18 @@
         });
     }
 
-    fab.addEventListener('click', () => {
-        const open = panel.classList.toggle('open');
-        if (open) load();
+    // Your own profile: LinkedIn shows the edit controls ("Add profile section", the pencils) only there
+    const isOwnProfile = () => /^\/in\/[^/]+\/(details|edit)/.test(location.pathname)
+        || (/^\/in\//.test(location.pathname) && [...document.querySelectorAll('main button, main a')].some((b) =>
+            /add profile section|adicionar se[cç][aã]o|open to|dispon[ií]vel para|enhance profile|aprimorar perfil/i.test(b.innerText || b.getAttribute('aria-label') || '')));
+
+    // Opened from the extension popup ("Textos do meu perfil"), only on your own profile — no floating button
+    chrome.runtime.onMessage.addListener((req, _sender, sendResponse) => {
+        if (req.action === 'fillerAvailable') { sendResponse({ own: isOwnProfile() }); return; }
+        if (req.action !== 'openProfileFiller') return;
+        panel.classList.add('open');
+        load();
+        sendResponse({ ok: true });
     });
 
     chrome.storage.local.get(STORE_KEY, (v) => { done = v[STORE_KEY] || {}; });
