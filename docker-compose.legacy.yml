@@ -46,30 +46,8 @@ services:
       paulojr.type: "infrastructure"
       paulojr.origin: "dockerhub"
 
-  # ── Portainer (Docker management UI) ────────────────────────
-  portainer:
-    image: portainer/portainer-ce:latest
-    container_name: portainer
-    restart: always
-    ports:
-      - "9443:9443"
-      - "9000:9000"
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - portainer_data:/data
-    networks:
-      - supabase_network
-    environment:
-      - TZ=America/Sao_Paulo
-    labels:
-      paulojr.stack: "careerops"
-      paulojr.type: "infrastructure"
-      paulojr.origin: "dockerhub"
-      paulojr.ssl_port: "9001"
-
 volumes:
   linkedin_jobs_auth:
-  portainer_data:
 
 networks:
   supabase_network:
