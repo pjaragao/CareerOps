@@ -6,12 +6,15 @@ from dotenv import load_dotenv
 load_dotenv()
 
 def run_migration():
+    password = os.getenv("SUPABASE_DB_PASSWORD")
+    if not password:
+        raise RuntimeError("SUPABASE_DB_PASSWORD environment variable must be set")
     conn = psycopg2.connect(
         host=os.getenv("SUPABASE_DB_HOST", "supabase-db"),
         port=os.getenv("SUPABASE_DB_PORT", "5432"),
         dbname=os.getenv("SUPABASE_DB_NAME", "postgres"),
         user=os.getenv("SUPABASE_DB_USER", "postgres"),
-        password=os.getenv("SUPABASE_DB_PASSWORD", "n8n_supabase_pass")
+        password=password
     )
     
     try:
