@@ -2,7 +2,7 @@
 
 > Rules for using this file: every fact below is confirmed by the candidate unless marked **(estimate)**.
 > Estimates were never tracked formally by the employer — do NOT put them in resumes, LinkedIn or cover letters; use them only in interview prep, always explained as estimates.
-> Current consulting clients are under NDA: never name them or hint at them beyond "large Brazilian corporate groups".
+> Current consulting clients are under NDA: never name them or hint at them beyond "large Brazilian corporate groups", and never name the sector of the modeling work beyond "infrastructure".
 > The candidate was never a partner or owner of MPB Engineering — never write "partner", "co-founder" or "owner" for it.
 
 ## 1. Positioning — two markets
@@ -37,7 +37,7 @@ Engineer (sanitary & environmental) and former CFO, 15+ years in infrastructure 
 *Feb 2026 – Present*
 *   Advises large Brazilian corporate groups (names under NDA) on major infrastructure projects.
 *   General coordination of sanitation engineering projects.
-*   Engineering-financial modeling for solid-waste infrastructure projects.
+*   Engineering-financial modeling for infrastructure projects.
 
 ### MPB Engineering — Finance Director (CFO)
 *Feb 2023 – Jan 2026 (tenure at MPB: May 2008 – Jan 2026, nearly 18 years)*

@@ -5,6 +5,7 @@ Focus on:
 3. Improving the summary and core competencies using the broader context.
 
 {% include 'common/critical_rules.md' %}
+{% include 'common/cv_recruiter_rules.md' %}
 
 Current Base Resume:
 {{ current_resume }}

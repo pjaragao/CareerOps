@@ -27,21 +27,23 @@ Engineer and former CFO who turns operational and financial data into models peo
 ### Data & AI Engineer — Self-employed (remote)
 **Florianópolis, Brazil** | Feb 2026 – Present
 
-Design, build and operate data, modeling and AI products end to end as sole engineer, with AI-assisted development (Claude Code) and automated tests and CI as the quality gate.
+Independent product work, team of one: platform builds, product launches, forecasting models and LLM agents, with AI-assisted development (Claude Code) and automated tests and CI as the quality gate.
 
 - **CentralOps — AI-native retail ERP.** ~95k lines (Next.js/TypeScript, Python workers, PostgreSQL/Supabase): POS, inventory, double-entry accounting, cash flow and P&L, payroll, Brazilian tax and e-invoicing; 133 migrations, 2,000+ pgTAP tests, CI/CD.
 - **Customer-facing LLM agent** behind an MCP server (16 tools): acts only through database functions under signed context tokens and row-level security; a guardrail checks every price and stock figure against the database; human handoff when unsure.
 - **Election-night projection model (Brazil 2026):** Bayesian hierarchical model on official electoral data (national → regional → state shrinkage); uncertainty calibrated by replaying the 2014, 2018 and 2022 runoffs in real vote-arrival order; 56 tests.
-- **Trading Copilot (B3):** signal tracking, broker-statement reconciliation of real costs and slippage, capital-gains tax, strategy backtests with TimesFM forecasts; 100+ tests.
-- Also: a multi-tenant WhatsApp AI agent (300+ tests), a career-automation platform (FastAPI, React, Chrome extension), a sports-pool SaaS (Next.js, Expo, Stripe) and a public-tender classifier; all self-hosted on Docker/Coolify.
+- **Trading Copilot (B3):** broker-statement reconciliation of real costs and slippage, capital-gains tax, TimesFM backtests; 100+ tests.
+- Also: a multi-tenant WhatsApp AI agent (300+ tests), a career-automation platform and a sports-pool SaaS; all self-hosted on Docker/Coolify.
 
 ### Independent Consultant — Infrastructure Project Finance & Modeling
-**Florianópolis, Brazil** | Feb 2026 – Present
+**Florianópolis, Brazil** | Feb 2026 – Present (freelance, concurrent with the role above)
 
-- Advise large Brazilian corporate groups (under NDA) on major infrastructure projects: engineering-financial models (CAPEX/OPEX, cash flow, feasibility) for solid-waste infrastructure and coordination of sanitation engineering projects.
+- Advise large Brazilian corporate groups (under NDA) on major infrastructure projects: engineering-financial models (CAPEX/OPEX, cash flow, feasibility) for infrastructure projects and coordination of sanitation engineering projects.
 
 ### MPB Engineering — Florianópolis, Brazil
 **Infrastructure engineering consultancy** | May 2008 – Jan 2026
+
+Serves municipalities, state utilities and federal agencies. Promoted from intern to Finance Director.
 
 **Finance Director (CFO)** | Feb 2023 – Jan 2026
 - Led a 5-person finance team; introduced the annual budget with monthly variance tracking and the KPIs used to monitor operational goals.
@@ -49,22 +51,22 @@ Design, build and operate data, modeling and AI products end to end as sole engi
 - Automated reporting and document workflows with n8n, LLM APIs and Power Platform integrated with the ERP and SharePoint, eliminating manual data entry.
 
 **Senior Engineer — Feasibility Modeling, Proposals & Projects** | Aug 2011 – Jan 2023
-- Built DCF feasibility and tariff models for municipal water and wastewater concessions; analyzed concession processes for four municipalities.
+Project types: feasibility and tariff models, tender pricing, World Bank–financed program, ERP and BIM rollouts.
+- Built DCF feasibility and tariff models for municipal water and wastewater concessions.
 - Prepared financial proposals for the firm's ~90 tenders a year (QCBS/LCS) and designed a metrics-based pricing method (type, size, risk) that significantly cut bid-preparation time.
 - Managed 5–7 concurrent contracts (~US$4M a year) supporting infrastructure investments of US$20–150M; owned scope, schedule, budget, risk and client reporting.
-- General coordinator and engineer of record for the **World Bank–financed Lagoas do Norte Program** in Teresina (2014–2019): integrated design of sewerage for 312,000 residents, 28 km of drainage, water, roads, a 1 MW biogas plant and BIM urban design across ~1,300 ha.
+- General coordinator and engineer of record for the **World Bank–financed Lagoas do Norte Program** in Teresina (Feb 2014 – Jul 2019): integrated design of sewerage for 312,000 residents, 28 km of drainage, water, roads, a 1 MW biogas plant and BIM urban design across ~1,300 ha.
 - Engineer of record on 46 registered engagements, including a river-basin plan (99,000 km², 2.1M people), water systems for state utilities (up to 1,250 L/s) and environmental management of highway programs (BR-470 for DNIT; Arteris concession, 357 km).
 - Led the firm's ERP, SharePoint, ISO 9001 and BIM rollouts with in-house staff.
 
-**Engineering Intern** | May 2008 – Aug 2011 — financial proposals, wastewater design, cost estimates and technical reports.
+**Engineering Intern** | May 2008 – Aug 2011
 
 ---
 
 ## EDUCATION & CREDENTIALS
 
-- **B.Eng., Sanitary and Environmental Engineering** — UFSC, Brazil, 2011
+- **B.Eng., Sanitary and Environmental Engineering** — UFSC, Brazil, 2011; CREA-SC 108928-7
 - **MBA, Business Management** — Fundação Getulio Vargas (FGV), 2015
 - **MBA, Building Information Modeling** — Universidade Paulista (UNIP), 2021
-- **Registered Engineer** — CREA-SC, Brazil (SC 108928-7)
 
 **Languages:** Portuguese (native) | English (fluent, C1; lived and worked in the US) | Spanish (B1)

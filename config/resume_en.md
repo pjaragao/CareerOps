@@ -27,6 +27,8 @@ Former CFO and engineer with 15+ years in infrastructure finance, now building d
 ### Data & AI Engineer — Self-employed
 **Florianópolis, Brazil (remote)** | Feb 2026 – Present
 
+Independent product work, team of one. Project types: platform builds, product launches, forecasting models, LLM agents.
+
 Build and operate data, modeling and AI products end to end as sole engineer, using AI-assisted development (Claude Code) with automated tests and CI as the quality gate.
 
 - **Election-night projection model (Brazil 2026):** Bayesian hierarchical model of municipal deviations from a first-round + vote-transfer baseline on official electoral data (national → regional → state shrinkage); uncertainty calibrated by replaying the 2014, 2018 and 2022 runoffs in real vote-arrival order; 56 tests.
@@ -37,21 +39,27 @@ Build and operate data, modeling and AI products end to end as sole engineer, us
 ### Independent Consultant — Infrastructure Project Finance & Modeling
 **Florianópolis, Brazil** | Feb 2026 – Present
 
-- Advise large Brazilian corporate groups (under NDA) on major infrastructure projects: engineering-financial models (CAPEX/OPEX, cash flow, feasibility) for solid-waste infrastructure and coordination of sanitation engineering projects.
+Independent practice serving large Brazilian corporate groups. Freelance, held concurrently with the data and AI work above.
+
+- Advise large Brazilian corporate groups (under NDA) on major infrastructure projects: engineering-financial models (CAPEX/OPEX, cash flow, feasibility) for infrastructure projects and coordination of sanitation engineering projects.
 
 ### MPB Engineering — Florianópolis, Brazil
 **Consultancy for water, wastewater, urban, highway-environmental and solid-waste infrastructure** | May 2008 – Jan 2026
 
+Consultancy serving municipalities, state utilities and federal agencies, bidding ~90 tenders a year. Internal promotions from intern to Finance Director over nearly 18 years.
+
 **Finance Director (CFO)** | Feb 2023 – Jan 2026
+Project types: budgeting and KPI rollout, ERP migration, BI reporting, finance automation.
 - Led a 5-person finance team; introduced the annual budget with monthly variance tracking and the KPIs used to monitor operational goals.
 - Built BI reporting on department and project performance and major expenses; redesigned ERP cost accounting with timesheet-based labor allocation.
 - Automated reporting and document workflows with n8n, LLM APIs and Power Platform integrated with the ERP and SharePoint, eliminating manual data entry.
 
 **Senior Engineer — Feasibility Modeling, Proposals & Projects** | Aug 2011 – Jan 2023
+Project types: feasibility and tariff modeling, concession analysis, tender pricing, World Bank–financed program delivery, ERP and BIM rollouts.
 - Built DCF feasibility and tariff models for municipal water and wastewater concessions and analyzed concession processes for four municipalities.
 - Prepared financial proposals for the firm's ~90 tenders a year (QCBS/LCS) and designed a metrics-based pricing method that significantly cut bid-preparation time.
 - Managed 5–7 concurrent contracts (~US$4M a year) of US$0.2–0.4M each, supporting infrastructure investments of US$20–150M; owned scope, schedule, budget, risk and client reporting.
-- General coordinator and engineer of record for the **World Bank–financed Lagoas do Norte Program** in Teresina (2014–2019): proposal and integrated design of sewerage for 312,000 residents, 28 km of drainage, water, roads, a 1 MW biogas plant and BIM-modeled urban design across ~1,300 ha.
+- General coordinator and engineer of record for the **World Bank–financed Lagoas do Norte Program** in Teresina (Feb 2014 – Jul 2019): proposal and integrated design of sewerage for 312,000 residents, 28 km of drainage, water, roads, a 1 MW biogas plant and BIM-modeled urban design across ~1,300 ha.
 - Engineer of record on 46 registered engagements, including the Mearim river-basin plan (99,000 km², 2.1M people), water systems for state utilities (up to 1,250 L/s) and environmental management of highway programs (BR-470 for DNIT; Arteris concession, 357 km).
 - Led the firm's ERP, SharePoint Online and BIM transformations with in-house staff.
 

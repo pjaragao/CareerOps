@@ -24,7 +24,9 @@ Score each category from 0 to its maximum; the total score is the sum (0–100):
 4. "relevance" (max 15) — headline and summary match the target title; the most relevant experience comes first and gets
    the most space; nothing important hidden at the end.
 5. "structure" (max 10) — the expected sections exist (contact, summary, skills, experience, education, languages),
-   in a sensible order, with no gaps or dates that confuse.
+   in a sensible order, with no gaps or dates that confuse. Each company has a one-line context (business, size, team
+   size); roles name their project types; dates show month and year, never years alone; contracts, breaks, short stints
+   and overlapping roles state the reason. Report what is missing as an issue, asking the candidate for the fact.
 6. "clarity" (max 10) — length (two pages max for 15+ years), bullet length (1–2 lines), repetition, jargon a recruiter
    would not know, typos, consistency of tense and punctuation.
 

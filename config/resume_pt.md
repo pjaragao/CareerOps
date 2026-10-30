@@ -27,20 +27,26 @@ Engenheiro sanitarista e ambiental com quase 18 anos em projetos de saneamento e
 ### Consultor Independente — Engenharia de Saneamento e Modelagem Técnico-Financeira
 **Florianópolis/SC** | fev 2026 – atual
 
+Atuação independente para grandes grupos empresariais brasileiros, em paralelo aos produtos de dados e IA listados abaixo.
+
 - Consultoria a grandes grupos empresariais brasileiros (sob NDA) em projetos de infraestrutura de grande porte.
 - Coordenação geral de projetos de engenharia de saneamento: escopo, cronograma, equipe multidisciplinar e entregas.
-- Modelagem técnico-financeira de projetos de resíduos sólidos: CAPEX/OPEX, fluxo de caixa e viabilidade econômica.
+- Modelagem técnico-financeira de projetos de infraestrutura: CAPEX/OPEX, fluxo de caixa e viabilidade econômica.
 
 ### MPB Engenharia — Florianópolis/SC
 **Consultoria de engenharia em saneamento, drenagem, urbanização, meio ambiente e resíduos sólidos** | mai 2008 – jan 2026
 
+Atende prefeituras, companhias estaduais e órgãos federais, com ~90 licitações por ano. Promoções internas de estagiário a diretor financeiro em quase 18 anos.
+
 **Diretor Financeiro (CFO)** | fev 2023 – jan 2026
+Tipos de projeto: implantação de orçamento e KPIs, migração de ERP, relatórios de BI, automação financeira.
 - Liderança de equipe financeira de 5 pessoas; implantação do orçamento anual com acompanhamento mensal e dos KPIs de metas operacionais.
 - Relatórios gerenciais em BI por setor, por projeto e das grandes despesas; contabilidade de custos no novo ERP com apropriação de mão de obra pelo registro de horas.
 - Automação de relatórios e documentos com n8n, IA e Power Platform integrados ao ERP e ao SharePoint.
 
 **Engenheiro Sênior — Projetos de Saneamento, Modelagem e Propostas** | ago 2011 – jan 2023
-- Coordenador geral e responsável técnico do **Programa Lagoas do Norte** em Teresina/PI, financiado pelo Banco Mundial (2014–2019): proposta e projetos de esgotamento sanitário para 312 mil habitantes, 28 km de drenagem, abastecimento de água, sistema viário, usina de biogás de 1 MW, projeto urbanístico em BIM e programa socioambiental em ~1.300 ha.
+Tipos de projeto: projetos de saneamento, programa financiado pelo Banco Mundial, viabilidade e modelagem tarifária, análise de concessões, precificação de licitações, implantação de ERP e BIM.
+- Coordenador geral e responsável técnico do **Programa Lagoas do Norte** em Teresina/PI, financiado pelo Banco Mundial (fev 2014 – jul 2019): proposta e projetos de esgotamento sanitário para 312 mil habitantes, 28 km de drenagem, abastecimento de água, sistema viário, usina de biogás de 1 MW, projeto urbanístico em BIM e programa socioambiental em ~1.300 ha.
 - Responsável técnico em 46 ARTs, entre elas: Plano Diretor de Drenagem da Bacia do Rio Mearim/MA (99 mil km², 2,1 milhões de habitantes); sistema integrado de água de Xanxerê, Xaxim, Cordilheira Alta e Chapecó para a CASAN (1.252 L/s); sistema de água de Criciúma (311 mil habitantes); ampliação dos sistemas de Guaratuba, Matinhos e Morretes para a Sanepar (148 km de rede); ETA Cristalina para o SAMAE Brusque (400 L/s); projeto e licenciamento de aterro sanitário.
 - Gestão ambiental de rodovias: duplicação da BR-470 para o DNIT (73 km, 2013–2023), SC-477 para o DEINFRA (73 km) e concessão Arteris Autopista Litoral Sul (357 km).
 - Estudos de viabilidade (fluxo de caixa descontado) e modelagem tarifária de concessões de água e esgoto; análise de processos de concessão em Penha, Camboriú, Bombinhas e Pomerode.
@@ -53,6 +59,8 @@ Engenheiro sanitarista e ambiental com quase 18 anos em projetos de saneamento e
 
 ### Engenheiro de Dados e IA — Autônomo
 **Florianópolis/SC (remoto)** | fev 2026 – atual
+
+Produtos próprios, como único engenheiro, em paralelo à consultoria. Tipos de projeto: construção de plataformas, lançamento de produtos, modelos de previsão, agentes de IA.
 
 - **CentralOps:** ERP de varejo com contabilidade de partidas dobradas, fluxo de caixa, DRE, estoque, folha e fiscal (PostgreSQL, mais de 2.000 testes automatizados) e agente de IA que só usa números calculados pelo banco.
 - **Modelo de projeção da apuração (Eleições 2026):** modelo estatístico bayesiano sobre os dados oficiais do TSE, calibrado com os 2º turnos de 2014, 2018 e 2022.

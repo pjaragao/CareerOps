@@ -4,6 +4,7 @@ the review below found.
 
 {% include 'common/critical_rules.md' %}
 {% include 'common/output_format.md' %}
+{% include 'common/cv_recruiter_rules.md' %}
 
 Target job title: {{ target_title or "(infer from the resume)" }}
 {% if used_on %}Where it will be uploaded: {{ used_on }}
@@ -24,7 +25,7 @@ Rules:
 - Never rename a job title, merge or split roles, or change companies and dates: those are facts recruiters verify.
   Improve how each role is described, not what it was.
 - Keep the markdown shape the PDF generator understands: "# NAME", a bold headline line, contact lines, "---" between
-  sections, "## SECTION" headings, "### Role — Company" or bold role lines with "| dates", "- " bullets, **bold**.
+  sections, "## SECTION" headings, "### Role — Company" or bold role lines with "| dates", "- " bullets, **bold**. Company context and project types go in a plain line under the heading.
   No tables, no images, no links in markdown syntax, no emojis.
 - Standard section headings in {{ lang_name }}; one consistent date format; most relevant content first.
 - Bullets: action verb first, result and scale, 1–2 lines each. Keep it to two pages.
