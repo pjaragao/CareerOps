@@ -1,8 +1,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- JSON bags, as the backend sends them */
 import React, { useCallback, useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { Check, CircleStop, ExternalLink, FileText, Inbox as InboxIcon, ListChecks, Mail, Monitor, Play, RefreshCw, Settings2, UserRound, X } from 'lucide-react';
 import TabbedPage from '../components/TabbedPage';
+import { EligibilityBadge, css as listCss } from './JobBoard';
 import { automationService as auto, Action, AutomationStatus, EmailEvent, FoundJob, FunnelRow, Inbox, Question, SearchRow } from '../services/automationService';
 
 const muted: React.CSSProperties = { color: 'var(--text-muted)', fontSize: '0.88rem' };
@@ -89,60 +90,112 @@ const StatusBar = () => {
   );
 };
 
-// ── Approve ──────────────────────────────────────────────────────────────
-const Choice = ({ onApprove, onReject, busy, approveLabel = 'Aprovar' }: { onApprove: () => void; onReject: () => void; busy: boolean; approveLabel?: string }) => (
-  <div style={row}>
-    <button className="btn btn-primary" disabled={busy} onClick={onApprove}><Check size={15} /> {approveLabel}</button>
-    <button className="btn btn-secondary" disabled={busy} onClick={onReject}><X size={15} /> Rejeitar</button>
-  </div>
-);
+// ── Approve: one compact list, like Vagas ────────────────────────────────
+type WriteKind = 'apply' | 'comment' | 'connect' | 'follow';
+const KINDS: { id: WriteKind; label: string; plural: string; color: string }[] = [
+  { id: 'apply', label: 'Vaga', plural: 'Vagas', color: '#8b85ff' }, { id: 'comment', label: 'Comentário', plural: 'Comentários', color: GREEN },
+  { id: 'connect', label: 'Conexão', plural: 'Conexões', color: '#00b0ff' }, { id: 'follow', label: 'Seguir', plural: 'Seguir', color: GRAY },
+];
+const kindOf = (k: string) => KINDS.find((x) => x.id === k) || { id: k, label: k, plural: k, color: GRAY };
+const fitColor = (n: number) => (n >= 85 ? GREEN : n >= 70 ? YELLOW : GRAY);
+const ellipsis: React.CSSProperties = { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' };
+// on a phone the kind moves next to the title, so the title keeps the width
+const approveCss = '.ap-sm{display:none}@media (max-width: 760px){.ap-sm{display:inline-flex}}';
+const KindPill = ({ kind, className }: { kind: string; className?: string }) => {
+  const k = kindOf(kind);
+  return <span className={`jb-pill ${className || ''}`} style={{ background: `${k.color}1f`, color: k.color, cursor: 'inherit' }}><span className="jb-dot" style={{ background: k.color }} />{k.label}</span>;
+};
 
-const ProposalCard = ({ action, onDone, setError }: { action: Action; onDone: () => void; setError: (e: string) => void }) => {
+// the job triage, the person's fit or the post's relevance: always 0-100 against your profile
+const FitBadge = ({ fit }: { fit?: number | null }) => (fit == null
+  ? <span style={{ ...muted, fontSize: '0.76rem' }}>—</span>
+  : <span title="Fit com o seu perfil (0–100)" style={{ ...badge(fitColor(fit)), fontVariantNumeric: 'tabular-nums' }}>{fit}</span>);
+
+const what = (a: Action): { title: string; sub: string } => {
+  const p = a.payload || {};
+  if (a.kind === 'apply') return { title: a.job_title || p.title || a.title || 'Vaga', sub: [a.company || p.company, a.location].filter(Boolean).join(' · ') };
+  if (a.kind === 'comment') return { title: `Post de ${p.author || a.title || '—'}`, sub: p.text || '' };
+  return { title: p.name || a.title || '—', sub: p.headline || p.why || p.reason || '' };
+};
+
+const ProposalDetail = ({ action, text, setText }: { action: Action; text: string; setText: (t: string) => void }) => {
+  const p = action.payload;
+  return (
+    <div style={{ ...stack, gap: '0.5rem' }}>
+      {action.kind === 'apply' && <>
+        <div style={row}>
+          {action.posted_at && <span style={badge(isRecent(action.posted_at) ? GREEN : GRAY)}>Publicada {ago(action.posted_at)}</span>}
+          <span style={badge(action.easy_apply ? GREEN : YELLOW)}>{action.easy_apply ? 'Easy Apply' : 'Site da empresa'}</span>
+        </div>
+        {action.triage_reason && <p style={muted}>{action.triage_reason}</p>}
+        {action.salary_flag && <p style={{ ...muted, color: YELLOW }}>{action.salary_flag}</p>}
+        {(action.eligibility_issues || []).map((i, n) => (
+          <p key={n} style={{ ...muted, color: action.eligibility_status === 'blocked' ? RED : YELLOW }}>“{i.quote}”{i.reason ? ` — ${i.reason}` : ''}</p>
+        ))}
+      </>}
+      {action.kind === 'comment' && <>
+        {p.reason && <p style={muted}>{p.reason}</p>}
+        {p.post_head && <p style={{ ...muted, whiteSpace: 'pre-wrap', maxHeight: 130, overflow: 'auto' }}>{p.post_head}</p>}
+        <textarea style={{ ...input, minHeight: 90 }} value={text} onChange={(e) => setText(e.target.value)} aria-label="Comentário" />
+        <span style={muted}>Editou? Aprove por esta linha (✓): a aprovação em lote usa o texto original.</span>
+      </>}
+      {(action.kind === 'connect' || action.kind === 'follow') && <>
+        {p.headline && <div style={muted}>{p.headline}</div>}
+        {p.reason && <p style={muted}>{p.reason}</p>}
+        {p.why && <p style={muted}>{p.why}</p>}
+      </>}
+    </div>
+  );
+};
+
+const ProposalRow = ({ action, picked, onPick, onDone, setError }: { action: Action; picked: boolean; onPick: (on: boolean) => void; onDone: () => void; setError: (e: string) => void }) => {
+  const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [text, setText] = useState<string>(action.payload.text || '');
   const decide = (call: Promise<unknown>) => {
     setBusy(true);
     call.then(onDone).catch((e) => setError(errorText(e))).finally(() => setBusy(false));
   };
-  const p = action.payload;
+  const w = what(action);
   return (
-    <div className="panel" style={stack}>
-      {action.kind === 'apply' && <>
-        <div style={{ ...row, justifyContent: 'space-between' }}>
-          <strong>{action.job_title || p.title}</strong>
-          {action.triage_score != null && <span style={badge(action.triage_score >= 85 ? GREEN : YELLOW)}>Nota {action.triage_score}</span>}
-        </div>
-        <div style={muted}>{action.company || p.company}{action.location ? ` · ${action.location}` : ''}</div>
-        <div style={row}>
-          {action.posted_at && <span style={badge(isRecent(action.posted_at) ? GREEN : GRAY)}>Publicada {ago(action.posted_at)}</span>}
-          <span style={badge(action.easy_apply ? GREEN : YELLOW)}>{action.easy_apply ? 'Easy Apply' : 'Site da empresa'}</span>
-          {action.eligibility_status === 'warning' && <span style={badge(YELLOW)}>Elegibilidade: atenção</span>}
-        </div>
-        {action.triage_reason && <p style={muted}>{action.triage_reason}</p>}
-        {action.salary_flag && <p style={{ ...muted, color: YELLOW }}>{action.salary_flag}</p>}
-      </>}
-      {action.kind === 'comment' && <>
-        <div style={muted}><strong>{p.author}</strong>{p.relevance != null ? ` · relevância ${p.relevance}` : ''}</div>
-        <p style={{ ...muted, whiteSpace: 'pre-wrap', maxHeight: 130, overflow: 'auto' }}>{p.post_head}</p>
-        <textarea style={{ ...input, minHeight: 90 }} value={text} onChange={(e) => setText(e.target.value)} aria-label="Comentário" />
-      </>}
-      {(action.kind === 'connect' || action.kind === 'follow') && <>
-        <strong>{p.name || action.title}</strong>
-        {p.headline && <div style={muted}>{p.headline}</div>}
-        {p.reason && <p style={muted}>{p.reason}</p>}
-        {p.why && <p style={muted}>{p.why}</p>}
-      </>}
-      <div style={{ ...row, justifyContent: 'space-between' }}>
-        <Choice busy={busy} onApprove={() => decide(auto.approve(action.id, action.kind === 'comment' ? text : undefined))} onReject={() => decide(auto.reject(action.id))} />
-        {action.target_url && <a style={muted} href={action.target_url} target="_blank" rel="noreferrer">Abrir <ExternalLink size={12} /></a>}
-      </div>
-    </div>
+    <>
+      <tr className="jb-row" onClick={() => setOpen(!open)}>
+        <td className="jb-td jb-hide-sm" style={{ width: 1, paddingRight: 0 }} onClick={(e) => e.stopPropagation()}>
+          <input type="checkbox" style={checkbox} checked={picked} onChange={(e) => onPick(e.target.checked)} aria-label="Selecionar" />
+        </td>
+        <td className="jb-td jb-hide-sm" style={{ width: 1, paddingRight: 0 }}><KindPill kind={action.kind} /></td>
+        <td className="jb-td" style={{ maxWidth: 0, width: '100%' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+            <span style={{ fontWeight: 700, color: '#fff', fontSize: '0.88rem', ...ellipsis }}>{w.title}</span>
+            {action.kind === 'apply' && <EligibilityBadge job={action} />}
+            {action.salary_flag && <span title={action.salary_flag} style={{ ...badge(YELLOW), fontSize: '0.66rem', padding: '1px 6px' }}>Salário</span>}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+            <KindPill kind={action.kind} className="ap-sm" />
+            <span style={{ fontSize: '0.76rem', color: 'var(--text-muted)', ...ellipsis }}>{w.sub}</span>
+          </div>
+        </td>
+        <td className="jb-td" style={{ textAlign: 'center' }}><FitBadge fit={action.fit} /></td>
+        <td className="jb-td jb-hide-sm" style={{ fontSize: '0.76rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{ago(action.posted_at || action.sort_at || action.created_at)}</td>
+        <td className="jb-td" style={{ textAlign: 'right', paddingLeft: 0, whiteSpace: 'nowrap' }} onClick={(e) => e.stopPropagation()}>
+          <div style={{ display: 'inline-flex', flexWrap: 'nowrap', gap: 6 }}>
+            <button className="jb-icon primary" title="Aprovar" disabled={busy} onClick={() => decide(auto.approve(action.id, action.kind === 'comment' ? text : undefined))}><Check size={15} /></button>
+            <button className="jb-icon danger" title="Rejeitar" disabled={busy} onClick={() => decide(auto.reject(action.id))}><X size={15} /></button>
+            {action.target_url && <a className="jb-icon jb-hide-sm" title="Abrir no LinkedIn" href={action.target_url} target="_blank" rel="noreferrer"><ExternalLink size={15} /></a>}
+          </div>
+        </td>
+      </tr>
+      {open && (
+        <tr style={{ borderBottom: '1px solid var(--border)', background: 'rgba(255,255,255,.015)' }}>
+          <td colSpan={6} className="jb-td">
+            <ProposalDetail action={action} text={text} setText={setText} />
+            {action.target_url && <a style={{ ...muted, display: 'inline-block', marginTop: 6 }} href={action.target_url} target="_blank" rel="noreferrer">Abrir no LinkedIn <ExternalLink size={12} /></a>}
+          </td>
+        </tr>
+      )}
+    </>
   );
 };
-
-const SECTIONS: { key: 'apply' | 'comment' | 'connect' | 'follow'; title: string }[] = [
-  { key: 'apply', title: 'Vagas para se candidatar' }, { key: 'comment', title: 'Comentários' }, { key: 'connect', title: 'Conexões' }, { key: 'follow', title: 'Seguir' },
-];
 
 const FoundList = ({ title, hint, jobs, action }: { title: string; hint: string; jobs: FoundJob[]; action?: (job: FoundJob) => React.ReactNode }) => (
   <details className="panel" style={{ marginTop: '1rem' }}>
@@ -155,7 +208,7 @@ const FoundList = ({ title, hint, jobs, action }: { title: string; hint: string;
             <a href={j.url} target="_blank" rel="noreferrer" style={{ color: 'inherit', fontWeight: 600 }}>{j.job_title} <ExternalLink size={12} /></a>
             {j.posted_at && <span style={badge(isRecent(j.posted_at) ? GREEN : GRAY)}>{ago(j.posted_at)}</span>}
           </div>
-          <div style={muted}>{j.company}{j.triage_score != null ? ` · nota ${j.triage_score}` : ''}</div>
+          <div style={muted}>{j.company}{j.triage_score != null ? ` · fit ${j.triage_score}` : ''}</div>
           {j.triage_reason && <p style={muted}>{j.triage_reason}</p>}
           {action && action(j)}
         </div>
@@ -166,30 +219,81 @@ const FoundList = ({ title, hint, jobs, action }: { title: string; hint: string;
 
 const ApproveTab = () => {
   const { data: box, error, refresh } = useLive<Inbox>(auto.inbox, 30000);
+  // ?tipo= comes from Lolo's link, so the list opens on what the message was about
+  const [params, setParams] = useSearchParams();
+  const kind = (KINDS.some((k) => k.id === params.get('tipo')) ? params.get('tipo') : 'all') as WriteKind | 'all';
+  const [sort, setSort] = useState<'recent' | 'fit'>('recent');
+  const [picked, setPicked] = useState<Set<number>>(new Set());
   const [actionError, setActionError] = useState('');
   if (!box) return error ? <Failure text={error} /> : <p style={muted}>Carregando…</p>;
-  const total = SECTIONS.reduce((n, s) => n + box[s.key].length, 0);
-  const approveAll = (items: Action[]) => {
+  const setKind = (k: WriteKind | 'all') => {
+    const next = new URLSearchParams(params);
+    if (k === 'all') next.delete('tipo'); else next.set('tipo', k);
+    setParams(next, { replace: true });
+    setPicked(new Set());
+  };
+  const all = box.items || [];
+  const filtered = all.filter((a) => kind === 'all' || a.kind === kind);
+  const shown = sort === 'fit' ? [...filtered].sort((a, b) => (b.fit ?? -1) - (a.fit ?? -1)) : filtered;
+  const selected = shown.filter((a) => picked.has(a.id));
+  const pick = (id: number, on: boolean) => setPicked((prev) => { const next = new Set(prev); if (on) next.add(id); else next.delete(id); return next; });
+  const done = () => { setPicked(new Set()); refresh(); };
+  const approveMany = (items: Action[]) => {
+    if (!selected.length && items.length > 1 && !confirm(`Aprovar as ${items.length} da lista?`)) return;
     const missing = items.filter((a) => a.kind === 'comment' && !a.payload.text);
     auto.approveBatch(items.filter((a) => !missing.includes(a)).map((a) => a.id))
-      .then((r) => { if (r.refused.length) setActionError(`${r.refused.length} não aprovado(s): revise um a um.`); refresh(); })
+      .then((r) => { if (r.refused.length) setActionError(`${r.refused.length} não aprovado(s): revise um a um.`); done(); })
       .catch((e) => setActionError(errorText(e)));
   };
+  const rejectMany = (items: Action[]) => Promise.all(items.map((a) => auto.reject(a.id))).then(done).catch((e) => setActionError(errorText(e)));
   return (
-    <div>
+    <div style={stack}>
+      <style>{listCss + approveCss}</style>
       <Failure text={actionError || error} />
-      {total === 0 && <div className="panel"><p style={muted}>Nada para aprovar agora.</p></div>}
-      {SECTIONS.filter((s) => box[s.key].length).map((s) => (
-        <section key={s.key} style={{ marginBottom: '1.5rem' }}>
-          <div style={{ ...row, justifyContent: 'space-between', marginBottom: '0.7rem' }}>
-            <h3 style={{ fontSize: '1.05rem', fontWeight: 600 }}>{s.title} ({box[s.key].length})</h3>
-            <button className="btn btn-secondary" onClick={() => approveAll(box[s.key])}><Check size={15} /> Aprovar todos</button>
-          </div>
-          <div style={stack}>
-            {box[s.key].map((a) => <ProposalCard key={a.id} action={a} onDone={refresh} setError={setActionError} />)}
-          </div>
-        </section>
-      ))}
+      <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 2 }}>
+        {[{ id: 'all' as const, plural: 'Todas', color: '' }, ...KINDS].map((k) => (
+          <button key={k.id} className={`jb-chip${kind === k.id ? ' on' : ''}`} onClick={() => setKind(k.id)}>
+            {k.color && <span className="jb-dot" style={{ background: k.color }} />}
+            {k.plural} <span className="n">{k.id === 'all' ? all.length : all.filter((a) => a.kind === k.id).length}</span>
+          </button>
+        ))}
+      </div>
+      <div style={{ ...row, justifyContent: 'space-between' }}>
+        <span style={muted}>{selected.length ? `${selected.length} selecionada(s)` : `${shown.length} para aprovar · toque na linha para ver detalhes`}</span>
+        <div style={row}>
+          <select className="jb-select" value={sort} onChange={(e) => setSort(e.target.value as 'recent' | 'fit')} title="Ordenar">
+            <option value="recent">Mais recentes</option>
+            <option value="fit">Maior fit</option>
+          </select>
+          {selected.length > 0 && <button className="btn btn-secondary" onClick={() => rejectMany(selected)}><X size={15} /> Rejeitar</button>}
+          <button className="btn btn-secondary" disabled={!shown.length} onClick={() => approveMany(selected.length ? selected : shown)}>
+            <Check size={15} /> {selected.length ? 'Aprovar selecionadas' : 'Aprovar todas'}
+          </button>
+        </div>
+      </div>
+      <div className="panel" style={{ padding: 0, marginBottom: 0, overflow: 'hidden' }}>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr style={{ background: '#14141f', borderBottom: '1px solid var(--border)' }}>
+                <th className="jb-th jb-hide-sm" style={{ paddingRight: 0 }}>
+                  <input type="checkbox" style={checkbox} aria-label="Selecionar todas" checked={shown.length > 0 && selected.length === shown.length}
+                    onChange={(e) => setPicked(e.target.checked ? new Set(shown.map((a) => a.id)) : new Set())} />
+                </th>
+                <th className="jb-th jb-hide-sm" style={{ paddingRight: 0 }}>TIPO</th>
+                <th className="jb-th">O QUÊ</th>
+                <th className="jb-th" style={{ textAlign: 'center' }} title="Fit com o seu perfil (0–100)">FIT</th>
+                <th className="jb-th jb-hide-sm">QUANDO</th>
+                <th className="jb-th" style={{ textAlign: 'right', paddingLeft: 0 }}>AÇÕES</th>
+              </tr>
+            </thead>
+            <tbody>
+              {shown.map((a) => <ProposalRow key={a.id} action={a} picked={picked.has(a.id)} onPick={(on) => pick(a.id, on)} onDone={refresh} setError={setActionError} />)}
+            </tbody>
+          </table>
+          {!shown.length && <p style={{ padding: '2rem', textAlign: 'center', ...muted }}>Nada para aprovar{kind === 'all' ? ' agora' : ' neste filtro'}.</p>}
+        </div>
+      </div>
       {box.external_manual.length > 0 && <FoundList title="Externas: candidatura manual" hint="Vagas boas no site da empresa. Enquanto essa automação estiver desligada, candidate-se por este link para não perder a janela de 48 h." jobs={box.external_manual} />}
       {box.discarded.length > 0 && <FoundList title="Descartadas" hint="A triagem tirou da lista, com o motivo. Se discordar, traga de volta." jobs={box.discarded}
         action={(j) => <button className="btn btn-secondary" style={{ marginTop: 6 }} onClick={() => auto.recoverJob(j.id).then(refresh).catch((e) => setActionError(errorText(e)))}>Trazer de volta</button>} />}

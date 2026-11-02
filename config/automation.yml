@@ -61,5 +61,6 @@ email:
 # Lolo, on WhatsApp: what it tells you and when (it fetches from /api/automation/bot/notifications)
 bot:
   digest_minutes: 30                         # new items to approve come together, at most once in this interval
+  split_over: 8                              # more than this, of more than one kind: one message per kind (jobs, comments...)
   quiet_hours: [22, 7]                       # from 22h to 7h only what is urgent: a stop, an interview, an offer, a LinkedIn warning
   done_kinds: [apply, comment]               # finished actions worth a message

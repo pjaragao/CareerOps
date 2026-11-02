@@ -45,7 +45,8 @@ const saved = <T,>(key: string, fallback: T): T => {
 };
 const remember = (key: string, value: unknown) => { try { localStorage.setItem(`jobBoard.${key}`, JSON.stringify(value)); } catch { /* not remembered */ } };
 
-const css = `
+// also used by the approval list in Automação, so both lists look the same
+export const css = `
 .jb-chip{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 12px;border-radius:999px;border:1px solid var(--border);background:rgba(255,255,255,.03);color:var(--text-muted);font-size:.76rem;font-weight:600;cursor:pointer;white-space:nowrap;transition:all .15s}
 .jb-chip:hover{border-color:rgba(255,255,255,.18);color:#fff}
 .jb-chip.on{background:rgba(108,99,255,.16);border-color:rgba(108,99,255,.55);color:#fff}
@@ -115,7 +116,7 @@ const StatusPill = ({ status, onClick }: { status: string; onClick?: (e: React.M
 
 // The ad asks to live in a region / for a work visa the candidate lacks: red = requirement, yellow = soft or unclear
 const ELIGIBILITY_LABEL = { residency: 'Residência', work_authorization: 'Visto' } as const;
-export const EligibilityBadge = ({ job }: { job: Job }) => {
+export const EligibilityBadge = ({ job }: { job: Pick<Job, 'eligibility_status' | 'eligibility_issues'> }) => {
   if (job.eligibility_status !== 'blocked' && job.eligibility_status !== 'warning') return null;
   const issues = job.eligibility_issues || [];
   const color = job.eligibility_status === 'blocked' ? '#ff5c5c' : '#f5c542';

@@ -179,3 +179,21 @@ def test_follow_target_is_proposed_once_by_address(db):
     assert Auto.follow_target("https://www.linkedin.com/company/acme/?x=1", "Acme")
     assert Auto.follow_target("https://www.linkedin.com/company/ACME", "Acme") is None
     assert len(Auto.inbox()["follow"]) == 1
+
+
+def test_a_job_you_added_gets_a_fit_score_and_is_never_discarded(db, sql, add_job, monkeypatch):
+    fake_ai(monkeypatch, {"status": "ok", "issues": []}, {"score": 40, "reason": "Outra área", "employer_market": "br"})
+    action = Auto.propose_job(add_job(status="new"))
+    assert Search.score_proposed() == 1
+    item = Auto.inbox()["items"][0]
+    assert item["id"] == action["id"] and item["fit"] == 40 and item["triage_reason"] == "Outra área"
+    assert Search.score_proposed() == 0   # scored once
+
+
+def test_a_job_you_already_applied_to_leaves_the_approval_list(db, sql, add_job):
+    job = add_job(status="new")
+    action = Auto.propose_job(job)
+    sql("UPDATE public.job_listings SET status = 'applied' WHERE id = %s", (job["id"],))
+    Auto.expire_stale_proposals()
+    assert Auto.inbox()["items"] == []
+    assert sql("SELECT status, error_text FROM public.automation_actions WHERE id = %s", (action["id"],))[0]["status"] == "discarded"

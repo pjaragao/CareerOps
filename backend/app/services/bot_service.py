@@ -207,49 +207,78 @@ class BotService:
         if _one("SELECT 1 AS y FROM public.bot_notifications WHERE kind = 'proposals' AND created_at > NOW() - make_interval(mins => %s)", (minutes,)):
             return 0
         items = _rows("""UPDATE public.automation_actions SET notified_status = 'proposed'
-                          WHERE status = 'proposed' AND notified_status IS DISTINCT FROM 'proposed' RETURNING id""")
+                          WHERE status = 'proposed' AND notified_status IS DISTINCT FROM 'proposed' RETURNING id, kind""")
         ids = [i["id"] for i in items]
-        text = BotService.inbox_text(ids, header=f"🗂️ *Para aprovar* ({len(ids)} nova(s))")
-        return bool(BotService.notify("proposals", text, {"ids": ids}))
+        kinds = [k for k in KIND_LABEL if any(i["kind"] == k for i in items)]
+        # a long list reads better one subject at a time: one message per kind, each with the list filtered to it
+        if len(ids) <= int(_cfg().get("split_over", 8)) or len(kinds) < 2:
+            text = BotService.inbox_text(ids, header=f"🗂️ *Para aprovar* ({len(ids)} nova(s))")
+            return bool(BotService.notify("proposals", text, {"ids": ids}))
+        made = 0
+        for kind in kinds:
+            group = [i["id"] for i in items if i["kind"] == kind]
+            text = BotService.inbox_text(group, header=f"🗂️ *Para aprovar · {KIND_LABEL[kind]}* ({len(group)} nova(s))", kind=kind)
+            made += bool(BotService.notify("proposals", text, {"ids": group, "kind": kind}))
+        return made
 
     # ── Texts for the bot's answers ──────────────────────────────────────
     @staticmethod
-    def inbox_text(ids: Optional[List[int]] = None, header: str = "🗂️ *Para aprovar*", limit: int = 25) -> str:
+    def approval_link(kind: Optional[str] = None) -> str:
+        """The approval list in the app, filtered to one kind when given."""
+        return f"{settings.CAREEROPS_APP_URL.rstrip('/')}/automacao?tab=aprovar" + (f"&tipo={kind}" if kind else "")
+
+    @staticmethod
+    def _eligibility_tag(r: dict) -> str:
+        """The same warning as in Vagas: red when the ad requires it, yellow when it is soft or unclear."""
+        if r.get("eligibility_status") not in ("blocked", "warning"):
+            return ""
+        names = {"residency": "residência", "work_authorization": "visto"}
+        kinds = list(dict.fromkeys(names.get(i.get("type"), i.get("type")) for i in r.get("eligibility_issues") or [] if isinstance(i, dict)))
+        return f"{'🔴' if r['eligibility_status'] == 'blocked' else '🟡'} {' + '.join(kinds) or 'elegibilidade'}"
+
+    @staticmethod
+    def inbox_text(ids: Optional[List[int]] = None, header: str = "🗂️ *Para aprovar*", limit: int = 25, kind: Optional[str] = None) -> str:
         where = "a.id = ANY(%s)" if ids is not None else "TRUE"
         rows = _rows(f"""
-            SELECT a.*, j.triage_score, j.triage_reason, j.posted_at, j.easy_apply, j.company, j.job_title, j.location, j.salary_flag
+            SELECT a.*, j.triage_score, j.triage_reason, j.posted_at, j.easy_apply, j.company, j.job_title, j.location, j.salary_flag,
+                   j.eligibility_status, j.eligibility_issues
               FROM public.automation_actions a LEFT JOIN public.job_listings j ON a.target_type = 'job' AND j.id = a.target_id
              WHERE a.status = 'proposed' AND {where} ORDER BY a.kind, a.rank, a.sort_at DESC""", (ids,) if ids is not None else ())
         if not rows:
             return "Nada esperando aprovação agora."
         lines, shown = [header], 0
-        for kind, label in KIND_LABEL.items():
-            group = [r for r in rows if r["kind"] == kind]
+        several = len({r["kind"] for r in rows}) > 1
+        for k, label in KIND_LABEL.items():
+            group = [r for r in rows if r["kind"] == k]
             if not group:
                 continue
-            lines.append(f"\n*{label}*")
+            if several:
+                lines.append(f"\n*{label}*")
             for r in group:
                 if shown >= limit:
                     break
                 shown += 1
                 p = r.get("payload") or {}
-                if kind == "apply":
-                    bits = [f"nota {r['triage_score']}" if r.get("triage_score") is not None else "", "Easy Apply" if r.get("easy_apply") else "",
+                fit = AutomationService.fit_of(r)
+                fit = f"fit {fit}" if fit is not None else ""
+                if k == "apply":
+                    bits = [fit, BotService._eligibility_tag(r), "Easy Apply" if r.get("easy_apply") else "",
                             _ago(r.get("posted_at")), "⚠️ salário abaixo do piso" if r.get("salary_flag") else ""]
                     lines.append(f"#{r['id']} {r.get('job_title') or p.get('title')} · {r.get('company') or p.get('company') or ''} — "
                                  + ", ".join(b for b in bits if b))
                     if r.get("triage_reason"):
                         lines.append(f"   ↳ {_short(r['triage_reason'], 160)}")
-                elif kind == "comment":
-                    lines.append(f"#{r['id']} no post de {p.get('author') or r.get('title')}: “{_short(p.get('text'), 600)}”")
+                elif k == "comment":
+                    lines.append(f"#{r['id']} no post de {p.get('author') or r.get('title')}{f' ({fit})' if fit else ''}: “{_short(p.get('text'), 600)}”")
                     lines.append(f"   ↳ {r.get('target_url')}")
-                elif kind == "connect":
-                    lines.append(f"#{r['id']} {p.get('name') or r.get('title')} — {_short(p.get('headline'), 90)}")
+                elif k == "connect":
+                    lines.append(f"#{r['id']} {p.get('name') or r.get('title')} — {_short(p.get('headline'), 90)}{f' · {fit}' if fit else ''}")
                 else:
                     lines.append(f"#{r['id']} {p.get('name') or r.get('title')}" + (f" — {_short(p.get('why'), 90)}" if p.get("why") else ""))
         if len(rows) > shown:
-            lines.append(f"\n…e mais {len(rows) - shown} no app (Automação → Aprovar).")
-        lines.append("\nResponda, por exemplo: “aprovar 12 15”, “rejeitar 13” ou “aprovar todas as vagas”.")
+            lines.append(f"\n…e mais {len(rows) - shown} na lista abaixo.")
+        lines.append(f"\n🔎 Lista com detalhes: {BotService.approval_link(kind)}")
+        lines.append("Responda, por exemplo: “aprovar 12 15”, “rejeitar 13” ou “aprovar todas as vagas”.")
         return "\n".join(lines)
 
     @staticmethod

@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- JSON bags, as the backend sends them */
 import api from './api';
+import type { EligibilityIssue } from './jobService';
 
 export type ActionKind = 'apply' | 'comment' | 'follow' | 'connect' | 'search' | 'check' | 'feed_scan' | 'follow_scan';
 
@@ -28,7 +29,11 @@ export interface Action {
   employer_market?: string | null;
   salary_flag?: string | null;
   easy_apply?: boolean | null;
-  eligibility_status?: string | null;
+  eligibility_status?: 'ok' | 'warning' | 'blocked' | null;
+  eligibility_issues?: EligibilityIssue[];
+  fit?: number | null;
+  sort_at?: string | null;
+  created_at?: string;
   company?: string | null;
   job_title?: string | null;
   location?: string | null;
@@ -47,6 +52,7 @@ export interface FoundJob {
 }
 
 export interface Inbox {
+  items: Action[];
   apply: Action[];
   comment: Action[];
   connect: Action[];

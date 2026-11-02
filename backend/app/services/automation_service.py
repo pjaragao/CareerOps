@@ -198,6 +198,16 @@ class AutomationService:
                     (kind, lane, status, target_type, target_id, target_url, title, rank, sort_at, Json(payload), payload_hash(payload), key))
 
     @staticmethod
+    def fit_of(action: dict) -> Optional[int]:
+        """How well it fits your profile, 0-100, whatever the kind: the job triage, the person's fit, the post's relevance."""
+        p = action.get("payload") or {}
+        value = action.get("triage_score") if action["kind"] == "apply" else p.get("fit") if p.get("fit") is not None else p.get("relevance")
+        try:
+            return None if value is None else int(round(float(value)))
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
     def inbox() -> dict:
         items = _rows("""
             SELECT a.*, j.triage_score, j.triage_reason, j.posted_at, j.employer_market, j.salary_flag, j.easy_apply,
@@ -206,7 +216,9 @@ class AutomationService:
              WHERE a.status = 'proposed' ORDER BY a.rank, a.sort_at DESC LIMIT 200""")
         grouped: Dict[str, list] = {k: [] for k in WRITE_KINDS}
         for item in items:
+            item["fit"] = AutomationService.fit_of(item)
             grouped[item["kind"]].append(item)
+        grouped["items"] = items   # one list, in the same order: the app shows it this way, with a filter by kind
         grouped["external_manual"] = _rows("""
             SELECT id, job_title, company, location, url, triage_score, triage_reason, posted_at, salary_flag FROM public.job_listings
              WHERE status = 'discovered' AND triage_outcome = 'external_manual' ORDER BY posted_at DESC NULLS LAST LIMIT 100""")
@@ -873,6 +885,12 @@ class AutomationService:
     def expire_stale_proposals() -> None:
         _rows("""UPDATE public.automation_actions SET status = 'expired', finished_at = NOW(), updated_at = NOW()
                   WHERE status = 'proposed' AND kind = 'comment' AND created_at < NOW() - INTERVAL '7 days'""")
+        # a job you already moved on (applied by hand, rejected, archived) leaves the approval list
+        _rows("""UPDATE public.automation_actions a SET status = 'discarded', error_code = 'already_handled', finished_at = NOW(), updated_at = NOW(),
+                        error_text = 'Saiu da lista: a vaga já está como ' || j.status
+                   FROM public.job_listings j
+                  WHERE a.status = 'proposed' AND a.kind = 'apply' AND a.target_type = 'job' AND j.id = a.target_id
+                    AND j.status NOT IN ('new', 'scraped', 'discovered')""")
 
     @staticmethod
     def tick() -> None:
@@ -885,6 +903,7 @@ class AutomationService:
             AutomationService.schedule_reads()
             JobSearchService.triage_pending()
             AutomationService.sync_proposals()
+            JobSearchService.score_proposed()
             AutomationService.prepare_documents()
         try:   # what to tell you on WhatsApp; a failure here never holds the queue
             BotService.collect()

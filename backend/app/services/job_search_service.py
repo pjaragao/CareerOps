@@ -188,10 +188,9 @@ class JobSearchService:
         return triage.get("reason") or "Nota abaixo do mínimo"
 
     @staticmethod
-    async def _triage_one(job: dict) -> None:
-        from app.services.job_pipeline_service import JobPipelineService
+    async def _read(job: dict) -> dict:
+        """The fit of the job to your profile (0-100), why, the employer's market and a pay below your floor."""
         from app.services.linkedin_copilot_service import LinkedInCopilotService as Copilot
-        eligibility = await JobPipelineService.check_eligibility(job["id"])
         pay = Copilot._facts().get("salary_expectation") or {}
         floors = {"USD": pay.get("abroad_usd_monthly"), "EUR": pay.get("abroad_eur_monthly"), "BRL": pay.get("brazil_brl_monthly")}
         triage = await SkillService.run_skill("jobs/triage.md", {
@@ -199,8 +198,15 @@ class JobSearchService:
             "job_description": (job.get("description") or "")[:8000], "floors": floors})
         if not isinstance(triage, dict) or triage.get("error") or "score" not in triage:
             raise ValueError(f"no triage answer: {triage}")
-        score = max(0, min(100, int(triage.get("score") or 0)))
-        triage["score"] = score
+        triage["score"] = max(0, min(100, int(triage.get("score") or 0)))
+        return triage
+
+    @staticmethod
+    async def _triage_one(job: dict) -> None:
+        from app.services.job_pipeline_service import JobPipelineService
+        eligibility = await JobPipelineService.check_eligibility(job["id"])
+        triage = await JobSearchService._read(job)
+        score = triage["score"]
         outcome = JobSearchService.decide(job, triage, eligibility)
         reason = JobSearchService._discard_reason(triage, eligibility) if outcome == "discarded" else (triage.get("reason") or "")
         _rows("""UPDATE public.job_listings SET triage_score = %s, triage_reason = %s, triage_outcome = %s, employer_market = %s, salary_flag = %s, updated_at = NOW()
@@ -219,4 +225,23 @@ class JobSearchService:
                 done += 1
             except Exception as e:
                 log.warning("job %s not triaged: %s", job["id"], e)
+        return done
+
+    @staticmethod
+    def score_proposed(limit: int = 5) -> int:
+        """Jobs you added yourself reach the approval list without the triage: they get the same fit score, so the list compares
+        like with like. Nothing is discarded here: you chose them."""
+        done = 0
+        for job in _rows("""SELECT j.* FROM public.job_listings j JOIN public.automation_actions a ON a.target_type = 'job' AND a.target_id = j.id
+                             WHERE a.kind = 'apply' AND a.status = 'proposed' AND j.triage_score IS NULL AND COALESCE(j.description, '') <> ''
+                             ORDER BY a.id DESC LIMIT %s""", (limit,)):
+            try:
+                triage = asyncio.run(JobSearchService._read(job))
+            except Exception as e:
+                log.warning("job %s not scored: %s", job["id"], e)
+                continue
+            _rows("""UPDATE public.job_listings SET triage_score = %s, triage_reason = %s, employer_market = %s, salary_flag = %s, updated_at = NOW()
+                      WHERE id = %s""", (triage["score"], (triage.get("reason") or "")[:1000], triage.get("employer_market") or "unknown",
+                                         triage.get("salary_flag") or None, job["id"]))
+            done += 1
         return done

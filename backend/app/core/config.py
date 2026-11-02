@@ -61,6 +61,8 @@ class Settings(BaseSettings):
     AUTOMATION_ALLOW_FINAL_SUBMIT: bool = os.getenv("AUTOMATION_ALLOW_FINAL_SUBMIT", "false").lower() == "true"
     # Where you see the server browser (login, verifications)
     CAREEROPS_NOVNC_URL: str = os.getenv("CAREEROPS_NOVNC_URL", "https://mpbflndsk201-wsl.tabby-broadnose.ts.net:6083/vnc.html")
+    # The app as you open it (phone, through Tailscale): links in Lolo's messages
+    CAREEROPS_APP_URL: str = os.getenv("CAREEROPS_APP_URL", "https://mpbflndsk201-wsl.tabby-broadnose.ts.net:5174")
 
     # --- Daily email monitor (Gmail app password, read-only use): empty = it does not run ---
     GMAIL_ADDRESS: str = os.getenv("GMAIL_ADDRESS", "")

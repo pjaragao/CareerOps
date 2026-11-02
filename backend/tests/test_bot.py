@@ -49,6 +49,41 @@ def test_new_proposals_come_together_once(db, sql, awake):
     assert f"#{a['id']}" in digest[0]["text"] and f"#{b['id']}" in digest[0]["text"] and "Outro ponto" in digest[0]["text"]
 
 
+def test_the_digest_links_to_the_approval_list(db, sql, awake):
+    proposed_comment("c1")
+    BotService.collect()
+    assert "/automacao?tab=aprovar" in notes(sql, "proposals")[0]["text"]
+
+
+def test_a_long_digest_comes_one_message_per_kind(db, sql, add_job, awake):
+    comments = [proposed_comment(f"c{i}", f"Ponto {i}") for i in range(6)]
+    jobs = [Auto.propose_job(add_job(job_id=str(200 + i), status="new")) for i in range(4)]
+    sql("UPDATE public.job_listings SET triage_score = 88, eligibility_status = 'blocked', "
+        "eligibility_issues = '[{\"type\": \"residency\", \"quote\": \"US only\"}]'::jsonb")
+    BotService.collect()
+    digest = notes(sql, "proposals")
+    assert [d["data"]["kind"] for d in digest] == ["apply", "comment"]
+    vagas, posts = digest[0]["text"], digest[1]["text"]
+    assert "Vagas" in vagas and "&tipo=apply" in vagas and all(f"#{j['id']}" in vagas for j in jobs)
+    assert "fit 88" in vagas and "🔴 residência" in vagas
+    assert "&tipo=comment" in posts and all(f"#{c['id']}" in posts for c in comments) and "#" + str(jobs[0]["id"]) not in posts
+
+
+def test_a_short_digest_stays_one_message(db, sql, add_job, awake):
+    proposed_comment("c1")
+    Auto.propose_job(add_job(status="new"))
+    BotService.collect()
+    assert len(notes(sql, "proposals")) == 1
+
+
+def test_the_inbox_is_one_list_with_a_fit_for_every_kind(db, add_job):
+    comment = Auto.create_action("comment", "c9", "Ana", "https://www.linkedin.com/posts/x", {"text": "Oi", "relevance": 77}, target_type="engagement", target_id=1, rank=10)
+    person = Auto.create_action("connect", "p1", "Bia", "https://www.linkedin.com/in/bia", {"name": "Bia", "fit": 90}, target_type="url", rank=20)
+    box = Auto.inbox()
+    fits = {i["id"]: i["fit"] for i in box["items"]}
+    assert fits == {comment["id"]: 77, person["id"]: 90}
+
+
 def test_a_new_digest_waits_for_the_interval(db, sql, awake):
     proposed_comment("c1")
     BotService.collect()
