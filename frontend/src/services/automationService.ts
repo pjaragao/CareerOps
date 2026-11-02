@@ -123,6 +123,7 @@ export const automationService = {
   inbox: () => data(api.get<Inbox>(`${base}/inbox`)),
   approve: (id: number, text?: string) => data(api.post(`${base}/actions/${id}/approve`, { text: text ?? null })),
   approveBatch: (ids: number[]) => data(api.post<{ approved: number[]; refused: number[] }>(`${base}/approve-batch`, { ids })),
+  revise: (id: number, instruction: string, text?: string) => data(api.post<Action>(`${base}/actions/${id}/revise`, { instruction, text: text ?? null })),
   reject: (id: number) => data(api.post(`${base}/actions/${id}/reject`)),
   recoverJob: (jobId: number) => data(api.post(`${base}/jobs/${jobId}/recover`)),
   needsUser: () => data(api.get<{ items: Action[] }>(`${base}/needs-user`)).then((r) => r.items),

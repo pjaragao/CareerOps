@@ -561,3 +561,29 @@ def test_an_expired_login_link_gives_nothing(db, client, sql):
     url = Auto.login_link()
     sql("UPDATE public.automation_login_links SET expires_at = NOW() - INTERVAL '1 minute'")
     assert client.post("/api/automation/login-links/redeem", json={"code": url.split("codigo=")[1]}).status_code == 410
+
+
+# ── Revising a comment with the AI before approving ─────────────────────
+def test_the_ai_rewrites_a_comment_from_your_edit_and_it_waits_again(db, sql, monkeypatch):
+    import asyncio
+    seen = {}
+
+    async def fake_skill(path, context, model_key="ai_model_writing"):
+        seen.update(context)
+        return {"relevance": 80, "reason": "Tema seu", "comment": "Versão mais curta"}
+
+    monkeypatch.setattr("app.services.linkedin_copilot_service._skill", fake_skill)
+    url = "https://www.linkedin.com/feed/update/urn:li:activity:9/"
+    eid = _one("INSERT INTO public.linkedin_engagement (post_url, post_text, comment_draft, relevance, status) "
+               "VALUES (%s, 'Texto do post', 'Rascunho', 60, 'pending') RETURNING id", (url,))["id"]
+    a = comment(target_id=eid)
+    out = asyncio.run(Auto.revise(a["id"], "mais curto", "Meu texto editado"))
+    assert seen["instruction"] == "mais curto" and seen["previous_draft"] == "Meu texto editado"
+    assert out["payload"]["text"] == "Versão mais curta" and out["fit"] == 80 and out["status"] == "proposed"
+    assert _one("SELECT comment_draft FROM public.linkedin_engagement WHERE id = %s", (eid,))["comment_draft"] == "Versão mais curta"
+
+
+def test_only_a_comment_still_to_approve_can_be_revised(db):
+    import asyncio
+    a = comment(status="queued")
+    assert asyncio.run(Auto.revise(a["id"], "mais curto")) is None

@@ -118,7 +118,48 @@ const what = (a: Action): { title: string; sub: string } => {
   return { title: p.name || a.title || '—', sub: p.headline || p.why || p.reason || '' };
 };
 
-const ProposalDetail = ({ action, text, setText }: { action: Action; text: string; setText: (t: string) => void }) => {
+const chip: React.CSSProperties = { background: 'rgba(255,255,255,.06)', color: 'var(--text-muted)', border: 'none', cursor: 'pointer' };
+// Like the extension's comment card: edit it yourself, or tell the AI what to change; either way it waits for your ✓
+const CommentEditor = ({ action, text, setText, onRevised }: { action: Action; text: string; setText: (t: string) => void; onRevised: () => void }) => {
+  const [mode, setMode] = useState<'edit' | 'ai'>('edit');
+  const [ask, setAsk] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState('');
+  const [error, setError] = useState('');
+  const revise = (instruction: string) => {
+    if (!instruction.trim()) return;
+    setBusy(true); setError(''); setNote('');
+    auto.revise(action.id, instruction.trim(), text !== action.payload.text ? text : undefined)
+      .then((a) => { setText(a.payload.text || ''); setNote(`Revisado com o pedido “${instruction.trim()}”. Aprove pelo ✓ quando estiver bom.`); setAsk(''); onRevised(); })
+      .catch((e) => setError(errorText(e)))
+      .finally(() => setBusy(false));
+  };
+  const tab = (id: 'edit' | 'ai', label: string) => (
+    <button type="button" className={`jb-pill${mode === id ? ' active' : ''}`} style={mode === id ? { ...chip, background: `${GREEN}22`, color: GREEN } : chip} onClick={() => setMode(id)}>{label}</button>
+  );
+  return <>
+    <div style={row}>{tab('edit', '✏️ Editar')}{tab('ai', '✨ Pedir à IA')}</div>
+    <textarea style={{ ...input, minHeight: 90, opacity: busy ? 0.5 : 1 }} value={text} readOnly={busy} onChange={(e) => setText(e.target.value)} aria-label="Comentário" />
+    {mode === 'edit'
+      ? <span style={muted}>Editou? Aprove por esta linha (✓): a aprovação em lote usa o texto original.</span>
+      : <>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <input style={{ ...input, flex: 1, minWidth: 0 }} value={ask} disabled={busy} placeholder="Ex.: mais curto, discorde com educação, cite a experiência com concessões"
+            onChange={(e) => setAsk(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); revise(ask); } }} aria-label="Pedido para a IA" />
+          <button className="btn btn-primary" style={{ whiteSpace: 'nowrap' }} disabled={busy || !ask.trim()} onClick={() => revise(ask)}>{busy ? 'Gerando…' : '✨ Revisar'}</button>
+        </div>
+        <div style={row}>
+          {['Mais curto', 'Mais técnico', 'Termine com uma pergunta'].map((q) => <button key={q} type="button" className="jb-pill" style={chip} disabled={busy} onClick={() => revise(q)}>{q}</button>)}
+          <button type="button" className="jb-pill" style={chip} disabled={busy} onClick={() => revise('Escreva um comentário diferente.')}>🔄 Gerar outro</button>
+        </div>
+        <span style={muted}>A IA parte do texto acima (com a sua edição, se houver). O novo texto não é publicado: continua aqui esperando o seu ✓.</span>
+      </>}
+    {note && <span style={{ ...muted, color: GREEN }}>{note}</span>}
+    <Failure text={error} />
+  </>;
+};
+
+const ProposalDetail = ({ action, text, setText, onRevised }: { action: Action; text: string; setText: (t: string) => void; onRevised: () => void }) => {
   const p = action.payload;
   return (
     <div style={{ ...stack, gap: '0.5rem' }}>
@@ -136,8 +177,7 @@ const ProposalDetail = ({ action, text, setText }: { action: Action; text: strin
       {action.kind === 'comment' && <>
         {p.reason && <p style={muted}>{p.reason}</p>}
         {p.post_head && <p style={{ ...muted, whiteSpace: 'pre-wrap', maxHeight: 130, overflow: 'auto' }}>{p.post_head}</p>}
-        <textarea style={{ ...input, minHeight: 90 }} value={text} onChange={(e) => setText(e.target.value)} aria-label="Comentário" />
-        <span style={muted}>Editou? Aprove por esta linha (✓): a aprovação em lote usa o texto original.</span>
+        <CommentEditor action={action} text={text} setText={setText} onRevised={onRevised} />
       </>}
       {(action.kind === 'connect' || action.kind === 'follow') && <>
         {p.headline && <div style={muted}>{p.headline}</div>}
@@ -188,7 +228,7 @@ const ProposalRow = ({ action, picked, onPick, onDone, setError }: { action: Act
       {open && (
         <tr style={{ borderBottom: '1px solid var(--border)', background: 'rgba(255,255,255,.015)' }}>
           <td colSpan={6} className="jb-td">
-            <ProposalDetail action={action} text={text} setText={setText} />
+            <ProposalDetail action={action} text={text} setText={setText} onRevised={onDone} />
             {action.target_url && <a style={{ ...muted, display: 'inline-block', marginTop: 6 }} href={action.target_url} target="_blank" rel="noreferrer">Abrir no LinkedIn <ExternalLink size={12} /></a>}
           </td>
         </tr>

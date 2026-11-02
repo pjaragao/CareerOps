@@ -105,6 +105,20 @@ async def approve(action_id: int, req: ApproveIn):
         raise HTTPException(status_code=422, detail=str(e))
 
 
+class ReviseIn(BaseModel):
+    instruction: str = Field(..., min_length=2, max_length=1000)
+    text: Optional[str] = Field(None, max_length=3000)
+
+
+@router.post("/actions/{action_id}/revise", dependencies=[Depends(require_approver)])
+async def revise(action_id: int, req: ReviseIn):
+    """A comment still to approve, rewritten by the AI with your request; it waits for your approval again."""
+    try:
+        return _found(await Auto.revise(action_id, req.instruction.strip(), req.text))
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+
 class BatchIn(BaseModel):
     ids: List[int] = Field(..., min_length=1, max_length=100)
 
