@@ -7,6 +7,7 @@ import html
 import json
 import logging
 import re
+import urllib.error
 import urllib.request
 from typing import Dict, List, Optional
 from urllib.parse import urlparse
@@ -21,7 +22,8 @@ log = logging.getLogger("bot")
 KIND_LABEL = {"apply": "Vagas", "comment": "Comentários", "connect": "Conexões", "follow": "Seguir"}
 STATUS_LABEL = {"applied": "candidatura enviada", "interviewing": "em entrevista", "offer": "proposta", "rejected": "recusada",
                 "done": "encerrada", "new": "nova", "discovered": "descoberta", "archived": "arquivada"}
-POST_PATH = re.compile(r"^/(posts/[^/]+|feed/update/urn:li:(activity|share|ugcPost):\d+)/?$")
+POST_PATH = re.compile(r"^/(posts/[^/]+|feed/update/urn:li:(activity|share|ugcPost|groupPost):[\d-]+)/?$")
+LINKEDIN_IN_PAGE = re.compile(r"https://www\.linkedin\.com/(?:posts|feed/update)/[^\s\"'<>]+")
 UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36"
 
 
@@ -41,16 +43,38 @@ def _short(text: Optional[str], n: int) -> str:
     return text if len(text) <= n else text[: n - 1].rstrip() + "…"
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *args, **kwargs):
+        return None
+
+
+def expand_short_link(url: str) -> str:
+    """lnkd.in/... (the app's "copy link"): where it points, read from the redirect without following it. Whatever comes
+    back still has to be a LinkedIn post, so this never opens anything else."""
+    req = urllib.request.Request(url, headers={"User-Agent": UA})
+    try:
+        with urllib.request.build_opener(_NoRedirect).open(req, timeout=10) as r:   # no redirect: a page that holds the link
+            found = LINKEDIN_IN_PAGE.search(r.read(500_000).decode("utf-8", "replace"))
+            return html.unescape(found.group(0)) if found else ""
+    except urllib.error.HTTPError as e:
+        return e.headers.get("Location") or "" if 300 <= e.code < 400 else ""
+    except Exception as e:
+        log.info("short link not expanded (%s): %s", url, e)
+        return ""
+
+
 def normalize_post_url(url: str) -> str:
     """A LinkedIn post, as one address: no tracking, no fragment. Anything else is refused."""
     url = (url or "").strip()
-    if url.startswith("linkedin.com") or url.startswith("www.linkedin.com"):
+    if url.startswith(("linkedin.com", "www.linkedin.com", "lnkd.in")):
         url = "https://" + url
+    if urlparse(url).hostname == "lnkd.in":
+        url = expand_short_link(url) or url
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https") or parsed.hostname not in ("linkedin.com", "www.linkedin.com"):
         raise ValueError("Não é um link do LinkedIn")
     if not POST_PATH.match(parsed.path):
-        raise ValueError("O link não é de um post do LinkedIn (precisa ser /posts/... ou /feed/update/...)")
+        raise ValueError("O link não é de um post do LinkedIn (precisa ser /posts/..., /feed/update/... ou lnkd.in/...)")
     return f"https://www.linkedin.com{parsed.path.rstrip('/')}/"
 
 

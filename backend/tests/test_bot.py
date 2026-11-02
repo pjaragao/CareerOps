@@ -218,6 +218,23 @@ def test_post_links_are_normalized(url, expected):
     assert normalize_post_url(url) == expected
 
 
+def test_a_group_post_is_a_post():
+    url = "https://www.linkedin.com/feed/update/urn:li:groupPost:98421-7522543424185561089/?utm_source=share"
+    assert normalize_post_url(url) == "https://www.linkedin.com/feed/update/urn:li:groupPost:98421-7522543424185561089/"
+
+
+def test_a_short_link_from_the_app_becomes_the_post(monkeypatch):
+    monkeypatch.setattr(bot_service, "expand_short_link",
+                        lambda u: "https://www.linkedin.com/posts/ana_x-share-7522-kP9h/?utm_source=social_share_send&rcm=x")
+    assert normalize_post_url("https://lnkd.in/p/dPgYvRiA") == "https://www.linkedin.com/posts/ana_x-share-7522-kP9h/"
+
+
+def test_a_short_link_to_anything_else_is_refused(monkeypatch):
+    monkeypatch.setattr(bot_service, "expand_short_link", lambda u: "https://evil.com/posts/x")
+    with pytest.raises(ValueError):
+        normalize_post_url("lnkd.in/p/abc")
+
+
 @pytest.mark.parametrize("url", ["https://evil.com/posts/x", "https://www.linkedin.com/in/ana/", "https://www.linkedin.com/pulse/artigo",
                                  "http://169.254.169.254/latest", "https://www.linkedin.com.evil.com/posts/x"])
 def test_anything_but_a_post_is_refused(url):
