@@ -351,7 +351,7 @@ const HistoryTab = () => {
 // ── Answers by email ─────────────────────────────────────────────────────
 const CLASS_LABEL: Record<string, [string, string]> = {
   confirmation: ['Candidatura recebida', GRAY], viewed: ['Visualizada', GRAY], rejection: ['Recusa', RED], interview: ['Entrevista', GREEN], assessment: ['Teste', YELLOW],
-  recruiter_question: ['Recrutador pergunta', YELLOW], offer: ['Oferta', GREEN], other: ['Outro', GRAY],
+  recruiter_question: ['Recrutador pergunta', YELLOW], offer: ['Oferta', GREEN], linkedin_alert: ['Aviso do LinkedIn', RED], other: ['Outro', GRAY],
 };
 
 const FunnelTable = ({ title, rows }: { title: string; rows: FunnelRow[] }) => (
@@ -376,13 +376,17 @@ const ResponsesTab = () => {
       <div className="panel">
         <div style={{ ...row, justifyContent: 'space-between' }}>
           <div style={muted}>
-            {data.configured ? `Leitura diária às 07:30, só leitura: nada é marcado como lido, movido ou respondido.` : 'Falta configurar GMAIL_ADDRESS e GMAIL_APP_PASSWORD no servidor.'}
+            {data.last_run?.summary?.source === 'lolo'
+              ? 'O Lolo lê o Gmail de hora em hora (7h–22h) e avisa no WhatsApp: confirmações e recusas ele marca como lidas e arquiva; entrevista, teste, pergunta de recrutador e proposta ficam na caixa de entrada.'
+              : data.configured ? 'Leitura diária às 07:30, só leitura: nada é marcado como lido, movido ou respondido.'
+                : 'Ainda sem leitura: o Lolo começa assim que o token dele (CAREEROPS_BOT_TOKEN) estiver configurado.'}
             {data.last_run ? ` Última: ${when(data.last_run.started_at)}${data.last_run.ok === false ? ' (falhou)' : ''}.` : ''}
             {data.auto_status ? ' Atualiza o status das vagas sozinho.' : ' Por enquanto só sugere: nenhum status muda sozinho.'}
           </div>
           {data.configured && <button className="btn btn-secondary" disabled={running} onClick={runNow}><RefreshCw size={15} /> {running ? 'Lendo…' : 'Ler agora'}</button>}
         </div>
       </div>
+      <SuggestionsPanel />
       {toReview.length > 0 && <div className="panel">
         <h3 style={{ fontSize: '1.05rem', fontWeight: 600, marginBottom: 8 }}>Para você olhar ({toReview.length})</h3>
         <div style={stack}>{toReview.map((e: EmailEvent) => <EmailLine key={e.id} event={e} onDone={refresh} />)}</div>
@@ -400,6 +404,34 @@ const ResponsesTab = () => {
         <FunnelTable title="Mercado" rows={funnel.by_market} />
         <FunnelTable title="Busca" rows={funnel.by_search} />
       </div>}
+    </div>
+  );
+};
+
+// What recruiters said beyond "no", grouped by theme: to decide later what to do with each group
+const SuggestionsPanel = () => {
+  const { data, refresh } = useLive(auto.suggestions, 300000);
+  if (!data || data.groups.length === 0) return null;
+  const decide = (id: number, status: 'accepted' | 'dismissed') => auto.setSuggestion(id, status).then(refresh);
+  return (
+    <div className="panel">
+      <h3 style={{ fontSize: '1.05rem', fontWeight: 600 }}>Sugestões dos recrutadores</h3>
+      <p style={muted}>Só o que um e-mail disse de específico sobre você. Agrupadas por tema, as mais repetidas primeiro; nada muda no CV sozinho.</p>
+      <div style={stack}>{data.groups.map((g) => (
+        <details key={`${g.target}-${g.theme}`} style={{ borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '0.6rem' }}>
+          <summary style={{ cursor: 'pointer' }}><strong>{g.target === 'cv' ? 'CV' : 'Você'} · {g.theme}</strong> <span style={badge(g.n > 1 ? YELLOW : GRAY)}>{g.n}</span></summary>
+          {g.items.map((i) => (
+            <div key={i.id} style={{ margin: '0.5rem 0 0 0.8rem' }}>
+              <div>{i.suggestion}</div>
+              <div style={muted}>{i.company} · {when(i.created_at)}{i.evidence ? ` · "${i.evidence}"` : ''}</div>
+              <div style={{ ...row, marginTop: 4 }}>
+                <button className="btn btn-secondary" onClick={() => decide(i.id, 'accepted')}><Check size={15} /> Vou tratar</button>
+                <button className="btn btn-secondary" onClick={() => decide(i.id, 'dismissed')}>Descartar</button>
+              </div>
+            </div>
+          ))}
+        </details>
+      ))}</div>
     </div>
   );
 };

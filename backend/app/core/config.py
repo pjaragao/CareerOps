@@ -49,6 +49,8 @@ class Settings(BaseSettings):
     # --- Access (core/auth.py): empty token = the routes of that role refuse everything ---
     CAREEROPS_APPROVER_TOKEN: str = os.getenv("CAREEROPS_APPROVER_TOKEN", "")
     CAREEROPS_WORKER_TOKEN: str = os.getenv("CAREEROPS_WORKER_TOKEN", "")
+    # Lolo (the WhatsApp bot): approves and answers for you, never changes the mode, the account or the limits
+    CAREEROPS_BOT_TOKEN: str = os.getenv("CAREEROPS_BOT_TOKEN", "")
     # Besides FRONTEND_URL, the addresses the app is opened from
     CAREEROPS_ALLOWED_ORIGINS: str = os.getenv(
         "CAREEROPS_ALLOWED_ORIGINS",

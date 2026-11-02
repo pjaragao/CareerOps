@@ -761,20 +761,34 @@ class AutomationService:
 
     @staticmethod
     def prepare_documents() -> int:
-        """Approved jobs: the CV and the cover letter are generated now, one at a time (blocking: call it from a thread)."""
+        """Approved jobs: the CV and the cover letter are generated now, one at a time (blocking: call it from a thread), and
+        read by the reviewer agent (cv_review: agent) or by you (cv_review: you, the first 20 on the main account)."""
         import asyncio
+        from app.services.cv_review_service import CvReviewService, reasons
         from app.services.job_pipeline_service import JobPipelineService
         done = 0
         state = AutomationService.state()
-        for action in _rows("SELECT * FROM public.automation_actions WHERE kind = 'apply' AND status = 'approved' ORDER BY rank, sort_at DESC LIMIT 5"):
+        by_agent = (config().get("jobs") or {}).get("cv_review", "agent") == "agent"
+        for action in _rows("SELECT * FROM public.automation_actions WHERE kind = 'apply' AND status = 'approved' ORDER BY rank, sort_at DESC LIMIT 2"):
             try:
                 asyncio.run(JobPipelineService.generate_docs(action["target_id"]))
                 job = _one("SELECT resume_markdown, cover_letter FROM public.job_listings WHERE id = %s", (action["target_id"],)) or {}
                 if not job.get("resume_markdown"):
                     raise RuntimeError("o CV não foi gerado")
-                review = state["account_kind"] == "main" and state["review_cv_left"] > 0
-                _rows("UPDATE public.automation_actions SET status = %s, updated_at = NOW() WHERE id = %s",
-                      ("review_docs" if review else "queued", action["id"]))
+                if by_agent:
+                    verdict = asyncio.run(CvReviewService.run(action["target_id"]))
+                    AutomationService.add_event(action["id"], "reviewer", "cv_review", {k: verdict[k] for k in ("approved", "rounds", "history")},
+                                                level="info" if verdict["approved"] else "warning")
+                    if verdict["approved"]:
+                        _rows("UPDATE public.automation_actions SET status = 'queued', updated_at = NOW() WHERE id = %s", (action["id"],))
+                    else:   # still wrong after being redone: it waits for you, with the reasons
+                        _rows("""UPDATE public.automation_actions SET status = 'review_docs', error_code = 'cv_review_failed', error_text = %s,
+                                        updated_at = NOW() WHERE id = %s""",
+                              (f"O revisor recusou depois de {verdict['rounds']} refação(ões): {reasons(verdict)}", action["id"]))
+                else:
+                    review = state["account_kind"] == "main" and state["review_cv_left"] > 0
+                    _rows("UPDATE public.automation_actions SET status = %s, updated_at = NOW() WHERE id = %s",
+                          ("review_docs" if review else "queued", action["id"]))
                 done += 1
             except Exception as e:
                 log.warning("documents for action %s not generated: %s", action["id"], e)
@@ -864,11 +878,15 @@ class AutomationService:
     def tick() -> None:
         """Blocking: main.py calls it from a thread. Off, it only keeps the books."""
         from app.services.job_search_service import JobSearchService
+        from app.services.bot_service import BotService
         AutomationService.housekeeping()
         AutomationService.expire_stale_proposals()
-        if AutomationService.state().get("mode") == "off":
-            return
-        AutomationService.schedule_reads()
-        JobSearchService.triage_pending()
-        AutomationService.sync_proposals()
-        AutomationService.prepare_documents()
+        if AutomationService.state().get("mode") != "off":
+            AutomationService.schedule_reads()
+            JobSearchService.triage_pending()
+            AutomationService.sync_proposals()
+            AutomationService.prepare_documents()
+        try:   # what to tell you on WhatsApp; a failure here never holds the queue
+            BotService.collect()
+        except Exception as e:
+            log.warning("bot notifications not collected: %s", e)

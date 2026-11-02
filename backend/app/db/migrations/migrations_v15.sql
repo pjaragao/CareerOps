@@ -165,3 +165,38 @@ CREATE TABLE IF NOT EXISTS public.job_email_events (
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS ix_job_email_events_job ON public.job_email_events (job_id, received_at);
+
+-- Lolo (the WhatsApp bot): what to tell you, once each. The bot fetches what is not delivered and marks it delivered.
+CREATE TABLE IF NOT EXISTS public.bot_notifications (
+    id SERIAL PRIMARY KEY,
+    kind TEXT NOT NULL,
+    urgent BOOLEAN NOT NULL DEFAULT FALSE,
+    text TEXT NOT NULL,
+    data JSONB NOT NULL DEFAULT '{}'::jsonb,
+    dedupe_key TEXT UNIQUE,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    delivered_at TIMESTAMP WITH TIME ZONE
+);
+CREATE INDEX IF NOT EXISTS ix_bot_notifications_pending ON public.bot_notifications (id) WHERE delivered_at IS NULL;
+-- the last status of the action you were told about: a change into a status worth telling becomes a notification
+ALTER TABLE public.automation_actions ADD COLUMN IF NOT EXISTS notified_status TEXT;
+
+-- What the e-mails say about you beyond "no": grouped by theme, for you to decide later what to do with them
+CREATE TABLE IF NOT EXISTS public.improvement_suggestions (
+    id SERIAL PRIMARY KEY,
+    email_event_id INTEGER REFERENCES public.job_email_events (id) ON DELETE CASCADE,
+    job_id INTEGER REFERENCES public.job_listings (id) ON DELETE SET NULL,
+    company TEXT,
+    target TEXT NOT NULL,                   -- cv | me
+    theme TEXT NOT NULL,
+    suggestion TEXT NOT NULL,
+    evidence_quote TEXT,
+    status TEXT NOT NULL DEFAULT 'new',     -- new | accepted | dismissed
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    decided_at TIMESTAMP WITH TIME ZONE
+);
+ALTER TABLE public.job_email_events ADD COLUMN IF NOT EXISTS alert_kind TEXT;
+ALTER TABLE public.job_email_events ADD COLUMN IF NOT EXISTS source TEXT;
+-- What to do with the message in the mailbox (Lolo does it): archive what needs nothing from you, keep the rest
+ALTER TABLE public.job_email_events ADD COLUMN IF NOT EXISTS mail_action TEXT;          -- archive | keep
+ALTER TABLE public.job_email_events ADD COLUMN IF NOT EXISTS mail_done_at TIMESTAMP WITH TIME ZONE;

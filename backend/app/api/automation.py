@@ -5,16 +5,18 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from app.core.auth import APPROVER, WORKER, require, require_approver
+from app.core.auth import APPROVER, BOT, WORKER, require, require_approver, require_decider
 from app.core.config import settings
 from app.services import content_guard
 from app.services.automation_service import AutomationService as Auto
+from app.services.bot_service import BotService
 from app.services.email_monitor_service import EmailMonitorService
 from app.services.job_search_service import JobSearchService
 
 router = APIRouter(prefix="/automation", tags=["automation"])
 require_worker = require(WORKER)
-require_any = require(APPROVER, WORKER)
+require_any = require(APPROVER, WORKER, BOT)
+require_bot = require(BOT)
 
 
 def _found(item):
@@ -44,12 +46,12 @@ class HaltIn(BaseModel):
     reason: str = Field("Parado por você", max_length=500)
 
 
-@router.post("/halt", dependencies=[Depends(require_approver)])
+@router.post("/halt", dependencies=[Depends(require_decider)])
 async def halt(req: HaltIn):
     return Auto.halt(req.reason)
 
 
-@router.post("/resume", dependencies=[Depends(require_approver)])
+@router.post("/resume", dependencies=[Depends(require_decider)])
 async def resume():
     return Auto.resume()
 
@@ -66,7 +68,7 @@ async def set_limit(kind: str, req: LimitIn):
 
 
 # ── What you decide ──────────────────────────────────────────────────────
-@router.get("/inbox", dependencies=[Depends(require_approver)])
+@router.get("/inbox", dependencies=[Depends(require_decider)])
 async def inbox():
     return Auto.inbox()
 
@@ -75,7 +77,7 @@ class ApproveIn(BaseModel):
     text: Optional[str] = Field(None, max_length=3000)
 
 
-@router.post("/actions/{action_id}/approve", dependencies=[Depends(require_approver)])
+@router.post("/actions/{action_id}/approve", dependencies=[Depends(require_decider)])
 async def approve(action_id: int, req: ApproveIn):
     try:
         return _found(Auto.approve(action_id, req.text))
@@ -87,7 +89,7 @@ class BatchIn(BaseModel):
     ids: List[int] = Field(..., min_length=1, max_length=100)
 
 
-@router.post("/approve-batch", dependencies=[Depends(require_approver)])
+@router.post("/approve-batch", dependencies=[Depends(require_decider)])
 async def approve_batch(req: BatchIn):
     approved, refused = [], []
     for action_id in req.ids:
@@ -98,37 +100,37 @@ async def approve_batch(req: BatchIn):
     return {"approved": approved, "refused": refused}
 
 
-@router.post("/actions/{action_id}/reject", dependencies=[Depends(require_approver)])
+@router.post("/actions/{action_id}/reject", dependencies=[Depends(require_decider)])
 async def reject(action_id: int):
     return _found(Auto.reject(action_id))
 
 
-@router.post("/actions/{action_id}/approve-docs", dependencies=[Depends(require_approver)])
+@router.post("/actions/{action_id}/approve-docs", dependencies=[Depends(require_decider)])
 async def approve_docs(action_id: int):
     return _found(Auto.approve_docs(action_id))
 
 
-@router.post("/actions/{action_id}/confirm-submit", dependencies=[Depends(require_approver)])
+@router.post("/actions/{action_id}/confirm-submit", dependencies=[Depends(require_decider)])
 async def confirm_submit(action_id: int):
     return _found(Auto.confirm_submit(action_id))
 
 
-@router.post("/actions/{action_id}/cancel", dependencies=[Depends(require_approver)])
+@router.post("/actions/{action_id}/cancel", dependencies=[Depends(require_decider)])
 async def cancel(action_id: int):
     return _found(Auto.cancel(action_id))
 
 
-@router.post("/actions/{action_id}/retry", dependencies=[Depends(require_approver)])
+@router.post("/actions/{action_id}/retry", dependencies=[Depends(require_decider)])
 async def retry(action_id: int):
     return _found(Auto.retry(action_id))
 
 
-@router.post("/jobs/{job_id}/recover", dependencies=[Depends(require_approver)])
+@router.post("/jobs/{job_id}/recover", dependencies=[Depends(require_decider)])
 async def recover_job(job_id: int):
     return _found(Auto.recover_job(job_id))
 
 
-@router.get("/needs-user", dependencies=[Depends(require_approver)])
+@router.get("/needs-user", dependencies=[Depends(require_decider)])
 async def needs_user():
     return {"items": Auto.needs_user()}
 
@@ -144,7 +146,7 @@ class AnswersIn(BaseModel):
     answers: List[AnswerIn] = Field(default_factory=list, max_length=50)
 
 
-@router.post("/needs-user/{action_id}/answer", dependencies=[Depends(require_approver)])
+@router.post("/needs-user/{action_id}/answer", dependencies=[Depends(require_decider)])
 async def answer(action_id: int, req: AnswersIn):
     return _found(Auto.answer(action_id, [a.model_dump() for a in req.answers]))
 
@@ -164,12 +166,12 @@ async def running():
     return {"items": Auto.running()}
 
 
-@router.get("/history", dependencies=[Depends(require_approver)])
+@router.get("/history", dependencies=[Depends(require_decider)])
 async def history(limit: int = Query(100, ge=1, le=500)):
     return {"items": Auto.history(limit)}
 
 
-@router.get("/actions/{action_id}/events", dependencies=[Depends(require_approver)])
+@router.get("/actions/{action_id}/events", dependencies=[Depends(require_decider)])
 async def events(action_id: int):
     return {"items": Auto.events(action_id)}
 
@@ -348,7 +350,7 @@ async def session(req: SessionIn):
     return {"ok": True}
 
 
-@router.get("/actions/{action_id}/artifacts/{name}", dependencies=[Depends(require_approver)])
+@router.get("/actions/{action_id}/artifacts/{name}", dependencies=[Depends(require_decider)])
 async def artifact(action_id: int, name: str):
     """A screenshot the worker kept of this action (the folder is shared with the backend)."""
     if not re.fullmatch(r"[\w.-]+\.(png|html)", name):
@@ -384,12 +386,12 @@ async def claude_result(action_id: int, req: ClaudeResultIn):
 
 
 # ── Answers by email ─────────────────────────────────────────────────────
-@router.get("/email/events", dependencies=[Depends(require_approver)])
+@router.get("/email/events", dependencies=[Depends(require_decider)])
 async def email_events(limit: int = Query(100, ge=1, le=500)):
     return EmailMonitorService.events_view(limit)
 
 
-@router.get("/email/funnel", dependencies=[Depends(require_approver)])
+@router.get("/email/funnel", dependencies=[Depends(require_decider)])
 async def email_funnel():
     return EmailMonitorService.funnel()
 
@@ -399,7 +401,7 @@ class EmailReview(BaseModel):
     job_id: Optional[int] = None
 
 
-@router.post("/email/events/{event_id}/review", dependencies=[Depends(require_approver)])
+@router.post("/email/events/{event_id}/review", dependencies=[Depends(require_decider)])
 async def email_review(event_id: int, req: EmailReview):
     return _found(EmailMonitorService.review(event_id, req.classification, req.job_id))
 
@@ -408,3 +410,96 @@ async def email_review(event_id: int, req: EmailReview):
 async def email_run():
     import asyncio
     return await asyncio.to_thread(EmailMonitorService.run)
+
+
+class IngestMessage(BaseModel):
+    message_id: str = Field(..., min_length=1, max_length=500)
+    thread_id: Optional[str] = Field(None, max_length=500)
+    sender: str = Field("", max_length=500)
+    subject: str = Field("", max_length=1000)
+    received_at: Optional[str] = Field(None, max_length=40)
+    body: str = Field("", max_length=20000)
+
+
+class IngestIn(BaseModel):
+    messages: List[IngestMessage] = Field(..., max_length=300)
+    source: str = Field("lolo", max_length=30)
+    baseline: Optional[bool] = None   # the sender's first read, in parts: none of them changes a status
+
+
+@router.post("/email/ingest", dependencies=[Depends(require_decider)])
+async def email_ingest(req: IngestIn):
+    """Messages Lolo read from Gmail with its own access: the same filter and reading as the IMAP check."""
+    import asyncio
+    return await asyncio.to_thread(EmailMonitorService.ingest, [m.model_dump() for m in req.messages], req.source, req.baseline)
+
+
+class ArchivedIn(BaseModel):
+    message_ids: List[str] = Field(..., min_length=1, max_length=300)
+
+
+@router.post("/email/archived", dependencies=[Depends(require_decider)])
+async def email_archived(req: ArchivedIn):
+    """Lolo archived these in Gmail: they are not handed back to it again."""
+    return {"marked": EmailMonitorService.mark_archived(req.message_ids)}
+
+
+@router.get("/email/gmail-query", dependencies=[Depends(require_decider)])
+async def email_gmail_query(days: int = Query(2, ge=1, le=60)):
+    return {"query": EmailMonitorService.gmail_query(days)}
+
+
+# ── Suggestions from the e-mails (grouped by theme) ──────────────────────
+@router.get("/suggestions", dependencies=[Depends(require_decider)])
+async def suggestions(status: Literal["new", "accepted", "dismissed"] = "new"):
+    return {"groups": BotService.suggestions(status), "text": BotService.suggestions_text() if status == "new" else ""}
+
+
+class SuggestionIn(BaseModel):
+    status: Literal["new", "accepted", "dismissed"]
+
+
+@router.patch("/suggestions/{suggestion_id}", dependencies=[Depends(require_decider)])
+async def set_suggestion(suggestion_id: int, req: SuggestionIn):
+    return _found(BotService.set_suggestion(suggestion_id, req.status))
+
+
+# ── Lolo (WhatsApp) ──────────────────────────────────────────────────────
+@router.get("/bot/notifications", dependencies=[Depends(require_bot)])
+async def bot_notifications(limit: int = Query(20, ge=1, le=50)):
+    return {"items": BotService.pending(limit)}
+
+
+class AckIn(BaseModel):
+    ids: List[int] = Field(..., min_length=1, max_length=100)
+
+
+@router.post("/bot/notifications/ack", dependencies=[Depends(require_bot)])
+async def bot_ack(req: AckIn):
+    return {"acked": BotService.ack(req.ids)}
+
+
+@router.get("/bot/overview", dependencies=[Depends(require_decider)])
+async def bot_overview():
+    return {"text": BotService.overview_text()}
+
+
+@router.get("/bot/inbox", dependencies=[Depends(require_decider)])
+async def bot_inbox():
+    return {"text": BotService.inbox_text()}
+
+
+class CommentLinkIn(BaseModel):
+    url: str = Field(..., max_length=1000)
+    suggestion: str = Field("", max_length=1500)
+    post_text: str = Field("", max_length=8000)
+    author: str = Field("", max_length=200)
+
+
+@router.post("/bot/comment-link", dependencies=[Depends(require_decider)])
+async def bot_comment_link(req: CommentLinkIn):
+    """A post you sent to be commented: the draft comes back and waits for your OK, like any other comment."""
+    try:
+        return await BotService.comment_link(req.url, req.suggestion, req.post_text, req.author)
+    except (ValueError, content_guard.BlockedContent) as e:
+        raise HTTPException(status_code=422, detail=str(e))

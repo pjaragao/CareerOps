@@ -34,6 +34,10 @@ jobs:
   markets: [intl]                            # add br to take Brazilian employers again
   min_score: 70                              # below it the job goes to "Descartadas" (recoverable)
   external_apply: false                      # company sites: true only after the assisted tests of phase F7
+  # Who reads the CV and the cover letter before they go: "agent" (a reviewer AI that sends them back to be redone, up to
+  # cv_review_rounds times, and only calls you if they still fail) or "you" (the first 20 on the main account wait for you)
+  cv_review: agent
+  cv_review_rounds: 2
 
 claude:
   per_day: 15
@@ -49,3 +53,13 @@ email:
   first_run_days: 45
   rejection_confidence: 0.9
   auto_status: false                         # true after you review the first read (phase FE)
+  # Lolo reads them in Gmail: what only confirms or closes an application is marked read and archived (you are told on
+  # WhatsApp); a next step (interview, test, a recruiter's question, an offer) stays in the inbox, unread, for you
+  archive_classes: [confirmation, viewed, rejection]
+  archive_confidence: 0.8
+
+# Lolo, on WhatsApp: what it tells you and when (it fetches from /api/automation/bot/notifications)
+bot:
+  digest_minutes: 30                         # new items to approve come together, at most once in this interval
+  quiet_hours: [22, 7]                       # from 22h to 7h only what is urgent: a stop, an interview, an offer, a LinkedIn warning
+  done_kinds: [apply, comment]               # finished actions worth a message

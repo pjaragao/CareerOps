@@ -1,5 +1,6 @@
-"""Tokens for the routes that act on your behalf (X-CareerOps-Token). Two roles: the approver (you, in the app) decides
-what goes out; the worker (the server browser) only reports what it did, and can never approve anything. A role with no
+"""Tokens for the routes that act on your behalf (X-CareerOps-Token). Three roles: the approver (you, in the app) decides
+what goes out; the bot (Lolo, on WhatsApp) passes on your decisions and the e-mails, but never changes the mode, the account
+or the limits; the worker (the server browser) only reports what it did, and can never approve anything. A role with no
 token configured refuses every request, so forgetting the variable closes the route instead of opening it."""
 import hmac
 from typing import Optional
@@ -11,10 +12,12 @@ from app.core.config import settings
 
 APPROVER = "approver"
 WORKER = "worker"
+BOT = "bot"
 
 
 def _expected(role: str) -> str:
-    return {APPROVER: settings.CAREEROPS_APPROVER_TOKEN, WORKER: settings.CAREEROPS_WORKER_TOKEN}.get(role, "")
+    return {APPROVER: settings.CAREEROPS_APPROVER_TOKEN, WORKER: settings.CAREEROPS_WORKER_TOKEN,
+            BOT: settings.CAREEROPS_BOT_TOKEN}.get(role, "")
 
 
 def require(*roles: str):
@@ -29,6 +32,8 @@ def require(*roles: str):
 
 
 require_approver = require(APPROVER)
+# your decisions, from the app or from WhatsApp
+require_decider = require(APPROVER, BOT)
 
 
 # Routes a web page must not be able to reach from its own origin, whatever token it holds

@@ -98,6 +98,9 @@ export interface EmailEvent {
   company?: string | null;
 }
 
+export interface SuggestionItem { id: number; company: string | null; suggestion: string; evidence: string | null; job_id: number | null; created_at: string }
+export interface SuggestionGroup { target: 'cv' | 'me'; theme: string; n: number; items: SuggestionItem[] }
+
 export interface FunnelRow { bucket: string; applied: number; answered: number; interviews: number }
 
 export interface SearchRow { id: number; slug: string; name: string; enabled: boolean; last_run_at: string | null; jobs_found: number }
@@ -132,4 +135,6 @@ export const automationService = {
   emailFunnel: () => data(api.get<{ by_age: FunnelRow[]; by_search: FunnelRow[]; by_market: FunnelRow[]; by_executor: FunnelRow[] }>(`${base}/email/funnel`)),
   emailReview: (id: number, classification?: string) => data(api.post(`${base}/email/events/${id}/review`, { classification: classification ?? null })),
   emailRun: () => data(api.post(`${base}/email/run`)),
+  suggestions: () => data(api.get<{ groups: SuggestionGroup[] }>(`${base}/suggestions`)),
+  setSuggestion: (id: number, status: 'new' | 'accepted' | 'dismissed') => data(api.patch(`${base}/suggestions/${id}`, { status })),
 };

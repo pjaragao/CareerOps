@@ -13,6 +13,7 @@ os.environ.update({
     "SUPABASE_DB_PASSWORD": os.environ.get("TEST_DB_PASSWORD", "test"),
     "CAREEROPS_APPROVER_TOKEN": "approver-token",
     "CAREEROPS_WORKER_TOKEN": "worker-token",
+    "CAREEROPS_BOT_TOKEN": "bot-token",
     "AUTOMATION_ALLOW_FINAL_SUBMIT": "true",
     "CONFIG_DIR": str(ROOT / "config"),
     "OUTPUT_DIR": TMP,
@@ -46,7 +47,7 @@ def database():
     yield
 
 
-TABLES = ("automation_events", "automation_runs", "automation_actions", "automation_answers", "job_email_events", "job_searches",
+TABLES = ("bot_notifications", "improvement_suggestions", "automation_events", "automation_runs", "automation_actions", "automation_answers", "job_email_events", "job_searches",
           "job_listings", "linkedin_engagement", "linkedin_prospects", "linkedin_networking_plans")
 
 
@@ -56,7 +57,9 @@ def db(database, monkeypatch):
     from app.db.session import get_db_connection
     from app.services import automation_service, job_search_service
     base = dict(automation_service.config())
-    cfg = {**base, "automation": {**base["automation"], "window": {"start_hour": 0, "end_hour": 24}, "write_gap_minutes": [0, 0]}}
+    # the reviewer agent calls an AI: its own tests turn it on (test_cv_review.py)
+    cfg = {**base, "automation": {**base["automation"], "window": {"start_hour": 0, "end_hour": 24}, "write_gap_minutes": [0, 0]},
+           "jobs": {**base["jobs"], "cv_review": "you"}}
     monkeypatch.setattr(automation_service, "config", lambda: cfg)
     monkeypatch.setattr(job_search_service, "config", lambda: cfg)
     conn = get_db_connection()
@@ -85,6 +88,7 @@ def client(database):
 
 APPROVER = {"X-CareerOps-Token": "approver-token"}
 WORKER = {"X-CareerOps-Token": "worker-token"}
+BOT = {"X-CareerOps-Token": "bot-token"}
 
 
 @pytest.fixture
