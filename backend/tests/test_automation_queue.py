@@ -545,3 +545,19 @@ def test_tick_does_only_the_books_while_off(db, sql):
     Auto.update_state(mode="off")
     Auto.tick()
     assert sql("SELECT COUNT(*) AS n FROM public.automation_actions")[0]["n"] == 0
+
+
+def test_a_login_link_works_once(db, client):
+    from tests.conftest import APPROVER, BOT
+    assert client.post("/api/automation/login-links", headers=BOT).status_code == 401
+    url = client.post("/api/automation/login-links", headers=APPROVER).json()["url"]
+    code = url.split("codigo=")[1]
+    first = client.post("/api/automation/login-links/redeem", json={"code": code})
+    assert first.status_code == 200 and first.json()["token"] == APPROVER["X-CareerOps-Token"]
+    assert client.post("/api/automation/login-links/redeem", json={"code": code}).status_code == 410
+
+
+def test_an_expired_login_link_gives_nothing(db, client, sql):
+    url = Auto.login_link()
+    sql("UPDATE public.automation_login_links SET expires_at = NOW() - INTERVAL '1 minute'")
+    assert client.post("/api/automation/login-links/redeem", json={"code": url.split("codigo=")[1]}).status_code == 410

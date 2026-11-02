@@ -69,6 +69,24 @@ async def set_limit(kind: str, req: LimitIn):
     return _found(Auto.set_limit(kind, req.step0, req.step1, req.step2))
 
 
+# ── A new browser of yours: a one-time link instead of typing the token ──
+@router.post("/login-links", dependencies=[Depends(require_approver)])
+async def login_link():
+    return {"url": Auto.login_link()}
+
+
+class RedeemIn(BaseModel):
+    code: str = Field(..., min_length=10, max_length=100)
+
+
+@router.post("/login-links/redeem")
+async def redeem_login(req: RedeemIn):
+    token = Auto.redeem_login(req.code)
+    if not token:
+        raise HTTPException(status_code=410, detail="Link já usado ou expirado: peça outro")
+    return {"token": token}
+
+
 # ── What you decide ──────────────────────────────────────────────────────
 @router.get("/inbox", dependencies=[Depends(require_decider)])
 async def inbox():

@@ -162,6 +162,22 @@ class AutomationService:
                           SET halted_at = NULL, halted_reason = NULL, halted_lanes = '{}', updated_at = NOW()
                         WHERE id = 1 RETURNING *""")
 
+    # ── A new browser of yours (the phone) ───────────────────────────────
+    @staticmethod
+    def login_link(minutes: int = 15) -> str:
+        """A one-time code that gives this browser the approver token: only its hash is kept, it works once and expires."""
+        code = secrets.token_urlsafe(24)
+        _one("INSERT INTO public.automation_login_links (code_hash, expires_at) VALUES (%s, NOW() + make_interval(mins => %s)) RETURNING id",
+             (hashlib.sha256(code.encode()).hexdigest(), minutes))
+        return f"{settings.CAREEROPS_APP_URL.rstrip('/')}/entrar?codigo={code}"
+
+    @staticmethod
+    def redeem_login(code: str) -> Optional[str]:
+        used = _one("""UPDATE public.automation_login_links SET used_at = NOW()
+                        WHERE code_hash = %s AND used_at IS NULL AND expires_at > NOW() RETURNING id""",
+                    (hashlib.sha256((code or "").encode()).hexdigest(),))
+        return settings.CAREEROPS_APPROVER_TOKEN if used and settings.CAREEROPS_APPROVER_TOKEN else None
+
     # ── Limits ───────────────────────────────────────────────────────────
     @staticmethod
     def limits(state: Optional[dict] = None) -> List[dict]:

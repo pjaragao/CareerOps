@@ -202,3 +202,11 @@ ALTER TABLE public.job_email_events ADD COLUMN IF NOT EXISTS mail_action TEXT;  
 ALTER TABLE public.job_email_events ADD COLUMN IF NOT EXISTS mail_done_at TIMESTAMP WITH TIME ZONE;
 -- The ramp of the limits: false = it stays on the step you chose; a LinkedIn warning still lowers it
 ALTER TABLE public.automation_state ADD COLUMN IF NOT EXISTS ramp_auto BOOLEAN NOT NULL DEFAULT TRUE;
+-- One-time links that put the approver token in a new browser (your phone): only the hash is kept, used once, short-lived
+CREATE TABLE IF NOT EXISTS public.automation_login_links (
+    id SERIAL PRIMARY KEY,
+    code_hash TEXT NOT NULL UNIQUE,
+    expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    used_at TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+);

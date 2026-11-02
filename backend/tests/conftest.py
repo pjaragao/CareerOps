@@ -47,7 +47,7 @@ def database():
     yield
 
 
-TABLES = ("bot_notifications", "improvement_suggestions", "automation_events", "automation_runs", "automation_actions", "automation_answers", "job_email_events", "job_searches",
+TABLES = ("automation_login_links", "bot_notifications", "improvement_suggestions", "automation_events", "automation_runs", "automation_actions", "automation_answers", "job_email_events", "job_searches",
           "job_listings", "linkedin_engagement", "linkedin_prospects", "linkedin_networking_plans")
 
 

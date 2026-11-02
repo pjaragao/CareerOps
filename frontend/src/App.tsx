@@ -12,6 +12,7 @@ import JobSearch from './pages/JobSearch';
 import Interview from './pages/Interview';
 import LinkedInCopilot from './pages/LinkedInCopilot';
 import Automation from './pages/Automation';
+import Enter from './pages/Enter';
 import Settings from './pages/Settings';
 import InstallExtension from './pages/InstallExtension';
 import AISettings from './pages/AISettings';
@@ -53,6 +54,7 @@ function App() {
           <Route path="linkedin-copilot" element={<LinkedInCopilot />} />
           <Route path="automacao" element={<Automation />} />
           <Route path="configuracoes" element={<SettingsHub />} />
+          <Route path="entrar" element={<Enter />} />
           {/* old addresses */}
           <Route path="profile" element={<Navigate to="/perfil" replace />} />
           <Route path="onboarding" element={<Navigate to="/perfil?tab=conhecimento" replace />} />
