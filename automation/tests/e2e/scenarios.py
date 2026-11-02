@@ -225,7 +225,8 @@ def main():
     time.sleep(10)
     check("halted: nothing starts", action(slow)["status"] == "queued" and "stopme" not in fake_state()["following"])
     call("POST", "/automation/resume")
-    wait_status(slow, ("done",), 60)
+    row = wait_status(slow, ("done",), 150)
+    check("after resuming, what waited goes on", row["status"] == "done", row["status"])
 
     print("warning from LinkedIn")
     fake_post("/__checkpoint", "on")
@@ -244,7 +245,8 @@ def main():
     time.sleep(8)
     visits = fake_state()["following"]
     check("nothing else was attempted", "never" not in visits and "never2" not in visits and action(other)["status"] == "queued")
-    check("the screen stays there for you", bool(sql("SELECT 1 FROM public.automation_events WHERE action_id = ANY(%s) AND screenshot_path IS NOT NULL", ([guarded, other],))))
+    shots = sql("SELECT action_id, screenshot_path FROM public.automation_events WHERE event = 'escalate:checkpoint'")
+    check("the screen stays there for you", shots and all(s["screenshot_path"] for s in shots), str(shots))
     fake_post("/__checkpoint", "off")
     call("POST", "/automation/resume")
     row = wait_status(other, ("done", "needs_user"), 90)
