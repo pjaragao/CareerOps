@@ -115,10 +115,15 @@ class Worker:
             await self._wait(60)
 
     async def run(self) -> None:
-        await self.browsers.start()
         loop = asyncio.get_running_loop()
         for sig in (signal.SIGTERM, signal.SIGINT):
             loop.add_signal_handler(sig, self.stopping.set)
+        if not self.api.token:   # not switched on here yet: no browser, no visit to LinkedIn
+            log.info("no CAREEROPS_WORKER_TOKEN: waiting, nothing runs")
+            await self.stopping.wait()
+            await self.api.close()
+            return
+        await self.browsers.start()
         loops = [self.lane_loop(lane) for lane in ("linkedin_read", "linkedin_write", "ats")]
         await asyncio.gather(*loops, self.session_loop(), self.housekeeping_loop())
         log.info("stopping: waiting for %d running action(s)", len(self.running))

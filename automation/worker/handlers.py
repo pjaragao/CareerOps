@@ -64,12 +64,15 @@ class Runner:
             folder.mkdir(parents=True, exist_ok=True)
             name = f"{int(time.time())}-{label}"
             await page.screenshot(path=str(folder / f"{name}.png"), timeout=15000)
+        except (PlaywrightError, OSError) as e:
+            log.info("no screenshot for %s: %s", action_id, e)
+            return None
+        try:   # the screenshot stands on its own: the page may be navigating, and then there is no HTML to read
             html = re.sub(r"(?is)<script.*?</script>", "", await page.content())
             (folder / f"{name}.html").write_text(html, encoding="utf-8")
-            return f"{name}.png"
         except (PlaywrightError, OSError) as e:
-            log.info("no artifact for %s: %s", action_id, e)
-            return None
+            log.info("no page copy for %s: %s", action_id, e)
+        return f"{name}.png"
 
     async def prepare_documents(self, action: dict) -> None:
         """The CV and cover letter where the browser tools can reach them, in case the Claude routine has to finish this."""

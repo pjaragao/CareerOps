@@ -58,7 +58,7 @@ class Settings(BaseSettings):
     # A second lock on the final click of an application: it stays false anywhere the test account runs
     AUTOMATION_ALLOW_FINAL_SUBMIT: bool = os.getenv("AUTOMATION_ALLOW_FINAL_SUBMIT", "false").lower() == "true"
     # Where you see the server browser (login, verifications)
-    CAREEROPS_NOVNC_URL: str = os.getenv("CAREEROPS_NOVNC_URL", "https://mpbflndsk201-wsl.tabby-broadnose.ts.net:6081/vnc.html")
+    CAREEROPS_NOVNC_URL: str = os.getenv("CAREEROPS_NOVNC_URL", "https://mpbflndsk201-wsl.tabby-broadnose.ts.net:6083/vnc.html")
 
     # --- Daily email monitor (Gmail app password, read-only use): empty = it does not run ---
     GMAIL_ADDRESS: str = os.getenv("GMAIL_ADDRESS", "")

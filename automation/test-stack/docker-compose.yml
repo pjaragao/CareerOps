@@ -65,9 +65,9 @@ services:
       VNC_PASSWORD: ${VNC_PASSWORD:?}
       BROWSER_MODE: ${BROWSER_MODE:-xvfb}
     ports:
-      - "127.0.0.1:6080:6080"
-      - "127.0.0.1:8931:8931"
-      - "127.0.0.1:8932:8932"
+      - "127.0.0.1:16180:6080"
+      - "127.0.0.1:18941:8931"
+      - "127.0.0.1:18942:8932"
     volumes:
       - browser:/data
       - output:/app/output

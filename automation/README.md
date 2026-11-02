@@ -2,46 +2,46 @@
 
 Worker com o navegador no servidor (Chromium + extensão), rotina Claude no host e monitor de e-mail no backend. **Sobe desligado** (`mode = off`): nada acontece até você ligar em **Automação → Buscas e limites**.
 
-## Colocar no ar
+## Stack de teste (já no ar neste servidor)
 
-1. Gere e cadastre as variáveis no Coolify (ou em `linkedin-jobs/.env`):
+Para a conta de teste: banco `careerops_test`, sem dados da produção além do seu perfil e dos ajustes de IA. Nunca envia candidatura (`AUTOMATION_ALLOW_FINAL_SUBMIT` fixo em `false`). Definida em `test-stack/docker-compose.yml`, sem rótulos do Coolify.
 
-   ```bash
-   openssl rand -hex 32
-   ```
+| O quê | Onde |
+|---|---|
+| Tela Automação | `https://mpbflndsk201-wsl.tabby-broadnose.ts.net:6082/automacao` |
+| Navegador (noVNC) | `https://mpbflndsk201-wsl.tabby-broadnose.ts.net:6081/vnc.html` |
+| Senhas e tokens | `~/.config/careerops/test-stack.env`: `NGINX_USER`/`NGINX_PASSWORD` (site), `VNC_PASSWORD` (noVNC), `CAREEROPS_APPROVER_TOKEN` (Configurações → Chaves de IA → Acesso) |
+| Rotina Claude | crontab, a cada 15 min; config em `~/.config/careerops/runner.env`; log em `~/backups/careerops/claude-runner.log` |
 
-   `CAREEROPS_APPROVER_TOKEN`, `CAREEROPS_WORKER_TOKEN` (valores diferentes), `VNC_PASSWORD`, `AUTOMATION_ALLOW_FINAL_SUBMIT=false`, `GMAIL_ADDRESS` e `GMAIL_APP_PASSWORD`.
+Recriar depois de mudar o código (`config/` e a extensão entram na imagem):
 
-   **Depois do deploy, aprovar e publicar posts passam a exigir o token:** digite-o em Configurações → Chaves de IA → Acesso.
+```bash
+docker compose --env-file ~/.config/careerops/test-stack.env -f automation/test-stack/docker-compose.yml up -d --build
+```
 
-2. Publique o noVNC pelo `nginx_secure`, com senha. O container só escuta em `127.0.0.1:6080`. Bloco para `nginx.conf`, igual aos existentes (crie o arquivo de senha com `htpasswd -c`):
+## Produção
 
-   ```nginx
-   server {
-       listen 100.109.242.35:6081 ssl;
-       server_name mpbflndsk201-wsl.tabby-broadnose.ts.net;
-       auth_basic "CareerOps";
-       auth_basic_user_file /etc/nginx/careerops.htpasswd;
-       location / {
-           proxy_pass http://127.0.0.1:6080;
-           proxy_http_version 1.1;
-           proxy_set_header Upgrade $http_upgrade;
-           proxy_set_header Connection "upgrade";
-           proxy_read_timeout 3600s;
-       }
-   }
-   ```
+Cada `git push` na `main` implanta pelo Coolify (auto-deploy). O serviço `automation` sobe junto, parado até ter token e modo ligado.
 
-3. Instale a rotina Claude no host:
+1. **Cadastre `CAREEROPS_APPROVER_TOKEN` no Coolify** (CareerOps → Environment Variables) com o valor de `~/.config/careerops/production.env`, faça um redeploy e digite o mesmo valor em Configurações → Chaves de IA → Acesso. Até lá, aprovar e publicar posts pela tela retorna 401; o que já foi aprovado continua saindo no horário.
 
-   ```bash
-   mkdir -p ~/.config/careerops && printf 'CAREEROPS_API_BASE=http://127.0.0.1:8005/api\nCAREEROPS_WORKER_TOKEN=<token do worker>\n' > ~/.config/careerops/runner.env && chmod 600 ~/.config/careerops/runner.env
-   ```
+   **Para ligar a automação na produção (F8):** cadastre também `CAREEROPS_WORKER_TOKEN`, `VNC_PASSWORD` e `AUTOMATION_ALLOW_FINAL_SUBMIT`, do mesmo arquivo, e faça um redeploy. Sem o token do worker, o serviço `automation` fica parado: não abre navegador nem visita o LinkedIn. Para o monitor de e-mail, `GMAIL_ADDRESS` e `GMAIL_APP_PASSWORD`.
 
-   Linha do crontab:
+2. O noVNC da produção já tem rota em `https://mpbflndsk201-wsl.tabby-broadnose.ts.net:6083/vnc.html`, com a mesma senha do site.
+
+3. Para a rotina Claude atender à produção, troque `~/.config/careerops/runner.env`:
 
    ```text
-   */15 * * * * flock -n /tmp/careerops-claude.lock /usr/bin/python3 /home/paulojr/linkedin_resume/automation/claude_runner/run.py >> /home/paulojr/backups/careerops/claude-runner.log 2>&1
+   CAREEROPS_API_BASE=http://127.0.0.1:8005/api
+   CAREEROPS_WORKER_TOKEN=<token do worker da produção>
+   CAREEROPS_MCP_PORT_LINKEDIN=8931
+   CAREEROPS_MCP_PORT_ATS=8932
+   ```
+
+4. O CLI precisa estar logado no servidor, senão cada execução da rotina termina em "Precisa de você":
+
+   ```bash
+   claude auth login
    ```
 
 ## Fases de ligação

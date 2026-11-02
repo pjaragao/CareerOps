@@ -3,6 +3,16 @@
 # routine) and noVNC are published on the host's loopback only (docker-compose.yml). No VNC password, no remote view.
 set -e
 
+# Coolify hands every service every variable of the application (database password, AI keys…). The browser opens other
+# people's pages: nothing it starts gets more than this list.
+for name in $(env | cut -d= -f1); do
+    case "$name" in
+        PATH|HOME|HOSTNAME|LANG|LC_*|PWD|PYTHON*|GPG_KEY|PLAYWRIGHT_*|WORKER_ID|EXTENSION_DIR|ARTIFACTS_DIR|RUN_DIR) ;;
+        CAREEROPS_API_BASE|CAREEROPS_WORKER_TOKEN|VNC_PASSWORD|BROWSER_MODE|BROWSER_EXTRA_ARGS|BROWSER_IGNORE_HTTPS_ERRORS) ;;
+        *) unset "$name" ;;
+    esac
+done
+
 export DISPLAY=:99
 rm -f /tmp/.X99-lock /tmp/.X11-unix/X99   # left by a container that was killed: Xvfb would refuse to start
 Xvfb :99 -screen 0 1400x1000x24 -nolisten tcp &
@@ -15,6 +25,8 @@ if [ -n "$VNC_PASSWORD" ]; then
 else
     echo "VNC_PASSWORD not set: noVNC is off, you cannot sign in through it"
 fi
+
+unset VNC_PASSWORD   # only x11vnc needed it
 
 mkdir -p /data/profiles /data/run
 cd /data/run

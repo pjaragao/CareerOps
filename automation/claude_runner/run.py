@@ -20,8 +20,6 @@ ENV_FILE = Path(os.environ.get("CAREEROPS_RUNNER_ENV", Path.home() / ".config" /
 CLAUDE = os.environ.get("CLAUDE_BIN") or shutil.which("claude") or str(Path.home() / ".local" / "bin" / "claude")
 TIMEOUT_SECONDS = 480
 MAX_BUDGET_USD = "1.00"
-MCP_PORTS = {"ats": int(os.environ.get("CAREEROPS_MCP_PORT_ATS", 8932))}
-DEFAULT_MCP_PORT = int(os.environ.get("CAREEROPS_MCP_PORT_LINKEDIN", 8931))
 
 TOOLS = ["browser_snapshot", "browser_navigate", "browser_click", "browser_type", "browser_select_option", "browser_file_upload",
          "browser_wait_for", "browser_take_screenshot", "browser_tabs", "browser_press_key", "browser_hover"]
@@ -183,7 +181,7 @@ def run_once(env: dict) -> int:
     dossier = action["dossier"]
     prompt = PROMPT.format(task=TASKS.get(action["kind"], action["kind"]), why=dossier.get("why_stuck") or "não informado",
                            dossier=json.dumps(dossier, ensure_ascii=False, indent=1, default=str))
-    port = MCP_PORTS.get(action["lane"], DEFAULT_MCP_PORT)
+    port = env.get("CAREEROPS_MCP_PORT_ATS", 8932) if action["lane"] == "ats" else env.get("CAREEROPS_MCP_PORT_LINKEDIN", 8931)
     # An empty folder: no CLAUDE.md, no project settings, nothing to read
     with tempfile.TemporaryDirectory(prefix="careerops-claude-") as folder:
         mcp_config = Path(folder) / "mcp.json"
