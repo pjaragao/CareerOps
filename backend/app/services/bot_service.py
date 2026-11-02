@@ -302,7 +302,7 @@ class BotService:
         if len(rows) > shown:
             lines.append(f"\n…e mais {len(rows) - shown} na lista abaixo.")
         lines.append(f"\n🔎 Lista com detalhes: {BotService.approval_link(kind)}")
-        lines.append("Responda, por exemplo: “aprovar 12 15”, “rejeitar 13” ou “aprovar todas as vagas”.")
+        lines.append("Responda, por exemplo: “aprovar 12 15” (vai no horário, 8h–20h), “aprovar 12 agora” (executa já), “rejeitar 13” ou “aprovar todas as vagas”.")
         return "\n".join(lines)
 
     @staticmethod

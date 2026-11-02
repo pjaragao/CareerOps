@@ -210,3 +210,6 @@ CREATE TABLE IF NOT EXISTS public.automation_login_links (
     used_at TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
 );
+
+-- "Executar agora": an approval that does not wait for the time window (stop, limits and the gap between writes still apply)
+ALTER TABLE public.automation_actions ADD COLUMN IF NOT EXISTS run_now BOOLEAN NOT NULL DEFAULT FALSE;

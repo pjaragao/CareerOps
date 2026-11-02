@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- JSON bags, as the backend sends them */
 import React, { useCallback, useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Check, CircleStop, ExternalLink, FileText, Inbox as InboxIcon, ListChecks, Mail, Monitor, Play, RefreshCw, Settings2, UserRound, X } from 'lucide-react';
+import { Check, CircleStop, Zap, ExternalLink, FileText, Inbox as InboxIcon, ListChecks, Mail, Monitor, Play, RefreshCw, Settings2, UserRound, X } from 'lucide-react';
 import TabbedPage from '../components/TabbedPage';
 import { EligibilityBadge, css as listCss } from './JobBoard';
 import { automationService as auto, Action, AutomationStatus, EmailEvent, FoundJob, FunnelRow, Inbox, Limit, Question, SearchRow } from '../services/automationService';
@@ -97,6 +97,8 @@ const KINDS: { id: WriteKind; label: string; plural: string; color: string }[] =
   { id: 'connect', label: 'Conexão', plural: 'Conexões', color: '#00b0ff' }, { id: 'follow', label: 'Seguir', plural: 'Seguir', color: GRAY },
 ];
 const kindOf = (k: string) => KINDS.find((x) => x.id === k) || { id: k, label: k, plural: k, color: GRAY };
+// when the automation works on its own; "executar agora" does not wait for it
+const WINDOW = '8h–20h';
 const fitColor = (n: number) => (n >= 85 ? GREEN : n >= 70 ? YELLOW : GRAY);
 const ellipsis: React.CSSProperties = { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' };
 // on a phone the kind moves next to the title, so the title keeps the width
@@ -141,7 +143,7 @@ const CommentEditor = ({ action, text, setText, onRevised }: { action: Action; t
     <div style={row}>{tab('edit', '✏️ Editar')}{tab('ai', '✨ Pedir à IA')}</div>
     <textarea style={{ ...input, minHeight: 90, opacity: busy ? 0.5 : 1 }} value={text} readOnly={busy} onChange={(e) => setText(e.target.value)} aria-label="Comentário" />
     {mode === 'edit'
-      ? <span style={muted}>Editou? Aprove por esta linha (✓): a aprovação em lote usa o texto original.</span>
+      ? <span style={muted}>Editou? Aprove por esta linha (✓ ou ⚡): a aprovação em lote usa o texto original.</span>
       : <>
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
           <input style={{ ...input, flex: 1, minWidth: 0 }} value={ask} disabled={busy} placeholder="Ex.: mais curto, discorde com educação, cite a experiência com concessões"
@@ -219,7 +221,8 @@ const ProposalRow = ({ action, picked, onPick, onDone, setError }: { action: Act
         <td className="jb-td jb-hide-sm" style={{ fontSize: '0.76rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{ago(action.posted_at || action.sort_at || action.created_at)}</td>
         <td className="jb-td" style={{ textAlign: 'right', paddingLeft: 0, whiteSpace: 'nowrap' }} onClick={(e) => e.stopPropagation()}>
           <div style={{ display: 'inline-flex', flexWrap: 'nowrap', gap: 6 }}>
-            <button className="jb-icon primary" title="Aprovar" disabled={busy} onClick={() => decide(auto.approve(action.id, action.kind === 'comment' ? text : undefined))}><Check size={15} /></button>
+            <button className="jb-icon primary" title={`Aprovar: vai no próximo horário (${WINDOW})`} disabled={busy} onClick={() => decide(auto.approve(action.id, action.kind === 'comment' ? text : undefined))}><Check size={15} /></button>
+            <button className="jb-icon" title="Aprovar e executar agora, mesmo fora do horário" style={{ color: YELLOW }} disabled={busy} onClick={() => decide(auto.approve(action.id, action.kind === 'comment' ? text : undefined, true))}><Zap size={15} /></button>
             <button className="jb-icon danger" title="Rejeitar" disabled={busy} onClick={() => decide(auto.reject(action.id))}><X size={15} /></button>
             {action.target_url && <a className="jb-icon jb-hide-sm" title="Abrir no LinkedIn" href={action.target_url} target="_blank" rel="noreferrer"><ExternalLink size={15} /></a>}
           </div>
@@ -278,10 +281,11 @@ const ApproveTab = () => {
   const selected = shown.filter((a) => picked.has(a.id));
   const pick = (id: number, on: boolean) => setPicked((prev) => { const next = new Set(prev); if (on) next.add(id); else next.delete(id); return next; });
   const done = () => { setPicked(new Set()); refresh(); };
-  const approveMany = (items: Action[]) => {
-    if (!selected.length && items.length > 1 && !confirm(`Aprovar as ${items.length} da lista?`)) return;
+  const approveMany = (items: Action[], runNow = false) => {
+    const how = runNow ? ' e executar agora' : '';
+    if (!selected.length && items.length > 1 && !confirm(`Aprovar${how} as ${items.length} da lista?`)) return;
     const missing = items.filter((a) => a.kind === 'comment' && !a.payload.text);
-    auto.approveBatch(items.filter((a) => !missing.includes(a)).map((a) => a.id))
+    auto.approveBatch(items.filter((a) => !missing.includes(a)).map((a) => a.id), runNow)
       .then((r) => { if (r.refused.length) setActionError(`${r.refused.length} não aprovado(s): revise um a um.`); done(); })
       .catch((e) => setActionError(errorText(e)));
   };
@@ -299,15 +303,18 @@ const ApproveTab = () => {
         ))}
       </div>
       <div style={{ ...row, justifyContent: 'space-between' }}>
-        <span style={muted}>{selected.length ? `${selected.length} selecionada(s)` : `${shown.length} para aprovar · toque na linha para ver detalhes`}</span>
+        <span style={muted}>{selected.length ? `${selected.length} selecionada(s)` : `${shown.length} para aprovar · toque na linha para ver detalhes`} · ✓ vai no horário ({WINDOW}), ⚡ executa agora</span>
         <div style={row}>
           <select className="jb-select" value={sort} onChange={(e) => setSort(e.target.value as 'recent' | 'fit')} title="Ordenar">
             <option value="recent">Mais recentes</option>
             <option value="fit">Maior fit</option>
           </select>
           {selected.length > 0 && <button className="btn btn-secondary" onClick={() => rejectMany(selected)}><X size={15} /> Rejeitar</button>}
-          <button className="btn btn-secondary" disabled={!shown.length} onClick={() => approveMany(selected.length ? selected : shown)}>
+          <button className="btn btn-secondary" disabled={!shown.length} title={`Vão no próximo horário (${WINDOW})`} onClick={() => approveMany(selected.length ? selected : shown)}>
             <Check size={15} /> {selected.length ? 'Aprovar selecionadas' : 'Aprovar todas'}
+          </button>
+          <button className="btn btn-secondary" style={{ color: YELLOW }} disabled={!shown.length} title="Aprovar e executar agora, mesmo fora do horário" onClick={() => approveMany(selected.length ? selected : shown, true)}>
+            <Zap size={15} /> {selected.length ? 'Selecionadas agora' : 'Todas agora'}
           </button>
         </div>
       </div>

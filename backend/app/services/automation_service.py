@@ -261,7 +261,7 @@ class AutomationService:
         return payload
 
     @staticmethod
-    def approve(action_id: int, text: Optional[str] = None) -> Optional[dict]:
+    def approve(action_id: int, text: Optional[str] = None, run_now: bool = False) -> Optional[dict]:
         conn = get_db_connection()
         try:
             with get_db_cursor(conn) as cur:
@@ -276,12 +276,12 @@ class AutomationService:
                 status = "approved" if action["kind"] == "apply" else "queued"
                 cur.execute("""
                     UPDATE public.automation_actions
-                       SET status = %s, payload = %s, payload_hash = %s, approved_at = NOW(), expires_at = %s, updated_at = NOW()
-                     WHERE id = %s RETURNING *""", (status, Json(payload), payload_hash(payload), now() + timedelta(hours=hours), action_id))
+                       SET status = %s, payload = %s, payload_hash = %s, approved_at = NOW(), expires_at = %s, run_now = %s, updated_at = NOW()
+                     WHERE id = %s RETURNING *""", (status, Json(payload), payload_hash(payload), now() + timedelta(hours=hours), run_now, action_id))
                 updated = dict(cur.fetchone())
                 if action["kind"] == "apply":
                     cur.execute("UPDATE public.job_listings SET status = 'new', updated_at = NOW() WHERE id = %s AND status = 'discovered'", (action["target_id"],))
-                _event(cur, action_id, "user", "approved", {"hash": updated["payload_hash"]})
+                _event(cur, action_id, "user", "approved", {"hash": updated["payload_hash"], "run_now": run_now})
             conn.commit()
             return updated
         finally:
@@ -425,10 +425,6 @@ class AutomationService:
             return "off"
         if state["halted_lanes"] and ("all" in state["halted_lanes"] or lane in state["halted_lanes"]):
             return "halted"
-        window = cfg.get("window") or {}
-        hour = _local().hour
-        if not window.get("start_hour", 8) <= hour < window.get("end_hour", 20):
-            return "outside_window"
         if lane == "linkedin_write" and state["next_write_at"] and state["next_write_at"] > now():
             return "gap"
         cur.execute("SELECT lane, COUNT(*) AS n FROM public.automation_actions WHERE status = ANY(%s) GROUP BY lane", (list(RUNNING),))
@@ -438,6 +434,11 @@ class AutomationService:
         if running.get(lane, 0) >= (cfg.get("lanes") or {}).get(lane, 1):
             return "lane_busy"
         return None
+
+    @staticmethod
+    def in_window() -> bool:
+        window = (config().get("automation") or {}).get("window") or {}
+        return window.get("start_hour", 8) <= _local().hour < window.get("end_hour", 20)
 
     @staticmethod
     def claim(lane: str, worker: str) -> dict:
@@ -450,6 +451,12 @@ class AutomationService:
                 state = dict(cur.fetchone())
                 cur.execute("UPDATE public.automation_state SET worker_seen_at = NOW() WHERE id = 1")
                 refusal = AutomationService._refusal(state, lane, cur)
+                # outside the window only what you approved with "executar agora" goes
+                only_now = not AutomationService.in_window()
+                if not refusal and only_now:
+                    cur.execute("SELECT 1 FROM public.automation_actions WHERE lane = %s AND run_now AND status IN ('queued', 'unknown_outcome') LIMIT 1", (lane,))
+                    if not cur.fetchone():
+                        refusal = "outside_window"
                 if refusal:
                     conn.commit()
                     return {"action": None, "reason": refusal}
@@ -460,8 +467,8 @@ class AutomationService:
                 # what may already have gone out is looked at first: it does not count as a new action
                 cur.execute("""
                     SELECT * FROM public.automation_actions
-                     WHERE lane = %s AND status = 'unknown_outcome' AND (scheduled_for IS NULL OR scheduled_for <= NOW())
-                     ORDER BY updated_at LIMIT 1 FOR UPDATE SKIP LOCKED""", (lane,))
+                     WHERE lane = %s AND status = 'unknown_outcome' AND (scheduled_for IS NULL OR scheduled_for <= NOW()) AND (run_now OR NOT %s)
+                     ORDER BY updated_at LIMIT 1 FOR UPDATE SKIP LOCKED""", (lane, only_now))
                 row = cur.fetchone()
                 verify_only = bool(row)
                 if not row:
@@ -469,7 +476,8 @@ class AutomationService:
                         SELECT * FROM public.automation_actions
                          WHERE lane = %s AND status = 'queued' AND NOT (kind = ANY(%s))
                            AND (scheduled_for IS NULL OR scheduled_for <= NOW()) AND (expires_at IS NULL OR expires_at > NOW())
-                         ORDER BY rank, sort_at DESC LIMIT 1 FOR UPDATE SKIP LOCKED""", (lane, exhausted))
+                           AND (run_now OR NOT %s)
+                         ORDER BY run_now DESC, rank, sort_at DESC LIMIT 1 FOR UPDATE SKIP LOCKED""", (lane, exhausted, only_now))
                     row = cur.fetchone()
                 if not row:
                     conn.commit()
@@ -708,18 +716,15 @@ class AutomationService:
                 if cur.fetchone()["n"] >= cfg.get("per_day", 15):
                     conn.commit()
                     return {"action": None, "reason": "daily_cap"}
-                window = (config().get("automation") or {}).get("window") or {}
-                if not window.get("start_hour", 8) <= _local().hour < window.get("end_hour", 20):
-                    conn.commit()
-                    return {"action": None, "reason": "outside_window"}
+                only_now = not AutomationService.in_window()   # outside the window, only "executar agora"
                 halted = state["halted_lanes"] or []
                 lanes = [l for l in (cfg.get("lanes") or []) if "all" not in halted and l not in halted]
-                cur.execute("""SELECT * FROM public.automation_actions WHERE status = 'escalated' AND lane = ANY(%s)
-                                ORDER BY rank, sort_at DESC LIMIT 1 FOR UPDATE SKIP LOCKED""", (lanes,))
+                cur.execute("""SELECT * FROM public.automation_actions WHERE status = 'escalated' AND lane = ANY(%s) AND (run_now OR NOT %s)
+                                ORDER BY rank, sort_at DESC LIMIT 1 FOR UPDATE SKIP LOCKED""", (lanes, only_now))
                 row = cur.fetchone()
                 if not row:
                     conn.commit()
-                    return {"action": None, "reason": "empty"}
+                    return {"action": None, "reason": "outside_window" if only_now else "empty"}
                 action = dict(row)
                 cur.execute("""UPDATE public.automation_actions
                                   SET status = 'running_claude', executor = 'claude', claude_attempts = claude_attempts + 1,

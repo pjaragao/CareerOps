@@ -587,3 +587,31 @@ def test_only_a_comment_still_to_approve_can_be_revised(db):
     import asyncio
     a = comment(status="queued")
     assert asyncio.run(Auto.revise(a["id"], "mais curto")) is None
+
+
+def test_executar_agora_goes_outside_the_window_and_the_rest_waits(db, monkeypatch):
+    cfg = {**db, "automation": {**db["automation"], "window": {"start_hour": 3, "end_hour": 3}}}
+    monkeypatch.setattr(automation_service, "config", lambda: cfg)
+    later, now_ = comment("later"), comment("now")
+    Auto.approve(later["id"])
+    assert claim()["reason"] == "outside_window"
+    Auto.approve(now_["id"], run_now=True)
+    got = claim()["action"]
+    assert got["id"] == now_["id"]
+    assert status_of(later["id"]) == "queued"
+
+
+def test_executar_agora_still_respects_the_stop(db, monkeypatch):
+    cfg = {**db, "automation": {**db["automation"], "window": {"start_hour": 3, "end_hour": 3}}}
+    monkeypatch.setattr(automation_service, "config", lambda: cfg)
+    Auto.approve(comment()["id"], run_now=True)
+    Auto.halt("teste")
+    assert claim()["reason"] == "halted"
+
+
+def test_batch_approval_can_run_now(db, client):
+    from tests.conftest import APPROVER
+    a, b = comment("a"), comment("b")
+    r = client.post("/api/automation/approve-batch", json={"ids": [a["id"], b["id"]], "run_now": True}, headers=APPROVER)
+    assert r.json()["approved"] == [a["id"], b["id"]]
+    assert _one("SELECT COUNT(*) AS n FROM public.automation_actions WHERE run_now")["n"] == 2

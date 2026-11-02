@@ -95,12 +95,13 @@ async def inbox():
 
 class ApproveIn(BaseModel):
     text: Optional[str] = Field(None, max_length=3000)
+    run_now: bool = False   # True = does not wait for the time window
 
 
 @router.post("/actions/{action_id}/approve", dependencies=[Depends(require_decider)])
 async def approve(action_id: int, req: ApproveIn):
     try:
-        return _found(Auto.approve(action_id, req.text))
+        return _found(Auto.approve(action_id, req.text, req.run_now))
     except (ValueError, content_guard.BlockedContent) as e:
         raise HTTPException(status_code=422, detail=str(e))
 
@@ -121,6 +122,7 @@ async def revise(action_id: int, req: ReviseIn):
 
 class BatchIn(BaseModel):
     ids: List[int] = Field(..., min_length=1, max_length=100)
+    run_now: bool = False
 
 
 @router.post("/approve-batch", dependencies=[Depends(require_decider)])
@@ -128,7 +130,7 @@ async def approve_batch(req: BatchIn):
     approved, refused = [], []
     for action_id in req.ids:
         try:
-            (approved if Auto.approve(action_id) else refused).append(action_id)
+            (approved if Auto.approve(action_id, run_now=req.run_now) else refused).append(action_id)
         except (ValueError, content_guard.BlockedContent):
             refused.append(action_id)
     return {"approved": approved, "refused": refused}
