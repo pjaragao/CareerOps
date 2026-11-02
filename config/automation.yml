@@ -52,7 +52,7 @@ email:
   minute: 30
   first_run_days: 45
   rejection_confidence: 0.9
-  auto_status: false                         # true after you review the first read (phase FE)
+  auto_status: true                          # rejection (≥ rejection_confidence), interview and offer move the job; undone from the job itself
   # Lolo reads them in Gmail: what only confirms or closes an application is marked read and archived (you are told on
   # WhatsApp); a next step (interview, test, a recruiter's question, an offer) stays in the inbox, unread, for you
   archive_classes: [confirmation, viewed, rejection]
