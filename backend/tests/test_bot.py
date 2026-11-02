@@ -304,3 +304,36 @@ def test_the_imap_check_never_touches_the_mailbox(db, sql, add_job, monkeypatch)
     fake_reader(monkeypatch, {"classification": "confirmation", "confidence": 0.99, "summary": "Recebida"})
     assert Monitor.process([message()])["archive"] == []
     assert sql("SELECT mail_action FROM public.job_email_events")[0]["mail_action"] is None
+
+
+# ── The job status, told in the same message ─────────────────────────────
+@pytest.fixture
+def auto_status(db, monkeypatch):
+    cfg = {**db, "email": {**db["email"], "auto_status": True}}
+    monkeypatch.setattr(em, "config", lambda: cfg)
+    monkeypatch.setattr(bot_service, "config", lambda: cfg)
+
+
+def test_a_rejection_moves_the_job_and_says_so(db, sql, add_job, monkeypatch, awake, auto_status):
+    job = add_job(status="applied")
+    fake_reader(monkeypatch, {"classification": "rejection", "confidence": 0.95, "summary": "Seguiram com outros", "evidence": "x"})
+    Monitor.process([message()], source="lolo")
+    assert sql("SELECT status FROM public.job_listings WHERE id = %s", (job["id"],))[0]["status"] == "rejected"
+    assert "candidatura enviada → *recusada*" in notes(sql, "email_rejection")[0]["text"]
+
+
+def test_an_interview_moves_the_job_and_says_so(db, sql, add_job, monkeypatch, awake, auto_status):
+    add_job(status="applied")
+    fake_reader(monkeypatch, {"classification": "interview", "confidence": 0.9, "summary": "Convite", "evidence": "x"})
+    Monitor.process([message()], source="lolo")
+    assert "candidatura enviada → *em entrevista*" in notes(sql, "email_interview")[0]["text"]
+
+
+def test_when_nothing_moves_it_says_why(db, sql, add_job, monkeypatch, awake, auto_status):
+    add_job(status="applied")
+    fake_reader(monkeypatch, {"classification": "rejection", "confidence": 0.6, "summary": "Talvez", "evidence": "x"})
+    Monitor.process([message("<a>")], source="lolo")
+    fake_reader(monkeypatch, {"classification": "rejection", "confidence": 0.99, "summary": "Não", "evidence": "x"})
+    Monitor.process([message("<b>", sender="x@greenhouse.io", subject="Update")], source="lolo")
+    unsure, unknown = [n["text"] for n in notes(sql, "email_rejection")]
+    assert "Não tenho certeza" in unsure and "Não achei a vaga" in unknown

@@ -19,6 +19,8 @@ from app.services.automation_service import AutomationService, _local, _one, _ro
 log = logging.getLogger("bot")
 
 KIND_LABEL = {"apply": "Vagas", "comment": "Comentários", "connect": "Conexões", "follow": "Seguir"}
+STATUS_LABEL = {"applied": "candidatura enviada", "interviewing": "em entrevista", "offer": "proposta", "rejected": "recusada",
+                "done": "encerrada", "new": "nova", "discovered": "descoberta", "archived": "arquivada"}
 POST_PATH = re.compile(r"^/(posts/[^/]+|feed/update/urn:li:(activity|share|ugcPost):\d+)/?$")
 UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36"
 
@@ -270,7 +272,8 @@ class BotService:
     # ── Notices from the e-mail reading ──────────────────────────────────
     @staticmethod
     def email_notice(event_id: int, classification: str, alert: Optional[str], halted: bool, reading: dict, job: Optional[dict],
-                     m: dict, feedback: List[dict], archived: bool = False) -> None:
+                     m: dict, feedback: List[dict], archived: bool = False, status_change: Optional[tuple] = None,
+                     confidence: float = 1.0) -> None:
         where = f"{job.get('job_title') or ''} · {job.get('company') or ''}" if job else (m.get("sender") or "")[:80]
         summary = reading.get("summary") or m.get("subject") or ""
         icon = {"interview": "📅 *Entrevista*", "offer": "🎉 *Proposta*", "assessment": "📝 *Teste ou case*",
@@ -286,7 +289,7 @@ class BotService:
             return
         if not icon:
             return
-        lines = [f"{icon}: {where}", summary]
+        lines = [f"{icon}: {where}", summary, BotService._status_line(classification, job, status_change, confidence)]
         if classification == "recruiter_question":
             lines.append("Eu não respondo e-mails de recrutador por você: a resposta é sua.")
         if classification in ("interview", "offer", "assessment", "recruiter_question"):
@@ -299,6 +302,21 @@ class BotService:
             lines.append("Guardei em Sugestões, agrupado por tema, para avaliarmos juntos depois.")
         BotService.notify(f"email_{classification}", "\n".join(l for l in lines if l), {"event_id": event_id, "job_id": (job or {}).get("id")},
                           urgent=classification in ("interview", "offer"), key=f"email:{event_id}")
+
+    @staticmethod
+    def _status_line(classification: str, job: Optional[dict], change: Optional[tuple], confidence: float) -> str:
+        """What happened to the job in the system, or why nothing did."""
+        if classification not in ("rejection", "interview", "offer"):
+            return ""
+        if change:
+            return f"📌 Vaga atualizada: {STATUS_LABEL.get(change[0], change[0])} → *{STATUS_LABEL.get(change[1], change[1])}*."
+        if not job:
+            return "📌 Não achei a vaga no sistema: nenhum status mudou (está em Automação → Respostas para você associar)."
+        if not (config().get("email") or {}).get("auto_status"):
+            return f"📌 A vaga continua como {STATUS_LABEL.get(job.get('status'), job.get('status'))}: a atualização automática está desligada."
+        if classification == "rejection" and confidence < float((config().get("email") or {}).get("rejection_confidence", 0.9)):
+            return f"📌 Não tenho certeza de que é uma recusa: a vaga continua como {STATUS_LABEL.get(job.get('status'), job.get('status'))} (confira em Respostas)."
+        return f"📌 A vaga já estava como {STATUS_LABEL.get(job.get('status'), job.get('status'))}."
 
     # ── A post you sent to be commented ──────────────────────────────────
     @staticmethod

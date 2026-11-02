@@ -94,6 +94,8 @@ def test_interview_moves_the_job_and_stands_out(db, sql, add_job, monkeypatch, a
 
 
 def test_nothing_changes_until_you_switch_it_on(db, sql, add_job, monkeypatch):
+    cfg = {**db, "email": {**db["email"], "auto_status": False}}
+    monkeypatch.setattr(em, "config", lambda: cfg)
     job = add_job(status="applied")
     fake_reader(monkeypatch, {"classification": "rejection", "confidence": 0.99, "summary": "s", "evidence": "e"})
     Monitor.process([msg()])

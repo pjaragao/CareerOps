@@ -189,6 +189,7 @@ class EmailMonitorService:
             job_id = match_job(m["sender"], m["subject"], m["body"], jobs) if classification != "linkedin_alert" else None
             job = by_id.get(job_id)
             new_status = _status_change(classification, confidence, job, baseline)
+            old_status = (job or {}).get("status")
             # what you should look at: no job found, something that asks for you, or a job status that does not match
             review = (classification not in ("other", "linkedin_alert") and not job) or classification in ("assessment", "recruiter_question", "interview", "offer") \
                 or (classification in ("confirmation", "viewed") and bool(job) and job["status"] != "applied" and job["status"] != "interviewing")
@@ -220,7 +221,8 @@ class EmailMonitorService:
             if classification in ("confirmation", "viewed"):
                 closed.append(f"{_where(job, m)} — {'recebida' if classification == 'confirmation' else 'visualizada'}")
             elif not baseline:
-                BotService.email_notice(row["id"], classification, alert, halted, reading, job, m, feedback, archived=mail_action == "archive")
+                BotService.email_notice(row["id"], classification, alert, halted, reading, job, m, feedback, archived=mail_action == "archive",
+                                        status_change=(old_status, new_status) if new_status else None, confidence=confidence)
         archiving = source != "imap"
         if baseline and stats["recorded"]:
             BotService.notify("email_summary", (
