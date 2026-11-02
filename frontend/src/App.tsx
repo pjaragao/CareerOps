@@ -11,11 +11,12 @@ import JobBoard from './pages/JobBoard';
 import JobSearch from './pages/JobSearch';
 import Interview from './pages/Interview';
 import LinkedInCopilot from './pages/LinkedInCopilot';
+import Automation from './pages/Automation';
 import Settings from './pages/Settings';
 import InstallExtension from './pages/InstallExtension';
 import AISettings from './pages/AISettings';
 
-// Five screens: Início · Meu Perfil · Vagas · LinkedIn Copilot · Configurações
+// Six screens: Início · Meu Perfil · Vagas · LinkedIn Copilot · Automação · Configurações
 const MyProfile = () => (
   <TabbedPage tabs={[
     { id: 'cv', label: 'Dados e CVs', icon: <FileText size={16} />, render: () => <Profile /> },
@@ -50,6 +51,7 @@ function App() {
           <Route path="perfil" element={<MyProfile />} />
           <Route path="vagas" element={<Jobs />} />
           <Route path="linkedin-copilot" element={<LinkedInCopilot />} />
+          <Route path="automacao" element={<Automation />} />
           <Route path="configuracoes" element={<SettingsHub />} />
           {/* old addresses */}
           <Route path="profile" element={<Navigate to="/perfil" replace />} />

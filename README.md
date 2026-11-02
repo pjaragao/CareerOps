@@ -36,8 +36,9 @@
 - **Intelligent Consolidation**: Automatically merges and de-duplicates information from multiple sources into a single, persistent `user_data.md` "source of truth".
 - **Dynamic Context Injection**: Grounded AI responses via Jinja2 `{% include %}` — your validated history is automatically injected into interview prep, job matching, and LinkedIn optimization prompts.
 
-### 🧭 Five screens
-- **Início** — what to do today: drafts to review, comments and invites against targets, applications in progress
+### 🧭 Six screens
+- **Início** — what to do today: what to approve, drafts to review, comments and invites against targets, applications in progress
+- **Automação** — approve, what needs you, what is running, history, answers by email, searches and limits (below)
 - **Meu Perfil** — profile data and the two master CVs (Brazil PT / abroad EN), the knowledge base, and the LinkedIn texts in both languages
 - **Vagas** — job list and Kanban (Applied → Interview → Offer); per job: tailored CV, cover letter, DM, chat and PDF; interview prep (STAR stories)
 - **LinkedIn Copilot** — posts, engagement, prospecting and metrics (below)
@@ -58,7 +59,15 @@
 - **Saved topics** — `📌 Salvar tema` on any post stores it as a topic of interest; the Copilot's Posts tab turns it into a post of yours on the same theme (never copying it)
 - **AI writing style and models** — Configurações → Estilo e modelos: per kind of text (posts, comments, invites, Easy Apply, CV/cover letter, messages) a preset plus tone, formality, length, emojis, hashtags and extra instructions, or "Ajustar com IA" from a plain-language request; the language always follows the content; comments avoid repeating the post's other comments and your own recent ones. With AGY: posts on Argon High, style adjust on Argon Medium, writing on Flash Medium, routine tasks on Flash Low, with automatic fallback when a model's quota runs out
 - **Job pages** — `📥 CareerOps` next to LinkedIn's Save (and Save imports automatically); `📥 Importar vagas salvas` on the Job tracker
-- **No bots**: nothing likes, comments, follows or connects on your behalf — that violates LinkedIn's User Agreement and gets accounts restricted
+
+### 🤖 Autopilot: you approve, the system executes
+- **Automação** screen: jobs, comments, connections and follows wait for your approval, on the phone or the computer; the server browser does the rest. Switched off by default (`automation/README.md` has the go-live steps)
+- **Risk you accepted**: LinkedIn's rules forbid software that automates activity on the site, so this can get the account limited or restricted. The system keeps to low volumes, one write at a time with a gap between them, and stops everything at any warning. It does not hide what it is: no stealth plugins, fingerprint spoofing, proxies or captcha solving
+- **Search**: the groups and places of *Pesquisar vagas*, newest first, twice a day. Triage reads each ad (score ≥ 70, foreign employers only, eligibility); no CV or cover letter is generated before you approve
+- **Execution**: the extension first. What it can't finish goes to a Claude Code routine (Sonnet, effort low), and what that can't finish comes to you in *Precisa de você*, with the question or the screen. An answer you give is saved for the next form
+- **Never invented, never twice**: salary comes from your floors, an unknown question comes to you, a write is only done once the worker has seen it on the page, and after a crash it looks at the page before anything else
+- **Daily email monitor**: reads the mailbox at 07:30, read-only, and records confirmations, rejections and interview invitations per job; the funnel shows whether applying early really brings more interviews in your case
+- **NDA guard** (`config/automation.yml`): subjects that never appear in anything sent out, checked when text is written and again before it goes
 
 ---
 
@@ -70,6 +79,8 @@ Chrome Extension ──▶ FastAPI Backend (Skills + Jinja2) ──▶ PostgreSQ
                     React Dashboard ──────────┘
                           │
                     Gotenberg (PDF)
+
+Worker (Chromium + the extension) ◀──claims──▶ Backend ◀── Claude routine (host, cron)
 ```
 
 | Component | Tech | Port |

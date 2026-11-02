@@ -1,6 +1,7 @@
 import os
 import jinja2
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, Optional
+from app.services import content_guard
 from app.services.ai_service import AIService
 
 class SkillService:
@@ -41,11 +42,31 @@ class SkillService:
     # Skills that write text people will read use the "writing" model; the rest use the default one
     WRITING_SKILLS = {"jobs/resume.md", "resumes/improve.md", "jobs/cover_letter.md", "jobs/outreach.md", "interview/stories.md", "interview/simulate.md"}
 
+    # Skills whose text reaches other people: they go through the content guard (config/automation.yml)
+    OUTGOING_SKILLS = {
+        "jobs/resume.md", "jobs/cover_letter.md", "jobs/outreach.md", "resumes/improve.md", "resumes/form_suggestions.md",
+        "onboarding/update_resume.md", "linkedin/easy_apply.md", "linkedin/engagement_comment.md", "linkedin/engagement_reply.md",
+        "linkedin/post_drafts.md", "linkedin/prospect_note.md", "linkedin/prospect_message.md", "linkedin/networking_plan.md",
+    }
+
     @classmethod
     async def render_prompt(cls, skill_path: str, context: Dict[str, Any]) -> str:
         """Renders a Jinja2 template with the given context."""
         template = cls._env.get_template(skill_path)
-        return template.render(**context)
+        prompt = template.render(**context)
+        return prompt + content_guard.prompt_rule() if skill_path in cls.OUTGOING_SKILLS else prompt
+
+    @classmethod
+    def generate_checked(cls, skill_path: str, prompt: str, generate: Callable[[str], Any]) -> Any:
+        """Calls the AI. A text to be sent that cites a forbidden subject is written once more; if it still does, it is refused."""
+        result = generate(prompt)
+        if skill_path not in cls.OUTGOING_SKILLS:
+            return result
+        found = content_guard.forbidden_in(result)
+        if found:
+            result = generate(prompt + content_guard.retry_rule(found))
+            content_guard.ensure_clean(result, "O texto gerado")
+        return result
 
     @classmethod
     async def run_skill(cls, skill_path: str, context: Dict[str, Any], response_format: str = "json") -> Any:
@@ -74,7 +95,5 @@ class SkillService:
         provider = AIService.get_provider(model_key)
         prompt = await cls.render_prompt(skill_path, context)
         
-        if response_format == "json":
-            return provider.generate_json(prompt)
-        else:
-            return provider.generate_text(prompt)
+        generate = provider.generate_json if response_format == "json" else provider.generate_text
+        return cls.generate_checked(skill_path, prompt, generate)

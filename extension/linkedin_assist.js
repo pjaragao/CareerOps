@@ -1,7 +1,9 @@
 // CareerOps — LinkedIn assist: AI comment and reply drafts on posts, connect-without-note on profiles, and scoring of
-// the people listed on a page. Everything is drafted and filled in for you; the final click (Publicar / Responder /
-// Conectar) is always yours. The only things done for you follow from that click: liking the post or comment you just
-// answered (a pre-checked option you can turn off) and the invite you asked for with "Conectar".
+// the people listed on a page. In your own browser everything is drafted and filled in for you and the final click
+// (Publicar / Responder / Conectar) is yours; the only things done for you follow from that click: liking the post or
+// comment you just answered (a pre-checked option you can turn off) and the invite you asked for with "Conectar".
+// On the server (managed mode, section 8) it executes what you approved in the app, and only that: an action exists in
+// the backend, was handed to this tab with its nonce, and goes up to the final click unless the backend allows it.
 (() => {
     if (window.__careeropsAssist) return;
     window.__careeropsAssist = true;
@@ -225,6 +227,8 @@
             const kind = anchorKind(btn);
             let el = btn;
             while (el.parentElement && el.parentElement.tagName !== 'MAIN' && el.parentElement !== document.body) {
+                // the list item is the whole card; above it, a post alone on the page takes in the page's footer
+                if (el.getAttribute('role') === 'listitem' && (el.innerText || '').length > 40) break;
                 const parent = el.parentElement;
                 const count = [...parent.querySelectorAll('button, [role="button"]')].filter((b) => isRepostButton(b) && anchorKind(b) === kind).length;
                 if (count > 1) break;
@@ -235,11 +239,9 @@
         return [...posts].filter((p) => ![...posts].some((o) => o !== p && o.contains(p)));
     }
 
-    const CUT = /\n(add a comment|adicionar um coment[aá]rio|most relevant|mais relevantes|\d[\d.,]*\s*(reactions?|rea[cç][oõ]es|comments?|coment[aá]rios)\b|like\ncomment|gostei\ncomentar)/i;
-
     // Post author in the new feed: the first named /in/ or /company/ link that isn't social context ("X likes this")
-    const SOCIAL = /\b(likes?|loves?|celebrates?|supports?|finds?|commented|reposted|follows?|curtiu|gostou|comentou|republicou|celebrou|apoiou|amou|achou)\b/i;
-    const META = /^(•.*|\d+\s*(s|m|min|h|d|w|sem|mo|y|a)\b.*|\+?\s*follow|following|seguir|seguindo|promoted|promovido|verified|premium|feed post|publicação no feed|.*•\s*(1st|2nd|3rd\+?|1º|2º|3º\+?))$/i;
+    const { SOCIAL, cardText } = globalThis.careeropsPostText;
+    const META = /^(•.*|\d+\s*(s|m|min|h|d|w|sem|mo|yrs?|y|a)\b.*|\+?\s*follow|following|seguir|seguindo|promoted|promovido|verified|premium|feed post|publicação no feed|.*•\s*(1st|2nd|3rd\+?|1º|2º|3º\+?))$/i;
     function actorOf(post) {
         for (const a of post.querySelectorAll('a[href*="/in/"], a[href*="/company/"]')) {
             if (a.closest('.careerops-card, .careerops-bar, .careerops-actions, .comments-comments-list, [class*="comments-list"]')) continue;
@@ -331,26 +333,10 @@
             copy.querySelectorAll(`.careerops-bar, .careerops-actions, .careerops-card, .careerops-badge, ${EDITOR}`).forEach((el) => el.remove());
             document.body.appendChild(copy);
             copy.style.cssText = 'position:absolute;left:-99999px;top:0;width:600px';
-            text = copy.innerText || '';
+            const card = cardText(copy.innerText || '', actorOf(post));
             copy.remove();
-            const m = text.match(CUT);
-            if (m) { if (!comments) comments = text.slice(m.index); text = text.slice(0, m.index); }
-            const HEADER = /^(\d+\s*(s|m|min|h|d|w|sem|mo|y|a)\b.*|(following|seguindo|follow|seguir)\b.*|…|\.\.\.|•.*|.*•\s*(1st|2nd|3rd\+?|1º|2º|3º\+?)|promoted|promovido|edited|editado|feed post|publicação no feed)$/i;
-            let lines = text.split('\n').map((l) => l.replace(/[\u200b-\u200d\ufeff]/g, '').trim()).filter((l) => l && !/^(show translation|ver tradução|traduzir|see translation)$/i.test(l));
-            let last = -1;
-            lines.slice(0, 8).forEach((l, k) => { if (HEADER.test(l)) last = k; });
-            if (last >= 0) lines = lines.slice(last + 1);
-            lines = lines.map((l) => l.replace(/\s*…\s*(see more|ver mais|more|mais)$/i, '')).filter((l) => l && !HEADER.test(l));
-            // the actor block (name, headline, followers) goes before the text; carousel/counter leftovers at the end
-            const who = actorOf(post);
-            if (who) {
-                const i = lines.slice(0, 8).indexOf(who.name);
-                if (i >= 0) lines = lines.slice(i + 1).filter((l, k) => !(k < 3 && (l === who.headline || /^[\d.,]+\s*(followers|seguidores)$/i.test(l))));
-            }
-            while (lines.length && /^([\d\s/.,]+|\d+\s*(pages?|páginas?))$/i.test(lines[lines.length - 1])) {
-                if (/pages?|páginas?/i.test(lines.pop()) && lines.length) lines.pop();   // "Title / 8 pages": drop the title too
-            }
-            text = lines.join('\n');
+            if (!comments) comments = card.tail;
+            text = card.body;
         }
         const who = authorEl ? { name: clean(authorEl.innerText).split('\n')[0], headline: headlineEl ? clean(headlineEl.innerText) : null } : actorOf(post);
         return {
@@ -977,7 +963,8 @@
     }
 
     // Returns 'sent' | 'pending' | 'connected' | 'unavailable' | 'needs_user'
-    async function connectNoNote() {
+    // beforeSend (managed mode) runs right before the click that sends; false stops it there
+    async function connectNoNote(beforeSend) {
         const card = profileTopCard();
         if (!card) return 'unavailable';
         const actions = () => [...card.querySelectorAll('button, a')].filter((b) => b.offsetParent !== null).map(btnLabel);
@@ -994,6 +981,7 @@
             if (await waitFor(() => actions().some((l) => PENDING.test(l)), 1500)) return 'sent';
             return 'needs_user';   // e.g. LinkedIn asks for the person's email: that one is yours
         }
+        if (beforeSend && !(await beforeSend())) return 'needs_user';
         btn.click();
         await wait(800);
         return 'sent';
@@ -1259,6 +1247,10 @@
         return true;
     }
 
+    // LinkedIn marks required questions on the input or with a "*" / "required" / "obrigatório" in the label
+    const isRequired = (f) => f.els.some((el) => el.required || el.getAttribute('aria-required') === 'true')
+        || /\*\s*$|\b(required|obrigat[oó]rio)\b/i.test(f.label || '');
+
     const mark = (f, color) => f.els.forEach((el) => { (el.type === 'radio' || el.type === 'checkbox' ? el.parentElement : el).style.outline = `2px solid ${color}`; });
 
     function jobContext() {
@@ -1295,7 +1287,13 @@
         const demographic = fields.filter((f) => DEMOGRAPHIC.test(f.label));
         const send = fields.filter((f) => !DEMOGRAPHIC.test(f.label));
         demographic.forEach((f) => mark(f, '#e17055'));
-        if (!send.length) { status.textContent = 'Só há perguntas pessoais/demográficas nesta etapa — responda você.'; return { filled: 0, pending: demographic.length }; }
+        // In managed mode a voluntary demographic question stays blank (only the required ones stop the application)
+        const requiredDemographic = managedRun ? demographic.filter(isRequired) : demographic;
+        const blocking = (list) => list.map((f) => ({ key: f.key, label: f.label, type: f.type, options: f.options }));
+        if (!send.length) {
+            status.textContent = 'Só há perguntas pessoais/demográficas nesta etapa — responda você.';
+            return { filled: 0, pending: requiredDemographic.length, questions: blocking(requiredDemographic) };
+        }
         applyBusy = true;
         status.textContent = `Preenchendo ${send.length} campo(s)…`;
         const res = await api('POST', '/easy-apply/answers', {
@@ -1307,21 +1305,28 @@
         let filled = 0;
         const pending = [];
         const toConfirm = [];
+        const unanswered = [...requiredDemographic];
         const sugg = res.data.suggestions || {};
         for (const f of send) {
             if (typedByYou(f)) continue;   // you answered it meanwhile
             const v = res.data.answers[f.key];
-            if (v !== undefined && applyAnswer(f, v)) { mark(f, '#00b894'); filled++; continue; }
+            if (v !== undefined && applyAnswer(f, v)) {
+                mark(f, '#00b894'); filled++;
+                if (managedRun) managedRun.fields.push({ label: f.label || f.key, value: String(v).slice(0, 500) });
+                continue;
+            }
             const sg = sugg[f.key];
-            if (sg && applyAnswer(f, sg.value)) { mark(f, '#fdcb6e'); toConfirm.push(`${f.label || f.key}: ${sg.value}${sg.basis ? ` (${sg.basis})` : ''}`); continue; }
-            mark(f, '#e17055'); pending.push(f.label || f.key);
+            if (sg && applyAnswer(f, sg.value)) { mark(f, '#fdcb6e'); toConfirm.push(`${f.label || f.key}: ${sg.value}${sg.basis ? ` (${sg.basis})` : ''}`); unanswered.push(f); continue; }
+            mark(f, '#e17055');
+            if (managedRun && !isRequired(f)) continue;   // optional and unknown: stays blank, which is an answer too
+            pending.push(f.label || f.key); unanswered.push(f);
         }
-        demographic.forEach((f) => pending.push(f.label));
+        requiredDemographic.forEach((f) => pending.push(f.label));
         status.style.color = '#555';
         status.textContent = `${filled} preenchido(s) em verde. ` + (pending.length ? `Para você (laranja): ${pending.slice(0, 6).join(' · ')}` : 'Revise e clique em Avançar.');
         if (toConfirm.length) note(panel, `Confirme ou altere (amarelo) — sugestão de mercado estimada pela IA: ${toConfirm.join(' · ')}`, '#b7791f');
         if (res.data.notes) note(panel, res.data.notes, '#777');
-        return { filled, pending: pending.length };
+        return { filled, pending: pending.length, toConfirm: toConfirm.length, questions: blocking(unanswered) };
     }
 
     let applyPanel = null;
@@ -1596,14 +1601,26 @@
         const ap = autopilot = { jobId: pending.jobId, linkedinJobId: jobOnPage, box, status, autoSubmit, prep: {}, uploaded: false, lastSig: '', running: false, done: false, steps: 0 };
         const res = await backend('POST', `/jobs/${pending.jobId}/auto-apply/prepare`, {});
         if (ap.done) return;   // closed meanwhile (Parar, or you left the job)
-        if (!res.ok) { apStatus(errText(res), '#d63031'); return; }
+        if (!res.ok) { apStatus(errText(res), '#d63031'); managedStuck(res.status === 422 ? 'content_blocked' : 'documents_failed', errText(res)); return; }
         ap.prep = res.data;
         const btn = await waitFor(() => [...document.querySelectorAll('main button, main a')].find((b) => !own(b) && b.offsetParent !== null
             && (EASY.test(label(b)) || APPLY_EXT.test(label(b)))), 12000);
         if (ap.done) return;
-        if (!btn) { apStatus('Não achei o botão de candidatura nesta página (vaga encerrada ou já candidatado?).', '#d63031'); return; }
+        if (!btn) {
+            apStatus('Não achei o botão de candidatura nesta página (vaga encerrada ou já candidatado?).', '#d63031');
+            const page = ((document.querySelector('main') || {}).innerText || '');
+            if (ALREADY_APPLIED.test(page)) managedStuck('already_applied', 'A página mostra candidatura já enviada');
+            else if (JOB_CLOSED.test(page)) managedStuck('job_closed', 'Vaga encerrada');
+            else managedStuck('selector_not_found', 'Botão de candidatura não encontrado');
+            return;
+        }
         if (EASY.test(label(btn))) {
             apStatus('Abrindo o Easy Apply…');
+            btn.click();
+        } else if (managedRun) {
+            // The worker catches the tab this click opens and passes its address to the backend
+            apStatus('Candidatura no site da empresa: passando o endereço ao sistema…');
+            await managedApi('POST', `/automation/actions/${managedRun.id}/events`, { source: 'extension', event: 'external_apply_click', data: {} });
             btn.click();
         } else {
             apStatus('Esta vaga é no site da empresa: abrindo… o painel CareerOps continua lá (anexa o CV e preenche).');
@@ -1622,6 +1639,11 @@
 
     async function finishApplied() {
         autopilot.done = true;
+        if (managedRun) {   // the backend marks the job once the worker has seen it on the page
+            await message({ action: 'applyStop' });
+            apStatus('Candidatura enviada: conferindo…', '#00b894');
+            return;
+        }
         const r = await backend('PATCH', `/jobs/${autopilot.jobId}/status`, { status: 'applied' });
         await message({ action: 'applyStop' });
         apStatus(r.ok ? '✓ Candidatura enviada — vaga marcada como "Candidatado" no CareerOps.' : `Enviada. ${errText(r)}`, '#00b894');
@@ -1634,6 +1656,8 @@
         if ([...document.querySelectorAll('div[role="dialog"], .artdeco-modal, dialog[open]')].some((d) => shown(d) && SENT.test(d.innerText))) { finishApplied(); return; }
         const modal = easyApplyModal();
         if (!modal) return;
+        const panel = modal.querySelector('.careerops-apply');
+        if (!panel) return;   // nothing was filled or checked on this step yet: looked at again once the panel is there
         const footer = [...modal.querySelectorAll('button')].filter((b) => !own(b) && b.offsetParent !== null && !b.disabled);
         const sig = collectFields(modal).map((f) => f.key).join('|') + '#' + footer.map(label).join('|') + '#' + (modal.querySelector('h3, h2') || {}).innerText;
         if (sig === ap.lastSig) return;   // same step: waiting for you or for LinkedIn
@@ -1641,12 +1665,13 @@
         ap.running = true;
         try {
             await wait(800);
-            const panel = modal.querySelector('.careerops-apply');
-            const result = panel ? await fillStep(modal, panel) : { pending: 0 };
+            const result = await fillStep(modal, panel);
+            const clear = globalThis.careeropsApplyRules.stepClear(result);
             const buttons = [...modal.querySelectorAll('button')].filter((b) => !own(b) && b.offsetParent !== null && !b.disabled);
             const submit = buttons.find((b) => SUBMIT_APP.test(label(b)));
             if (submit) {
-                if (ap.autoSubmit.checked && result && !result.pending) {
+                if (managedRun) { await managedFinalStep(ap, submit, result, clear); return; }
+                if (ap.autoSubmit.checked && clear) {
                     apStatus('Enviando a candidatura…');
                     await wait(800);
                     if (!ap.done && submit.isConnected) submit.click();
@@ -1656,12 +1681,17 @@
                 apStatus('✓ Tudo preenchido. Revise e clique em "Enviar candidatura" — eu marco a vaga como candidatada.', '#00b894');
                 return;
             }
-            if (!result || result.pending) {
+            if (!clear) {
                 apStatus('Complete os campos em laranja/amarelo e clique em Avançar — continuo na próxima etapa.', '#b7791f');
+                managedQuestions(result);
                 return;
             }
             const next = buttons.find((b) => NEXT.test(label(b)));
-            if (!next) { apStatus('Não achei o botão Avançar — siga você; continuo quando a etapa mudar.', '#b7791f'); return; }
+            if (!next) {
+                apStatus('Não achei o botão Avançar — siga você; continuo quando a etapa mudar.', '#b7791f');
+                managedStuck('step_stuck', 'Botão Avançar não encontrado nesta etapa');
+                return;
+            }
             ap.steps++;
             apStatus(`Etapa ${ap.steps} preenchida — avançando…`);
             await wait(700 + Math.random() * 600);   // a pause here holds the click until you continue
@@ -1671,10 +1701,277 @@
             if (modal.querySelector('.artdeco-inline-feedback--error, [data-test-form-element-error-messages]')) {
                 // same step stays marked: wait for you (no retry loop); the next step changes the signature
                 apStatus('O LinkedIn marcou campos nesta etapa: corrija e clique em Avançar — continuo depois.', '#b7791f');
+                managedQuestions({ questions: collectFields(modal).filter((f) => !f.current).map((f) => ({ key: f.key, label: f.label, type: f.type, options: f.options })) }, 'O LinkedIn recusou uma resposta nesta etapa');
             }
         } finally {
             ap.running = false;
         }
+    }
+
+    // ── 8. Managed execution (browser on the server): what you approved in the app, opened by the worker at
+    // <url>#careerops-run=<action>.<nonce>. The backend says what may be done; without its answer nothing happens. Every
+    // outcome is reported: the worker looks at the page before a write counts as done.
+    const ALREADY_APPLIED = /\b(applied \d|application submitted|you applied|candidatou-se|candidatura enviada|voc[eê] se candidatou)\b/i;
+    const JOB_CLOSED = /no longer accepting applications|n[aã]o (est[aá] mais )?aceita(ndo)? candidaturas|vaga (foi )?encerrada/i;
+    const FOLLOW = /^(\+\s*)?(follow|seguir)\b/i;
+    const FOLLOWING = /^(following|seguindo)\b/i;
+    const INVITE_LIMIT = /weekly invitation limit|limite semanal de convites/i;
+    let managedRun = null;
+    let managedStarted = false;
+
+    const managedApi = (method, path, body) => backend(method, path, body);
+    const managedReady = async () => !!(await chrome.storage.local.get('careeropsManaged')).careeropsManaged;
+
+    function managedStuck(code, text, questions) {
+        if (!managedRun || managedRun.closed) return;
+        managedRun.closed = true;
+        managedApi('POST', `/automation/actions/${managedRun.id}/escalate`, { code, text: String(text || '').slice(0, 1900), questions: questions || [] });
+        activity(`Automação: ${code}`);
+    }
+
+    function managedQuestions(result, text) {
+        if (!managedRun) return;
+        const questions = (result && result.questions) || [];
+        managedStuck(questions.length ? 'unknown_required_question' : 'step_stuck', text || 'Perguntas sem resposta nesta etapa', questions);
+    }
+
+    // Said BEFORE the final click, never after: the page may reload right away and this script with it. From here on the
+    // action is never clicked again; the worker looks at the page to tell whether it went out. No answer, no click.
+    async function managedExecuted(data) {
+        if (!managedRun || managedRun.closed) return false;
+        managedRun.closed = true;
+        const res = await managedApi('POST', `/automation/actions/${managedRun.id}/complete`, { outcome: 'executed', data: data || {} });
+        if (!res.ok) activity('Automação: o sistema não confirmou: nada foi clicado');
+        return res.ok;
+    }
+    function managedDry(data) {
+        if (!managedRun || managedRun.closed) return Promise.resolve();
+        managedRun.closed = true;
+        return managedApi('POST', `/automation/actions/${managedRun.id}/complete`, { outcome: 'dry_run', data: data || {} });
+    }
+    function managedRead(data) {
+        if (!managedRun || managedRun.closed) return Promise.resolve();
+        managedRun.closed = true;
+        return managedApi('POST', `/automation/actions/${managedRun.id}/complete`, { outcome: 'read', data: data || {} });
+    }
+
+    // Last screen of the form. Nothing unanswered, permission from the backend, and your click on the first ones.
+    async function managedFinalStep(ap, submit, result, clear) {
+        if (!clear) { managedQuestions(result); return; }
+        if (!managedRun.info.allow_final) {
+            apStatus('Modo de teste: tudo preenchido, sem enviar.', '#00b894');
+            await managedDry({ fields: managedRun.fields, reached_final_step: true });
+            return;
+        }
+        if (managedRun.info.confirm_required) {
+            apStatus('Aguardando sua confirmação no app…', '#b7791f');
+            await managedApi('POST', `/automation/actions/${managedRun.id}/ready`, { fields: managedRun.fields });
+            for (;;) {
+                await sleep(4000);
+                const r = await managedApi('GET', `/automation/actions/${managedRun.id}/run?nonce=${encodeURIComponent(managedRun.nonce)}`);
+                if (r.ok && r.data.confirmed) break;
+                if (!r.ok || r.data.status !== 'awaiting_confirm' || r.data.halted) { apStatus('Envio não confirmado: parado.', '#d63031'); return; }
+            }
+        }
+        await gate();
+        if (ap.done || !submit.isConnected) { managedStuck('step_stuck', 'O botão de envio saiu da tela'); return; }
+        apStatus('Enviando a candidatura…');
+        if (await managedExecuted({ fields: managedRun.fields })) submit.click();
+    }
+
+    async function managedConnect() {
+        const card = await waitFor(profileTopCard, 15000);
+        if (!card) { managedStuck('selector_not_found', 'Perfil não carregou'); return; }
+        await wait(1200);   // let the action row finish rendering
+        const actions = () => [...card.querySelectorAll('button, a')].filter((b) => b.offsetParent !== null).map(btnLabel);
+        if (actions().some((l) => PENDING.test(l))) { managedStuck('already_pending', 'Convite já pendente'); return; }
+        if (!managedRun.info.allow_final) {
+            const target = await findConnect(card);
+            if (!target) { managedStuck(actions().some((l) => /^(mensagem|message)$/.test(l)) ? 'already_connected' : 'selector_not_found', 'Sem botão Conectar'); return; }
+            await managedDry({ found: 'connect' });
+            return;
+        }
+        const result = await connectNoNote(() => managedExecuted({ connect: 'sent' }));
+        if (document.body && INVITE_LIMIT.test(document.body.innerText)) { managedRun.closed = false; managedStuck('weekly_invite_limit', 'O LinkedIn avisou do limite semanal de convites'); return; }
+        const route = {
+            sent: () => managedExecuted({ connect: 'sent' }),   // no dialog on this profile: it went out with the first click
+            pending: () => managedStuck('already_pending', 'Convite já pendente'),
+            connected: () => managedStuck('already_connected', 'Já conectados'),
+            unavailable: () => managedStuck('selector_not_found', 'Botão Conectar não encontrado'),
+            needs_user: () => managedStuck('invite_needs_email', 'O LinkedIn pediu algo a mais (ex.: e-mail)'),
+        }[result];
+        await route();
+    }
+
+    async function managedFollow() {
+        const root = /\/in\//.test(location.pathname) ? await waitFor(profileTopCard, 15000) : await waitFor(() => document.querySelector('main'), 15000);
+        if (!root) { managedStuck('selector_not_found', 'Página não carregou'); return; }
+        await wait(1200);
+        const visible = (selector) => [...root.querySelectorAll(selector)].filter((b) => b.offsetParent !== null && !own(b));
+        const top = /\/company\//.test(location.pathname) ? (root.querySelector('section') || root) : root;
+        const buttonsIn = (box) => [...box.querySelectorAll('button, [role="button"]')].filter((b) => b.offsetParent !== null && !own(b));
+        if (buttonsIn(top).some((b) => FOLLOWING.test(btnLabel(b)))) { managedStuck('already_following', 'Já segue'); return; }
+        let btn = buttonsIn(top).find((b) => FOLLOW.test(btnLabel(b)));
+        if (!btn) {   // on many profiles it sits in the "More" menu
+            const more = visible('button, [role="button"]').find(isMoreButton);
+            if (more) {
+                more.click();
+                btn = await waitFor(() => [...document.querySelectorAll('[role="menuitem"], [role="button"], button, div[aria-label]')]
+                    .find((e) => e.offsetParent !== null && FOLLOW.test(btnLabel(e))), 2500);
+                if (!btn) { const again = buttonsIn(document).find((b) => FOLLOWING.test(btnLabel(b))); if (again) { managedStuck('already_following', 'Já segue'); return; } more.click(); }
+            }
+        }
+        if (!btn) { managedStuck('selector_not_found', 'Botão Seguir não encontrado'); return; }
+        if (!managedRun.info.allow_final) { await managedDry({ found: 'follow' }); return; }
+        await gate();
+        if (await managedExecuted({ follow: true })) btn.click();
+    }
+
+    // The comment goes on the post that was approved and with the approved text, or not at all
+    async function managedComment() {
+        const { text, post_head: head } = managedRun.info.payload;
+        const post = await waitFor(() => findPosts()[0], 15000);
+        if (!post) {
+            const page = ((document.querySelector('main') || document.body).innerText || '');
+            managedStuck(/this (post|page) (cannot|can't|doesn't)|n[aã]o (est[aá] dispon[ií]vel|existe)|content isn.t available/i.test(page) ? 'post_deleted' : 'selector_not_found', 'Post não encontrado na página');
+            return;
+        }
+        await wait(800);
+        const key = (t) => (t || '').normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '').slice(0, 60);
+        if (head && key(postInfo(post).post_text).slice(0, 40) !== key(head).slice(0, 40)) {
+            managedStuck('unexpected_layout', 'O post desta página não é o que foi aprovado');
+            return;
+        }
+        const ed = await openCommentBox(post);
+        if (!ed) { managedStuck('selector_not_found', 'Caixa de comentário não encontrada'); return; }
+        await gate();
+        fill(ed, text);
+        await wait(700);
+        const words = (t) => (t || '').replace(/\s+/g, ' ').trim();   // the box may break lines its own way
+        if (words(ed.innerText) !== words(text)) { managedStuck('step_stuck', 'O texto digitado saiu diferente do aprovado: não publiquei'); return; }
+        if (!managedRun.info.allow_final) { await managedDry({ typed: true }); return; }
+        // the nearest button up from the box: the post's own "Comentar" (which only opens the box) is further away
+        const nearestSubmit = () => {
+            for (let box = ed.parentElement, k = 0; box && k < 8; box = box.parentElement, k++) {
+                const b = [...box.querySelectorAll('button')].find((x) => !own(x) && x.offsetParent !== null && !x.disabled
+                    && (x.className.includes('comments-comment-box__submit-button') || SUBMIT.test(label(x))));
+                if (b) return b;
+            }
+            return null;
+        };
+        const submit = await waitFor(nearestSubmit, 4000);
+        if (!submit) { managedStuck('selector_not_found', 'Botão Publicar não encontrado'); return; }
+        await gate();
+        if (await managedExecuted({ commented: true })) submit.click();
+    }
+
+    const searchCards = () => {
+        const cards = new Map();
+        document.querySelectorAll('[data-job-id], a[href*="/jobs/view/"], a[href*="currentJobId="]').forEach((el) => {
+            const id = el.getAttribute('data-job-id') || ((el.href || '').match(/\/jobs\/view\/(\d+)/) || [])[1] || ((el.href || '').match(/currentJobId=(\d+)/) || [])[1];
+            if (!id || !/^\d+$/.test(id) || cards.has(id)) return;
+            const box = el.closest('li, [data-occludable-job-id], .job-card-container, .jobs-search-results__list-item') || el;
+            const text = box.innerText || '';
+            const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
+            cards.set(id, {
+                id, title: lines[0] || '', company: lines[1] || '', location: lines[2] || '',
+                easy_apply: /easy apply|candidatura simplificada/i.test(text),
+                posted: (box.querySelector('time') || {}).innerText || (text.match(/(\d+\s*(minutes?|hours?|days?|weeks?|months?)\s*ago|h[aá]\s*\d+\s*(minutos?|horas?|dias?|semanas?|m[eê]s(es)?)|just now|agora mesmo)/i) || [])[0] || '',
+            });
+        });
+        return [...cards.values()].slice(0, 25);
+    };
+
+    async function managedSearch() {
+        await waitFor(() => searchCards().length, 20000);
+        await wait(1500);
+        const cards = searchCards();
+        if (!cards.length) {
+            const page = (document.querySelector('main') || document.body).innerText || '';
+            if (/no matching jobs|nenhuma vaga|no results|sem resultados/i.test(page)) { await managedRead({ cards: 0, added: 0 }); return; }
+            managedStuck('unexpected_layout', 'Lista de vagas não reconhecida');
+            return;
+        }
+        const seen = await managedApi('POST', '/automation/discovered/unseen', { ids: cards.map((c) => c.id) });
+        if (!seen.ok) { managedStuck('unexpected_layout', errText(seen)); return; }
+        const fresh = cards.filter((c) => seen.data.unseen.includes(c.id)).slice(0, Math.max(seen.data.budget, 0));
+        const jobs = [];
+        for (const c of fresh) {
+            await gate();
+            const extra = await jobPosting(c.id);
+            if (extra.description) jobs.push({ linkedin_job_id: c.id, title: extra.title || c.title, company: extra.company || c.company, location: extra.location || c.location, description: extra.description, posted: c.posted, easy_apply: c.easy_apply });
+            await wait(1500 + Math.random() * 1000);
+        }
+        const added = jobs.length ? await managedApi('POST', '/automation/discovered', { jobs, search: managedRun.info.payload.search || null }) : { ok: true, data: { added: 0 } };
+        await managedRead({ cards: cards.length, unseen: fresh.length, added: added.ok ? added.data.added : 0 });
+    }
+
+    async function managedFeedScan() {
+        await waitFor(() => findPosts().length, 20000);
+        for (let k = 0; k < 4; k++) { window.scrollBy(0, window.innerHeight); await wait(1500 + Math.random() * 800); }
+        const limit = managedRun.info.payload.limit || 8;
+        let added = 0;
+        for (const post of findPosts().slice(0, limit)) {
+            await gate();
+            const info = postInfo(post);
+            if (info.post_text.length < 40 || !info.post_url) continue;
+            const res = await api('POST', '/engagement', info);
+            if (res.ok && res.data.status !== 'skipped') added++;
+            await wait(1000);
+        }
+        await managedRead({ added });
+    }
+
+    async function managedFollowScan() {
+        const { mode, why, market } = managedRun.info.payload;
+        const pattern = mode === 'company' ? /\/company\/[^/?#]+/ : /\/in\/[^/?#]+/;
+        await waitFor(() => document.querySelector(`main a[href*="/${mode === 'company' ? 'company' : 'in'}/"]`), 20000);
+        await wait(1500);
+        const targets = new Map();
+        document.querySelectorAll('main a[href]').forEach((a) => {
+            const m = (a.href || '').match(pattern);
+            const name = clean(a.innerText).split('\n')[0];
+            if (!m || !name || targets.has(m[0])) return;
+            targets.set(m[0], { url: `https://www.linkedin.com${m[0]}`, name: name.slice(0, 200), why: why || '', market: market || null });
+        });
+        const list = [...targets.values()].slice(0, mode === 'company' ? 1 : 3);
+        const res = list.length ? await managedApi('POST', '/automation/follow-targets', { targets: list }) : { ok: true, data: { proposed: 0 } };
+        await managedRead({ proposed: res.ok ? res.data.proposed : 0 });
+    }
+
+    async function managedStart() {
+        const m = location.hash.match(/careerops-run=(\d+)\.([\w-]+)/);
+        if (!m || managedStarted || !(await managedReady())) return;
+        managedStarted = true;
+        const nonce = m[2];
+        const res = await managedApi('GET', `/automation/actions/${m[1]}/run?nonce=${encodeURIComponent(nonce)}`);
+        if (!res.ok) { activity('Automação: ação não reconhecida pelo sistema'); return; }   // nothing happens without the backend's word
+        const info = res.data;
+        if (info.status !== 'running_ext' || info.halted) return;
+        managedRun = { id: info.id, nonce, info, fields: [], closed: false };
+        history.replaceState(null, '', location.pathname + location.search);
+        activity(`Automação: ${info.kind}`);
+        const run = { apply: managedApply, connect: managedConnect, follow: managedFollow, comment: managedComment, search: managedSearch, check: managedCheck, feed_scan: managedFeedScan, follow_scan: managedFollowScan }[info.kind];
+        try {
+            await run();
+        } catch (e) {
+            managedStuck('unexpected_layout', e && e.message);
+        }
+    }
+
+    async function managedApply() {
+        const job = currentJobId();
+        await message({ action: 'applyStart', jobId: managedRun.info.target_id, linkedinJobId: job });
+        applyCheckedFor = null;
+        await startAutopilot();
+        if (autopilot) autopilot.autoSubmit.checked = false;   // the final click is decided in managedFinalStep, never by the checkbox
+    }
+
+    // Reads the three lists like the 12-hourly check does, and tells the queue when it ends
+    async function managedCheck() {
+        setCheckState({ step: 'connections', background: true, managedRun: managedRun.id });
+        if (!/^\/mynetwork\/invite-connect\/connections/.test(location.pathname)) { location.href = CONNECTIONS_URL; return; }
+        runProspectCheck();
     }
 
     chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
@@ -1837,7 +2134,7 @@
             line(checkPanel, `Lidos: ${d.read.connections} conexões, ${d.read.sent}${state.sentTotal ? ` de ${state.sentTotal}` : ''} convites enviados, ${d.read.conversations} conversas.`, '#999');
             if (state.sentTotal && d.read.sent < state.sentTotal) line(checkPanel, `Faltaram ${state.sentTotal - d.read.sent} convites enviados (a lista não carregou toda)${state.hidden ? ': a aba ficou oculta — o Chrome não carrega listas em abas de fundo; deixe-a visível durante a verificação' : ''}.`, '#b7791f');
         }
-        try { chrome.runtime.sendMessage({ action: 'prospectCheckDone', ok: res.ok, result: res.data, summary, background: !!state.background }, () => { void chrome.runtime.lastError; }); } catch (e) { /* extension reloaded */ }
+        try { chrome.runtime.sendMessage({ action: 'prospectCheckDone', ok: res.ok, result: res.data, summary, background: !!state.background, managedRun: state.managedRun || null }, () => { void chrome.runtime.lastError; }); } catch (e) { /* extension reloaded */ }
     }
 
     function startProspectCheck() {
@@ -1912,6 +2209,10 @@
     new MutationObserver(() => { clearTimeout(refresh.t); refresh.t = setTimeout(refresh, 400); })
         .observe(document.documentElement, { childList: true, subtree: true });
     refresh();
-    autoConnectFromApp();
-    if (/careerops-check/.test(location.hash)) startProspectCheck(); else runProspectCheck();
+    if (/careerops-run=/.test(location.hash)) {
+        managedStart();
+    } else {
+        autoConnectFromApp();
+        if (/careerops-check/.test(location.hash)) startProspectCheck(); else runProspectCheck();
+    }
 })();

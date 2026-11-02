@@ -4,12 +4,13 @@ import zipfile
 from datetime import date, datetime
 from typing import List, Literal, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from urllib.parse import quote
 
 from fastapi.responses import RedirectResponse, Response
 from pydantic import BaseModel, Field
 
+from app.core.auth import require_approver
 from app.core.config import settings
 from app.services.linkedin_api_service import LinkedInApiError, LinkedInApiService
 from app.services.linkedin_copilot_service import LinkedInCopilotService as Copilot
@@ -68,7 +69,7 @@ async def profile_copy():
 
 
 # ── Browser extension download (zip built from the extension folder baked into the image) ──
-EXTENSION_FILES = ["manifest.json", "background.js", "content.js", "content.css", "profile_filler.js", "linkedin_assist.js", "urn_bridge.js", "apply_copilot.js", "popup.html", "popup.js"]
+EXTENSION_FILES = ["manifest.json", "background.js", "content.js", "content.css", "profile_filler.js", "apply_rules.js", "post_text.js", "linkedin_assist.js", "urn_bridge.js", "apply_copilot.js", "popup.html", "popup.js"]
 
 
 def _extension_dir():
@@ -134,7 +135,7 @@ async def update_post(post_id: int, req: PostUpdate):
     return _found(Copilot.update_post(post_id, req.body, req.scheduled_for))
 
 
-@router.post("/posts/{post_id}/approve")
+@router.post("/posts/{post_id}/approve", dependencies=[Depends(require_approver)])
 async def approve_post(post_id: int, req: ApproveRequest):
     return _found(Copilot.approve_post(post_id, req.scheduled_for))
 
@@ -144,7 +145,7 @@ async def unapprove_post(post_id: int):
     return _found(Copilot.unapprove_post(post_id))
 
 
-@router.post("/posts/{post_id}/publish")
+@router.post("/posts/{post_id}/publish", dependencies=[Depends(require_approver)])
 async def publish_post(post_id: int):
     try:
         return Copilot.publish_post(post_id)

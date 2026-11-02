@@ -113,7 +113,7 @@ def _one(sql: str, params: tuple = ()) -> Optional[dict]:
 async def _skill(path: str, context: Dict[str, Any], model_key: str = "ai_model_writing") -> dict:
     prompt = await SkillService.render_prompt(path, context)
     provider = AIService.get_provider(model_key)
-    result = await asyncio.to_thread(provider.generate_json, prompt)
+    result = await asyncio.to_thread(SkillService.generate_checked, path, prompt, provider.generate_json)
     if not isinstance(result, dict) or result.get("error"):
         raise RuntimeError(f"AI skill {path} failed: {result}")
     return result
@@ -600,9 +600,86 @@ class LinkedInCopilotService:
         return "Masculino" if lang == "Portuguese" else "Male"
 
     @staticmethod
-    def _facts_text() -> str:
+    def _facts() -> dict:
+        """config/easy_apply.yml, with the years counted from career_start_year so they don't go stale."""
+        import yaml
         path = settings.CONFIG_DIR / "easy_apply.yml"
-        return path.read_text(encoding="utf-8") if path.exists() else ""
+        data = (yaml.safe_load(path.read_text(encoding="utf-8")) or {}) if path.exists() else {}
+        start = data.get("career_start_year")
+        if start:
+            years = data.setdefault("years_of_experience", {})
+            career = _today().year - int(start)
+            years["total_professional"] = career
+            years["engineering_sanitation_water_infrastructure"] = career
+        return data
+
+    @staticmethod
+    def _facts_text() -> str:
+        import yaml
+        return yaml.safe_dump(LinkedInCopilotService._facts(), allow_unicode=True, sort_keys=False)
+
+    # Salary questions are answered from the floors in config/easy_apply.yml, never by the AI
+    SALARY = re.compile(r"sal[aá]r|salary|compensation|remunera|pretens[aã]o|expected pay|desired pay|pay expectation|\bwage|\bctc\b", re.I)
+    _BRL = re.compile(r"\bbrl\b|r\$|\breais\b|\breal\b", re.I)
+    _EUR = re.compile(r"\beur\b|€|\beuros?\b", re.I)
+    _USD = re.compile(r"\busd\b|us\$|\bdollars?\b|d[oó]lar|\$", re.I)
+    _OTHER_CURRENCY = re.compile(r"\b(gbp|pounds?|libras?|cad|aud|chf|sek|nok|dkk|pln|mxn|ars|cop|clp|jpy|ienes?|inr|rupees?|sgd|nzd|zar)\b|£|¥|₹|c\$|a\$", re.I)
+    _YEARLY = re.compile(r"annual|yearly|per year|a year|/\s*y(ea)?r|anual|por ano|ao ano|/\s*ano", re.I)
+    _MONTHLY = re.compile(r"month|mensal|por m[eê]s|ao m[eê]s|/\s*m[eê]s|/\s*mo\b", re.I)
+    _HOURLY = re.compile(r"hour|hora", re.I)
+    _EUROPE = re.compile(r"europe|europa|\beu\b|portugal|spain|espanha|germany|alemanha|netherlands|holanda|ireland|irlanda|france|fran[cç]a|italy|it[aá]lia|lisbon|lisboa|madrid|madri|amsterdam|amsterd[aã]|berlin|berlim|dublin", re.I)
+    _USA = re.compile(r"united states|estados unidos|\busa\b|\bu\.s\.", re.I)
+
+    @staticmethod
+    def _salary_currency(label: str, job: Dict[str, Any]) -> Optional[str]:
+        """The currency the question names, else the job location's. None when neither says."""
+        s = LinkedInCopilotService
+        if s._OTHER_CURRENCY.search(label):
+            return "other"
+        for name, pattern in (("BRL", s._BRL), ("EUR", s._EUR), ("USD", s._USD)):
+            if pattern.search(label):
+                return name
+        location = job.get("location") or ""
+        if s._EUROPE.search(location):
+            return "EUR"
+        if s._USA.search(location):
+            return "USD"
+        return None
+
+    @staticmethod
+    def _salary_answer(field: Dict[str, Any], facts: Dict[str, Any], job: Dict[str, Any], lang: str) -> Optional[str]:
+        """The floor in the currency and period the question asks for. None = the candidate answers it once (Precisa de você):
+        a list of ranges, a currency with no floor, hourly pay, or a number field that doesn't say which currency."""
+        s = LinkedInCopilotService
+        if field.get("type") not in ("text", "textarea", "number"):
+            return None
+        label = field.get("label") or ""
+        if s._HOURLY.search(label):
+            return None
+        pay = facts.get("salary_expectation") or {}
+        floors = {"USD": (pay.get("abroad_usd_monthly"), pay.get("abroad_usd_yearly")),
+                  "EUR": (pay.get("abroad_eur_monthly"), pay.get("abroad_eur_yearly")),
+                  "BRL": (pay.get("brazil_brl_monthly"), None)}
+        currency = s._salary_currency(label, job)
+        if field.get("type") != "number":
+            currency = currency or "USD"   # the answer names its currency: foreign employers are the default
+        if currency not in floors:
+            return None
+        monthly, yearly = floors[currency]
+        if field.get("type") == "number":
+            # a bare "expected salary": yearly abroad (84000 read as monthly is plainly a yearly figure; 7000 read as yearly is a disaster)
+            wants_year = bool(s._YEARLY.search(label)) or (currency != "BRL" and not s._MONTHLY.search(label))
+            value = yearly if wants_year else monthly
+            return str(value) if value else None
+        if not monthly:
+            return None
+        pt = lang == "Portuguese"
+        fmt = lambda n: f"{int(n):,}".replace(",", "." if pt else ",")
+        if currency == "BRL":
+            return f"acima de BRL {fmt(monthly)}/mês (PJ)" if pt else f"above BRL {fmt(monthly)}/month (contractor)"
+        if pt:
+            return f"a partir de {currency} {fmt(monthly)}/mês ({currency} {fmt(yearly)}/ano)"
+        return f"from {currency} {fmt(monthly)}/month ({currency} {fmt(yearly)}/year)"
 
     @staticmethod
     def _coerce(field: Dict[str, Any], value: Any) -> Optional[str]:
@@ -625,11 +702,10 @@ class LinkedInCopilotService:
     @staticmethod
     async def easy_apply_answers(job: Dict[str, Any], fields: List[Dict[str, Any]]) -> dict:
         """Answers for the fields of one Easy Apply step. Demographic questions are never answered."""
-        import yaml
         from app.services.profile_service import ProfileService
         desc = (job.get("description") or "")[:5000]
         lang = "Portuguese" if sum(h in f" {desc.lower()} " for h in LinkedInCopilotService.PT_HINTS) >= 2 else "English"
-        facts = yaml.safe_load(LinkedInCopilotService._facts_text() or "{}") or {}
+        facts = LinkedInCopilotService._facts()
         gender = str((facts.get("self_identification") or {}).get("gender") or "")
         answers: Dict[str, str] = {}
         usable, skipped = [], []
@@ -637,11 +713,23 @@ class LinkedInCopilotService:
             if not f.get("key"):
                 continue
             label = f.get("label") or ""
+            if not f.get("current"):   # you answered this question in another form
+                from app.services.automation_service import AutomationService
+                saved_answer = AutomationService.known_answer(label, f.get("type") or "text")
+                coerced = LinkedInCopilotService._coerce(f, saved_answer)
+                if coerced is not None:
+                    answers[f["key"]] = coerced
+                    continue
             if LinkedInCopilotService.GENDER.search(label):
                 g = LinkedInCopilotService._gender_answer(f, gender, lang) if gender else None
                 (answers.__setitem__(f["key"], g) if g else skipped.append(f["key"]))
             elif LinkedInCopilotService.DEMOGRAPHIC.search(label):
                 skipped.append(f["key"])
+            elif LinkedInCopilotService.SALARY.search(label):
+                if f.get("current"):
+                    continue   # prefilled by the site: left as it is
+                pay = LinkedInCopilotService._salary_answer(f, facts, job, lang)
+                (answers.__setitem__(f["key"], pay) if pay else skipped.append(f["key"]))
             else:
                 usable.append(f)
         if not usable:
@@ -660,8 +748,6 @@ class LinkedInCopilotService:
             "fields": usable,
         }, model_key="ai_model_writing")
         raw = ai.get("answers") or {}
-        raw_sugg = ai.get("salary_suggestions") or {}
-        suggestions: Dict[str, dict] = {}
         # fields that came filled (sites prefill from a parsed resume): only values that contradict the CV come back
         corrections: Dict[str, dict] = {}
         for f in usable:
@@ -678,16 +764,11 @@ class LinkedInCopilotService:
             v = LinkedInCopilotService._coerce(f, raw.get(f["key"]))
             if v is not None:
                 answers[f["key"]] = v
-                continue
-            s = raw_sugg.get(f["key"])
-            sv = LinkedInCopilotService._coerce(f, s.get("value") if isinstance(s, dict) else s)
-            if sv is not None:
-                suggestions[f["key"]] = {"value": sv, "basis": (s.get("basis") if isinstance(s, dict) else "") or ""}
-        done = set(answers) | set(suggestions)
+        done = set(answers)
         empty_keys = {f["key"] for f in usable}
         needs = [k for k in (ai.get("needs_user") or []) if k not in done and k in empty_keys] + skipped
         needs += [f["key"] for f in usable if f["key"] not in done and f["key"] not in needs]
-        return {"answers": answers, "suggestions": suggestions, "corrections": corrections, "needs_user": needs,
+        return {"answers": answers, "suggestions": {}, "corrections": corrections, "needs_user": needs,
                 "notes": ai.get("notes") or "", "language": lang}
 
     # ── Capture (browser extension) ──────────────────────────────────────

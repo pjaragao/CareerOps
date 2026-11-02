@@ -32,7 +32,7 @@ Os rascunhos são gerados no **LinkedIn Copilot** do CareerOps, escolhendo o mer
 
 | Pilar | O que mostra | Fonte |
 |---|---|---|
-| **E. Engenharia e saneamento** | Lições de projeto: o que funciona e o que dá errado | Lagoas do Norte, sistemas da CASAN e Sanepar, Mearim, aterro, rodovias |
+| **E. Engenharia e saneamento** | Lições de projeto: o que funciona e o que dá errado | Lagoas do Norte, sistemas da CASAN e Sanepar, Mearim, rodovias |
 | **C. Concessões e modelagem técnico-financeira** | Viabilidade, tarifa, CAPEX/OPEX, análise de concessões, preço de proposta | Concessões de Penha, Camboriú, Bombinhas e Pomerode; ~90 licitações/ano |
 | **O. IA e dados em projeto, orçamento e obra** | Onde a IA ajuda (e onde não) em quantitativos, orçamento, edital, BIM, licenciamento, medição, aditivos, perdas | Experiência de projeto + ferramentas próprias |
 | **G. Gestão financeira de engenharia** | Orçamento, KPIs, custo por projeto, BI | Período como diretor financeiro |

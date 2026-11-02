@@ -24,7 +24,7 @@ Portuguese (native) · English (fluent, C1 — lived and worked in the US) · Sp
 
 PT_ABOUT = """Engenheiro sanitarista e ambiental com quase 18 anos em projetos de saneamento e infraestrutura — de estagiário a diretor financeiro — e hoje dedicado a unir engenharia, modelagem técnico-financeira, dados e IA.
 
-Na engenharia: coordenador geral e responsável técnico do Programa Lagoas do Norte, em Teresina, financiado pelo Banco Mundial — esgotamento sanitário para 312 mil habitantes, drenagem, abastecimento de água, sistema viário, biogás e projeto urbanístico em BIM. Responsável técnico em 46 ARTs: planos diretores de drenagem (Bacia do Rio Mearim, 99 mil km²), sistemas de água para CASAN, Sanepar e autarquias municipais, aterro sanitário e gestão ambiental de rodovias (BR-470/DNIT).
+Na engenharia: coordenador geral e responsável técnico do Programa Lagoas do Norte, em Teresina, financiado pelo Banco Mundial — esgotamento sanitário para 312 mil habitantes, drenagem, abastecimento de água, sistema viário, biogás e projeto urbanístico em BIM. Responsável técnico em 46 ARTs: planos diretores de drenagem (Bacia do Rio Mearim, 99 mil km²), sistemas de água para CASAN, Sanepar e autarquias municipais e gestão ambiental de rodovias (BR-470/DNIT).
 
 Em finanças e modelagem: estudos de viabilidade (fluxo de caixa descontado) e modelagem tarifária de concessões de água e esgoto, análise de processos de concessão em quatro municípios, propostas financeiras das ~90 licitações por ano da empresa (técnica e preço) e, como diretor financeiro, orçamento anual, KPIs, BI e contabilidade de custos com uma equipe de 5 pessoas.
 
@@ -88,10 +88,10 @@ POSITIONS = [
 • Prepared the financial proposals for the firm's ~90 tenders a year (QCBS and LCS) and designed a metrics-based pricing method (project type, size, risk) that significantly cut bid-preparation time.
 • Managed 5–7 concurrent consulting contracts (~US$4M a year) of US$0.2–0.4M each, supporting infrastructure investments of US$20–150M.
 • General coordinator and engineer of record for the World Bank–financed Lagoas do Norte Program in Teresina (2014–2019): proposal and integrated design of sewerage for 312,000 residents, 28 km of drainage, water supply, roads, a 1 MW biogas plant and BIM-modeled urban design across ~1,300 ha.
-• Engineer of record on 46 registered engagements, including the Mearim river-basin plan (99,000 km², 2.1M people), water systems for state utilities (up to 1,250 L/s), a sanitary landfill and environmental management of highway programs (BR-470 for DNIT; Arteris concession, 357 km).
+• Engineer of record on 46 registered engagements, including the Mearim river-basin plan (99,000 km², 2.1M people), water systems for state utilities (up to 1,250 L/s) and environmental management of highway programs (BR-470 for DNIT; Arteris concession, 357 km).
 • Led the firm's ERP, SharePoint Online (in-house team only), Power Platform, ISO 9001 and BIM transformations."""},
         "pt": {"title": "Engenheiro Sênior — Projetos de Saneamento, Modelagem e Propostas", "description": """• Coordenador geral e responsável técnico do Programa Lagoas do Norte em Teresina, financiado pelo Banco Mundial (2014–2019): proposta e projeto integrado de esgotamento sanitário para 312 mil habitantes, 28 km de drenagem, abastecimento de água, sistema viário, usina de biogás de 1 MW, projeto urbanístico em BIM e programa socioambiental em ~1.300 ha.
-• Responsável técnico em 46 ARTs, incluindo o Plano Diretor de Drenagem da Bacia do Rio Mearim (99 mil km², 2,1 milhões de habitantes), sistemas de água para companhias estaduais (até 1.250 L/s; Criciúma, 311 mil habitantes; 148 km de rede no litoral do Paraná) e projeto e licenciamento de aterro sanitário.
+• Responsável técnico em 46 ARTs, incluindo o Plano Diretor de Drenagem da Bacia do Rio Mearim (99 mil km², 2,1 milhões de habitantes) e sistemas de água para companhias estaduais (até 1.250 L/s; Criciúma, 311 mil habitantes; 148 km de rede no litoral do Paraná).
 • Gestão de 5 a 7 contratos de consultoria simultâneos (~R$ 20 milhões/ano), de R$ 1 a 2 milhões cada, para empreendimentos de R$ 100 a 800 milhões em saneamento, drenagem e meio ambiente.
 • Análise técnico-econômica de processos de concessão de água e esgoto em quatro municípios; estudos de viabilidade (fluxo de caixa descontado) e modelagem tarifária de concessões.
 • Propostas financeiras das ~90 licitações por ano da empresa (técnica e preço e menor preço) e metodologia de precificação por métricas objetivas que reduziu muito o tempo de elaboração.
@@ -139,9 +139,9 @@ PROJECTS = [
 EDUCATION = [
     {"id": "ufsc", "school": "Universidade Federal de Santa Catarina (UFSC)", "start": "2005", "end": "2011",
      "en": {"degree": "Bachelor of Engineering (B.Eng.)", "field": "Sanitary and Environmental Engineering",
-            "description": "Hydraulics, hydrology and water resources; water supply and treatment; urban and industrial wastewater treatment; urban and industrial solid waste; water-pollution control; environmental impact assessment and management; geoprocessing."},
+            "description": "Hydraulics, hydrology and water resources; water supply and treatment; urban and industrial wastewater treatment; water-pollution control; environmental impact assessment and management; geoprocessing."},
      "pt": {"degree": "Bacharelado em Engenharia", "field": "Engenharia Sanitária e Ambiental",
-            "description": "Hidráulica, hidrologia e recursos hídricos; abastecimento e tratamento de água; tratamento de efluentes urbanos e industriais; resíduos sólidos urbanos e industriais; controle da poluição hídrica; avaliação de impactos e gestão ambiental; geoprocessamento."}},
+            "description": "Hidráulica, hidrologia e recursos hídricos; abastecimento e tratamento de água; tratamento de efluentes urbanos e industriais; controle da poluição hídrica; avaliação de impactos e gestão ambiental; geoprocessamento."}},
     {"id": "fgv", "school": "Fundação Getulio Vargas (FGV)", "start": "2013", "end": "2015",
      "en": {"degree": "MBA (executive postgraduate program)", "field": "Business Management",
             "description": "Strategic management and value creation, finance and decision-making, leadership; business-simulation capstone."},

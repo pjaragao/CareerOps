@@ -1,12 +1,13 @@
 import React from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
-import { Home, UserCircle, Briefcase, Megaphone, Settings, Rocket, PanelLeftClose, PanelLeftOpen, Menu, X } from 'lucide-react';
+import { Home, UserCircle, Briefcase, Megaphone, Bot, Settings, Rocket, PanelLeftClose, PanelLeftOpen, Menu, X } from 'lucide-react';
 
 const NAV = [
   { icon: <Home size={20} />, label: 'Início', path: '/' },
   { icon: <UserCircle size={20} />, label: 'Meu Perfil', path: '/perfil' },
   { icon: <Briefcase size={20} />, label: 'Vagas', path: '/vagas' },
   { icon: <Megaphone size={20} />, label: 'LinkedIn Copilot', path: '/linkedin-copilot' },
+  { icon: <Bot size={20} />, label: 'Automação', path: '/automacao' },
   { icon: <Settings size={20} />, label: 'Configurações', path: '/configuracoes' },
 ];
 

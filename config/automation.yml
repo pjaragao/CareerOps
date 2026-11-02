@@ -1,0 +1,51 @@
+# Rules for what the system does and sends on your behalf. After editing, commit and redeploy (config/ is baked into the image).
+# Whether it runs at all (off / dry_run / live) and the daily limits are in the app: Automação → Buscas e limites.
+
+# NDA: subjects that never appear in anything sent out (CV, cover letter, post, comment, invite, form answer).
+# A text that still has one after one rewrite is refused, never sent. Your uploaded originals stay as they are.
+content_guard:
+  topics:
+    - solid waste / resíduos sólidos
+    - landfills / aterros sanitários
+  patterns:
+    - res[ií]duos?\s+s[oó]lidos?
+    - res[ií]duos?\s+urbanos?
+    - gest[aã]o\s+de\s+res[ií]duos?
+    - solid[\s-]+wastes?
+    - municipal\s+waste
+    - waste\s+management
+    - aterros?\s+sanit[aá]rios?
+    - \blandfills?\b
+    - \bRSU\b
+
+automation:
+  window: {start_hour: 8, end_hour: 20}      # APP_TIMEZONE: nothing is claimed outside it
+  write_gap_minutes: [5, 20]                 # between two writes on LinkedIn, picked at random in this range
+  max_windows: 3                             # all browsers together (WSL has little memory to spare)
+  lanes: {linkedin_read: 1, linkedin_write: 1, ats: 2}
+  approval_hours: {apply: 168, comment: 48, connect: 168, follow: 168}
+  search_hours: [9, 15]                      # the two rounds of the day
+  check_hours: [7, 19]                       # who accepted / replied
+  feed_scan_hours: [10, 16]
+  follow_scan_hours: [11]
+  ramp_days: 7                               # a week with no warning goes up one step of the limits
+
+jobs:
+  markets: [intl]                            # add br to take Brazilian employers again
+  min_score: 70                              # below it the job goes to "Descartadas" (recoverable)
+  external_apply: false                      # company sites: true only after the assisted tests of phase F7
+
+claude:
+  per_day: 15
+  lanes: [linkedin_write, ats]               # remove linkedin_write for less risk: that fallback becomes "Precisa de você"
+
+# A test account only comments on / invites these (exact URLs); anything else stops before the final click
+test_account:
+  allowed_targets: []
+
+email:
+  hour: 7                                    # local time of the daily read (07:30)
+  minute: 30
+  first_run_days: 45
+  rejection_confidence: 0.9
+  auto_status: false                         # true after you review the first read (phase FE)

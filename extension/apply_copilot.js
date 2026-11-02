@@ -475,6 +475,7 @@
             fixed.length ? `Corrigidos pelo CV (azul):\n• ${fixed.slice(0, 8).join('\n• ')}` : '',
             pending.length ? `Com você (laranja/amarelo):\n• ${pending.slice(0, 8).map((p) => p.slice(0, 90)).join('\n• ')}` : '',
         ].filter(Boolean).join('\n'));
+        managedFilled(filled, pending);
         // the form moved to another step while the AI answered: fill the new one
         const now = collect();
         if (ui.auto && ui.auto.checked && now.map((x) => x.key).join('|') !== lastSignature && now.length) fillPage(false);
@@ -490,9 +491,23 @@
         }, 1200);
     });
 
+    // Browser on the server (no LinkedIn session in it): the worker opened this page for an action of the queue. The
+    // fields are filled here; this script never submits. What is left goes to the Claude routine, with the form open.
+    let managedAction = null;
+    let managedReported = false;
+    function managedFilled(filled, pending) {
+        if (!managedAction || managedReported || !jobId) return;
+        managedReported = true;
+        backend('POST', `/automation/actions/${managedAction}/events`, { source: 'extension', event: 'external_form_filled', data: { filled, pending: pending.slice(0, 40) } })
+            .then(() => backend('POST', `/automation/actions/${managedAction}/escalate`, { code: 'external_form_unfinished', text: `${filled} campo(s) preenchido(s). Falta conferir, avançar e enviar.` }));
+    }
+
     let jobId = null;
     let prep = {};
     (async () => {
+        const run = !inFrame && location.hash.match(/careerops-run=(\d+)\.[\w-]+/);
+        const { careeropsManaged } = await chrome.storage.local.get('careeropsManaged').catch(() => ({}));
+        if (run && careeropsManaged) managedAction = Number(run[1]);
         await started;
         await ready();
         const pending = await send({ action: 'applyPending' });

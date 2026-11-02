@@ -18,7 +18,7 @@ Former CFO and engineer with 15+ years in infrastructure finance, now building d
 - **Modeling & analytics:** financial modeling, DCF and feasibility studies, concession and tariff modeling, valuation, forecasting (Bayesian hierarchical models, TimesFM), backtesting, budgeting and variance analysis, KPI design, cost accounting, pricing
 - **Data & software:** Python, SQL, PostgreSQL (PL/pgSQL, pgTAP), data pipelines, Power BI, Excel, REST APIs, Docker, GitHub Actions CI/CD, TypeScript/Next.js
 - **AI:** LLM applications and agents, tool calling and MCP, guardrails and human-in-the-loop, prompt engineering, multi-provider model routing
-- **Domain:** infrastructure and utilities (water, wastewater, drainage, solid waste), project finance, public procurement (QCBS/LCS), ERP, BIM
+- **Domain:** infrastructure and utilities (water, wastewater, drainage), project finance, public procurement (QCBS/LCS), ERP, BIM
 
 ---
 
@@ -44,7 +44,7 @@ Independent practice serving large Brazilian corporate groups. Freelance, held c
 - Advise large Brazilian corporate groups (under NDA) on major infrastructure projects: engineering-financial models (CAPEX/OPEX, cash flow, feasibility) for infrastructure projects and coordination of sanitation engineering projects.
 
 ### MPB Engineering — Florianópolis, Brazil
-**Consultancy for water, wastewater, urban, highway-environmental and solid-waste infrastructure** | May 2008 – Jan 2026
+**Consultancy for water, wastewater, urban and highway-environmental infrastructure** | May 2008 – Jan 2026
 
 Consultancy serving municipalities, state utilities and federal agencies, bidding ~90 tenders a year. Internal promotions from intern to Finance Director over nearly 18 years.
 

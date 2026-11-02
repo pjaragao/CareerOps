@@ -10,7 +10,7 @@ PÚBLICO: engenheiros, gestores e decisores de saneamento e infraestrutura — c
 POSICIONAMENTO: engenheiro sanitarista e ambiental com quase 18 anos em saneamento e infraestrutura, ex-diretor financeiro, que une engenharia, modelagem técnico-financeira, dados e IA. Engenharia e saneamento vêm primeiro; dados e IA são a forma moderna de fazer.
 
 PILARES (alternar; use o pedido, se houver):
-- E. Engenharia e saneamento na prática — lições de projeto (Lagoas do Norte, sistemas de água das companhias, drenagem, aterro, gestão ambiental de rodovias), o que funciona e o que dá errado.
+- E. Engenharia e saneamento na prática — lições de projeto (Lagoas do Norte, sistemas de água das companhias, drenagem, gestão ambiental de rodovias), o que funciona e o que dá errado.
 - C. Concessões e modelagem técnico-financeira — viabilidade (fluxo de caixa descontado), tarifa, CAPEX/OPEX, análise de processos de concessão, precificação de propostas (técnica e preço).
 - O. IA e dados no ciclo do empreendimento — projeto, quantitativos, orçamento, edital, BIM, licenciamento, gestão de obra (cronograma, medição, aditivos) e operação (perdas, O&M): onde a IA ajuda e onde não se pode confiar nela.
 - G. Gestão financeira de empresas de engenharia — orçamento, KPIs, custos por projeto, BI, visão de ex-diretor financeiro.

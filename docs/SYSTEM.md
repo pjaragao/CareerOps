@@ -1,6 +1,6 @@
 # CareerOps — System Architecture & Development Guide
 
-> **Last Updated**: 2026-05-05
+> **Last Updated**: 2026-10-31
 > **Maintainer**: @pjaragao
 > **Rule**: This document MUST be updated whenever features are added, removed, or modified.
 
@@ -132,6 +132,23 @@ Code: `api/linkedin_copilot.py` → `services/linkedin_copilot_service.py` (+ `s
 6. **Line of thought** (`migrations_v12.sql`, applied on startup by `linkedin_voice_service.ensure_schema`, which also backfills sent comments and published posts): `linkedin_voice` holds what you sent (comment, reply, message, post) or wrote (position), with topic, stance and your request to the AI; `ref` keeps one row per sent text (`comment:<hash of post>`, `message:<prospect id>`, `post:<id>`). Comments are recorded when a queue item goes to `done`, by `reconcile_engagement` and by the "Você comentou" theme; replies by the extension on LinkedIn's send (`POST /voice`). The consolidated profile lives in `app_ai_settings` (`voice_profile`, skill `linkedin/voice_profile.md`). Templates call `{{ line_of_thought(text) }}` (`SkillService`): profile + pinned rows + the 6 rows with the highest weighted word overlap (topic ×3, stance/request ×2, text).
 7. **Networking** (`linkedin_networking_service.py`, `linkedin/networking_plan.md`, table `linkedin_networking_plans`): one AI call over up to 18 jobs (applied/interviewing/offer, then the last 45 days) → `contacts` (per pursued job: hiring-team members by name, else the likely hiring manager/recruiter as a people search; each with `note` ≤300 and `message`, in the ad's language), `companies`, `follow` and `posts` (per hiring company: the hiring team's `/recent-activity/all/` and a content search for the quoted company name, sorted by date, plus the angle). Named contacts are kept only when they match a hiring-team member or a prospect at that company. The extension sends `hiringTeam` (found by the "Meet the hiring team" heading) with `/jobs/import-extension`; `save_hiring_team` stores it in `job_listings.hiring_team_json` and adds the people as prospects (`segment = hiring_team`). `POST /prospects/{id}/message` (only for people at the company of one of your jobs, `job_ties`) drafts a connection note or, once connected, a DM (`linkedin/prospect_message.md`); `/message/sent` stores it (`message_draft`, `message_sent_at`) and in the line of thought.
 
+### 3.5 Autopilot (you approve, the system executes)
+
+Tables (`migrations_v15.sql`): `automation_state` (one row: mode, account kind, halted lanes, ramp), `automation_actions`, `automation_events`, `automation_runs`, `automation_limits`, `automation_answers`, `job_searches`, `job_email_events`. Code: `api/automation.py` → `services/automation_service.py`, `services/job_search_service.py`, `services/email_monitor_service.py`; worker in `automation/worker/`; extension in `linkedin_assist.js` section 8 (managed mode, only when the worker set `careeropsManaged` in `chrome.storage`); routine in `automation/claude_runner/run.py`; screen `pages/Automation.tsx`. Go-live steps: `automation/README.md`.
+
+1. **Access** (`core/auth.py`): `X-CareerOps-Token`. The approver (you) decides; the worker only claims and reports, and can never approve. A role with no token configured refuses everything. Other sites' pages are refused by Origin on these routes and on post approve/publish.
+2. **States**: `proposed → approved → (review_docs) → queued → running_ext → verifying → done`. Elsewhere: `escalated → running_claude`, `needs_user`, `awaiting_confirm`, `unknown_outcome`, `discarded`, `rejected`, `expired`, `cancelled`. Approving freezes the payload (`payload_hash`); a difference at claim time refuses it.
+3. **Claim** (`AutomationService.claim`): the only way anything starts. Under a lock on the state row it checks mode, halted lanes, the window, the gap between writes, windows per lane, the limit of each kind at the current ramp step, the hash and the content guard. `unknown_outcome` comes first and only looks at the page.
+4. **Never twice**: the extension reports `executed`, the worker opens the page and calls `verify`. Clicked but not seen: one more look, then `needs_user`, never a second click. Crash or lost lease: `unknown_outcome`.
+5. **Final click** (`_allow_final`): an application needs mode `live` + main account + `allow_final_submit` + env `AUTOMATION_ALLOW_FINAL_SUBMIT`; anything else goes up to the last screen and reports a dry run. A test account only comments on or invites `test_account.allowed_targets`. An `executed` report with no permission halts everything. The first CVs wait for your reading (`review_cv_left`) and the first submissions for your click (`confirm_submit_left`).
+6. **Failures** (`escalate`): `CLAUDE_CODES` go to the routine (one attempt, `claude.per_day`), `HALT_CODES` stop the LinkedIn lanes and lower the ramp, `DISCARD_CODES` end it, everything else comes to you. `safety.py` looks at every page first.
+7. **Search**: `schedule_reads` queues the rounds; `managedSearch` reads the cards and `jobPosting` the ads; `add_discovered` stores them as `discovered`, which the document pipeline and the job board ignore, so a CV is only generated after approval (`prepare_documents`). `triage_pending` (`jobs/eligibility.md` + `jobs/triage.md`) decides propose / external_manual / discarded: score ≥ `jobs.min_score`, employer market in `jobs.markets`.
+8. **Company sites** (`jobs.external_apply`, off by default): the popup's address moves the action to the `ats` lane, a browser with no LinkedIn session. `apply_copilot.js` fills and never submits; the routine finishes it with the form open.
+9. **Claude routine**: cron on the host, so the credentials never enter a container. Browser tools only (`@playwright/mcp` inside the container, published on loopback), no shell or files, no tokens: the script reports. `audit` reads every tool call; going off target halts the lane. Saying "done" only leads to the worker looking at the page.
+10. **Salary and years** (`LinkedInCopilotService._salary_answer`, `_facts`): salary questions never reach the AI, they come from the floors in `config/easy_apply.yml`; total years count from `career_start_year`.
+11. **Content guard** (`services/content_guard.py`, `config/automation.yml`): `SkillService.OUTGOING_SKILLS` get the rule in the prompt, one rewrite if the answer breaks it, then refusal. Checked again at approval, at claim and when a job's PDF is served.
+12. **Email monitor**: `EXAMINE` + `BODY.PEEK` only. Filter without AI, one AI reading with no tools per message, `job_email_events` keeps a summary and a quote. The first read only suggests; status changes need `email.auto_status`. `funnel` compares by age of the ad at application.
+
 ---
 
 ## 4. Feature Parity: v1 (Flask) vs v2 (FastAPI)
@@ -160,9 +177,11 @@ Code: `api/linkedin_copilot.py` → `services/linkedin_copilot_service.py` (+ `s
 > 3. Task status in `task.md`
 > 4. **Extensive Investigation**: Always use the methodology in [docs/DEBUGGING_GUIDE.md](DEBUGGING_GUIDE.md) for troubleshooting.
 
-### 5.2 Profile Sync & Extension-First Policy
+### 5.2 Extension-First Policy and Autopilot
 
-The backend should NEVER perform browser automation. All data ingestion must happen via the Extension. 
+The backend itself never drives a browser. Everything that happens on a page happens through the Extension, in your browser or in the worker's (`automation/`), so there is one implementation of each action. The rules live only in `automation_service.py`.
+
+LinkedIn's rules forbid software that automates activity on the site. The Autopilot exists by the owner's decision, with that risk accepted (2026-10-31). Keep it honest: every action needs your approval; no stealth, fingerprint spoofing, proxies or captcha solving; any warning stops the lane until you turn it on again; a test account never submits an application.
 
 
 ---

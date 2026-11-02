@@ -1,61 +1,14 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import api from '../services/api';
 import { Search, ExternalLink, Copy, Check, Lightbulb, Clock, Smartphone, Bookmark } from 'lucide-react';
 
-// Job titles that match the profile (modelagem, dados, IA, infraestrutura), most fitting group first
-const GROUPS = [
-  {
-    id: 'financas', label: 'Modelagem e finanças', remoteOkTag: 'finance',
-    titles: ['Financial Modeling Analyst', 'Financial Modeling Manager', 'Project Finance Analyst', 'Project Finance Associate',
-      'Infrastructure Finance Analyst', 'FP&A Manager', 'Senior FP&A Analyst', 'Valuation Analyst',
-      'Financial Analyst Renewable Energy', 'Pricing Manager'],
-    combo: '("financial modeling" OR "project finance" OR "infrastructure finance" OR "FP&A")',
-  },
-  {
-    id: 'dados', label: 'Dados e forecasting', remoteOkTag: 'data-science',
-    titles: ['Forecasting Analyst', 'Demand Forecasting Data Scientist', 'Data Scientist Time Series', 'Quantitative Analyst Energy',
-      'Analytics Engineer', 'Senior Data Analyst Finance', 'Business Intelligence Manager'],
-    combo: '("forecasting" OR "time series") AND ("data scientist" OR "analyst")',
-  },
-  {
-    id: 'ia', label: 'IA aplicada', remoteOkTag: 'ai',
-    titles: ['AI Engineer', 'Applied AI Engineer', 'LLM Engineer', 'AI Agent Developer', 'AI Solutions Engineer',
-      'Forward Deployed Engineer', 'AI Automation Engineer', 'Finance Automation Lead', 'Solutions Engineer Fintech'],
-    combo: '("AI engineer" OR "LLM engineer" OR "applied AI" OR "AI automation")',
-  },
-  {
-    id: 'nicho', label: 'Nicho: infraestrutura', remoteOkTag: 'finance',
-    titles: ['Utility Rate Analyst', 'Water Infrastructure Financial Analyst', 'Infrastructure Advisory Consultant',
-      'PPP Financial Advisor', 'Concessions Financial Advisor', 'Climate Finance Analyst', 'Sustainable Infrastructure Analyst',
-      'Development Finance Consultant', 'Energy Transition Financial Analyst'],
-    combo: '("utility rate" OR "PPP" OR "concessions" OR "infrastructure advisory" OR "climate finance")',
-  },
-];
+// The groups of titles and the places to look come from the backend: the automatic search uses the same ones
+type Group = { id: string; label: string; remoteOkTag: string; titles: string[]; combo: string };
+type Mode = { id: ModeId; label: string; hint: string; location: string; remote: boolean; extra: string; atsTerms: string };
+let GROUPS: Group[] = [];
+let MODES: Mode[] = [];
 
 type ModeId = 'remoto-br' | 'remoto-latam' | 'visto-eu' | 'visto-us';
-
-// Where to look: remote jobs that accept someone living in Brazil pass the eligibility check; visa modes are for moving
-const MODES: { id: ModeId; label: string; hint: string; location: string; remote: boolean; extra: string; atsTerms: string }[] = [
-  {
-    id: 'remoto-br', label: 'Remoto aceitando Brasil (EUA e Europa)', location: 'Brazil', remote: true, extra: '',
-    hint: 'Localização "Brazil" + remoto: o LinkedIn mostra vagas de empresas dos EUA e da Europa abertas a quem mora aqui. Com "United States" quase tudo exige autorização de trabalho.',
-    atsTerms: '("LATAM" OR "Latin America" OR "Brazil" OR "anywhere" OR "worldwide")',
-  },
-  {
-    id: 'remoto-latam', label: 'Remoto LATAM / contractor', location: 'Latin America', remote: true, extra: '',
-    hint: 'Vagas com fuso das Américas, muitas como contractor ou via EOR (Deel, Remote.com). É o caminho mais comum para empresas europeias contratarem do Brasil.',
-    atsTerms: '("LATAM" OR "Latin America" OR "contractor" OR "Deel" OR "EOR")',
-  },
-  {
-    id: 'visto-eu', label: 'Mudança para a Europa com visto', location: 'European Union', remote: false, extra: ' AND ("visa sponsorship" OR relocation)',
-    hint: 'Presencial ou híbrido com patrocínio de visto ou relocation. Cidades-alvo: Lisboa, Madri, Amsterdã, Berlim, Dublin.',
-    atsTerms: '("visa sponsorship" OR "relocation") (Lisbon OR Madrid OR Amsterdam OR Berlin OR Dublin)',
-  },
-  {
-    id: 'visto-us', label: 'Mudança para os EUA com visto', location: 'United States', remote: false, extra: ' AND "visa sponsorship"',
-    hint: 'Poucas vagas e H-1B é por sorteio. Vale para consultorias grandes de infraestrutura; para EB-2 NIW, fale com um advogado.',
-    atsTerms: '("visa sponsorship" OR "H-1B")',
-  },
-];
 
 type Search = { query: string; plain: string; mode: ModeId; recent: boolean; remoteOkTag: string };
 
@@ -139,7 +92,7 @@ const SAVED_JOBS = 'https://www.linkedin.com/my-items/saved-jobs/';
 
 const muted: React.CSSProperties = { color: 'var(--text-muted)', fontSize: '0.9rem' };
 
-const JobSearch = () => {
+const JobSearchView = () => {
   const [groupId, setGroupId] = useState<string>(() => saved('group', GROUPS[0].id));
   const [query, setQuery] = useState<string>(() => saved('query', GROUPS[0].combo));
   const [plain, setPlain] = useState<string>(() => saved('plain', GROUPS[0].titles[0]));
@@ -255,6 +208,19 @@ const JobSearch = () => {
       </div>
     </div>
   );
+};
+
+const JobSearch = () => {
+  const [ready, setReady] = useState(GROUPS.length > 0);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    if (ready) return;
+    api.get<{ groups: Group[]; modes: Mode[] }>('/job-searches/catalog')
+      .then(({ data }) => { GROUPS = data.groups; MODES = data.modes; setReady(true); })
+      .catch(() => setFailed(true));
+  }, [ready]);
+  if (failed) return <p style={muted}>Não consegui carregar as buscas. Confira se o backend está no ar.</p>;
+  return ready ? <JobSearchView /> : <p style={muted}>Carregando…</p>;
 };
 
 export default JobSearch;

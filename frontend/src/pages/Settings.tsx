@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { settingsService, AppSettings } from '../services/settingsService';
-import { Save, Key, Zap, Shield } from 'lucide-react';
+import api, { getAccessToken, setAccessToken } from '../services/api';
+import { Save, Key, Zap, Shield, Lock } from 'lucide-react';
 
 const SettingsPage = () => {
   const [settings, setSettings] = useState<AppSettings>({
@@ -12,6 +13,8 @@ const SettingsPage = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [availableModels, setAvailableModels] = useState<{id: string, name: string}[]>([]);
+  const [token, setToken] = useState(getAccessToken);
+  const [tokenStatus, setTokenStatus] = useState('');
 
   useEffect(() => {
     loadSettings();
@@ -51,6 +54,16 @@ const SettingsPage = () => {
     }
   };
 
+  const handleToken = async () => {
+    setAccessToken(token.trim());
+    try {
+      const { data } = await api.get<{ role: string }>('/automation/status');
+      setTokenStatus(data.role === 'approver' ? '✓ Token de aprovador válido' : 'Este token não é o de aprovador');
+    } catch {
+      setTokenStatus('Token recusado pelo servidor');
+    }
+  };
+
   if (loading) return <div style={{ textAlign: 'center', padding: '3rem' }}>Loading settings...</div>;
 
   return (
@@ -65,7 +78,28 @@ const SettingsPage = () => {
         </button>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '2rem' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(400px, 100%), 1fr))', gap: '2rem' }}>
+        {/* Access */}
+        <div className="panel">
+          <div className="panel-header">
+            <h3 className="panel-title"><Lock size={20} color="var(--accent)" /> Acesso</h3>
+          </div>
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '0.8rem' }}>
+            Aprovar e publicar exigem o token de aprovador (<code>CAREEROPS_APPROVER_TOKEN</code> no servidor). Fica só neste navegador.
+          </p>
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <input
+              type="password"
+              value={token}
+              onChange={e => { setToken(e.target.value); setTokenStatus(''); }}
+              style={{ flex: 1, minWidth: 0, padding: '0.7rem', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: '#fff' }}
+              placeholder="Token de aprovador"
+            />
+            <button className="btn btn-primary" onClick={handleToken}>Salvar e testar</button>
+          </div>
+          {tokenStatus && <p style={{ fontSize: '0.85rem', marginTop: '0.6rem' }}>{tokenStatus}</p>}
+        </div>
+
         {/* AI Configuration */}
         <div className="panel">
           <div className="panel-header">

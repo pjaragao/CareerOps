@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Megaphone, MessageCircle, Users, Briefcase, UserCircle, ArrowRight, Puzzle } from 'lucide-react';
+import { Megaphone, MessageCircle, Users, Briefcase, UserCircle, ArrowRight, Puzzle, Bot, UserRound } from 'lucide-react';
+import { automationService, AutomationStatus } from '../services/automationService';
 import { linkedinCopilotService as copilot, CopilotPost } from '../services/linkedinCopilotService';
 import { jobService, Job } from '../services/jobService';
 
@@ -33,7 +34,9 @@ const count = (items: { status: string }[], ...statuses: string[]) => items.filt
 
 const Home = () => {
   const [s, setS] = useState<Summary | null>(null);
+  const [automation, setAutomation] = useState<AutomationStatus | null>(null);
   useEffect(() => {
+    automationService.status().then(setAutomation).catch(() => setAutomation(null));   // no token here yet: the card stays out
     Promise.all([
       copilot.listPosts().catch(() => [] as CopilotPost[]),
       copilot.engagementQueue().catch(() => ({ items: [], done_today: 0, daily_target: 10 })),
@@ -64,6 +67,14 @@ const Home = () => {
       </div>
       {!s ? <p style={muted}>Carregando…</p> : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '1.2rem' }}>
+          {automation && <>
+            <Card icon={<Bot size={18} />} title="Aprovar" value={String(automation.counts.proposed || 0)}
+              detail={automation.state.halted_lanes.length ? `Parado: ${automation.state.halted_reason}` : 'Vagas, comentários, conexões e quem seguir, esperando você.'}
+              to="/automacao" cta="Abrir" />
+            <Card icon={<UserRound size={18} />} title="Precisa de você" value={String((automation.counts.needs_user || 0) + (automation.counts.review_docs || 0) + (automation.counts.awaiting_confirm || 0))}
+              detail="Perguntas sem resposta, CVs para ler e envios para confirmar."
+              to="/automacao?tab=voce" cta="Abrir" />
+          </>}
           <Card icon={<Megaphone size={18} />} title="Posts para revisar" value={String(s.drafts)}
             detail={`${s.scheduled} aprovado(s) aguardando publicação. Meta: 3 por semana (2 EN, 1 PT).`}
             to="/linkedin-copilot" cta={s.drafts ? 'Revisar rascunhos' : 'Gerar rascunhos'} />

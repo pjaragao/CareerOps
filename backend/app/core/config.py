@@ -46,6 +46,25 @@ class Settings(BaseSettings):
     # Day/week boundaries for the LinkedIn Copilot counters ("today", "this week")
     APP_TIMEZONE: str = os.getenv("APP_TIMEZONE", "America/Sao_Paulo")
 
+    # --- Access (core/auth.py): empty token = the routes of that role refuse everything ---
+    CAREEROPS_APPROVER_TOKEN: str = os.getenv("CAREEROPS_APPROVER_TOKEN", "")
+    CAREEROPS_WORKER_TOKEN: str = os.getenv("CAREEROPS_WORKER_TOKEN", "")
+    # Besides FRONTEND_URL, the addresses the app is opened from
+    CAREEROPS_ALLOWED_ORIGINS: str = os.getenv(
+        "CAREEROPS_ALLOWED_ORIGINS",
+        "https://mpbflndsk201-wsl.tabby-broadnose.ts.net:5174,http://100.109.242.35:5173,http://localhost:5173,http://127.0.0.1:5173",
+    )
+
+    # A second lock on the final click of an application: it stays false anywhere the test account runs
+    AUTOMATION_ALLOW_FINAL_SUBMIT: bool = os.getenv("AUTOMATION_ALLOW_FINAL_SUBMIT", "false").lower() == "true"
+    # Where you see the server browser (login, verifications)
+    CAREEROPS_NOVNC_URL: str = os.getenv("CAREEROPS_NOVNC_URL", "https://mpbflndsk201-wsl.tabby-broadnose.ts.net:6081/vnc.html")
+
+    # --- Daily email monitor (Gmail app password, read-only use): empty = it does not run ---
+    GMAIL_ADDRESS: str = os.getenv("GMAIL_ADDRESS", "")
+    GMAIL_APP_PASSWORD: str = os.getenv("GMAIL_APP_PASSWORD", "")
+    GMAIL_IMAP_HOST: str = os.getenv("GMAIL_IMAP_HOST", "imap.gmail.com")
+
     # --- Paths ---
     OUTPUT_DIR: Path = PROJECT_DIR / os.getenv("OUTPUT_DIR", "./output")
     AUTH_DIR: Path = PROJECT_DIR / "auth"

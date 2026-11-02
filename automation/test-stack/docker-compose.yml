@@ -1,0 +1,101 @@
+# Test stack for the test account: its own database (careerops_test) and browser profile, next to production and sharing
+# nothing with it but the PostgreSQL server and the PDF service. Not deployed by Coolify, so none of its labels here: Coolify
+# would take these containers for the application. It never submits an application: AUTOMATION_ALLOW_FINAL_SUBMIT is fixed.
+#
+#   docker compose --env-file ~/.config/careerops/test-stack.env -f automation/test-stack/docker-compose.yml up -d --build
+name: careerops-test
+
+services:
+  backend:
+    build:
+      context: ../../backend
+      dockerfile: Dockerfile
+      additional_contexts:
+        config: ../../config
+        extension: ../../extension
+    restart: unless-stopped
+    mem_limit: 600m
+    ports:
+      - "127.0.0.1:18105:8000"
+    environment:
+      SUPABASE_DB_HOST: ${SUPABASE_DB_HOST:?}
+      SUPABASE_DB_PORT: ${SUPABASE_DB_PORT:-5432}
+      SUPABASE_DB_USER: ${SUPABASE_DB_USER:?}
+      SUPABASE_DB_PASSWORD: ${SUPABASE_DB_PASSWORD:?}
+      SUPABASE_DB_NAME: careerops_test
+      CAREEROPS_APPROVER_TOKEN: ${CAREEROPS_APPROVER_TOKEN:?}
+      CAREEROPS_WORKER_TOKEN: ${CAREEROPS_WORKER_TOKEN:?}
+      AUTOMATION_ALLOW_FINAL_SUBMIT: "false"
+      FRONTEND_URL: https://mpbflndsk201-wsl.tabby-broadnose.ts.net:6082
+      CAREEROPS_NOVNC_URL: https://mpbflndsk201-wsl.tabby-broadnose.ts.net:6081/vnc.html
+      APP_TIMEZONE: America/Sao_Paulo
+      AI_PROVIDER: ${AI_PROVIDER:-}
+      AGY_BASE_URL: ${AGY_BASE_URL:-}
+      AGY_MODEL: ${AGY_MODEL:-}
+      AGY_SHIM_TOKEN: ${AGY_SHIM_TOKEN:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GOTENBERG_URL: ${GOTENBERG_URL:-}
+    volumes:
+      - output:/app/output
+    networks:
+      shared:
+        aliases:
+          - careerops-backend-test
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  automation:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      additional_contexts:
+        extension: ../../extension
+    restart: unless-stopped
+    mem_limit: 2500m
+    shm_size: 1g
+    stop_grace_period: 120s
+    # Only what the browser needs: a page must never be one step from the database password or the AI keys
+    environment:
+      CAREEROPS_API_BASE: http://careerops-backend-test:8000/api
+      CAREEROPS_WORKER_TOKEN: ${CAREEROPS_WORKER_TOKEN:?}
+      VNC_PASSWORD: ${VNC_PASSWORD:?}
+      BROWSER_MODE: ${BROWSER_MODE:-xvfb}
+    ports:
+      - "127.0.0.1:6080:6080"
+      - "127.0.0.1:8931:8931"
+      - "127.0.0.1:8932:8932"
+    volumes:
+      - browser:/data
+      - output:/app/output
+    depends_on:
+      - backend
+    networks:
+      - shared
+
+  frontend:
+    build:
+      context: ../../frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    mem_limit: 512m
+    ports:
+      - "127.0.0.1:15173:5173"
+    environment:
+      API_TARGET: http://careerops-backend-test:8000
+    depends_on:
+      - backend
+    networks:
+      - shared
+
+volumes:
+  output:
+  browser:   # the test account's session lives here
+
+networks:
+  shared:
+    external: true
+    name: supabase_default

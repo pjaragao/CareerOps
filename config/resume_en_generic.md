@@ -18,7 +18,7 @@ Engineer and former CFO who turns operational and financial data into models peo
 - **Data & software:** Python, SQL, PostgreSQL (PL/pgSQL, pgTAP, RLS), Supabase, data pipelines/ETL, REST APIs, FastAPI, TypeScript/Next.js, Docker, CI/CD, Power BI, Excel
 - **Modeling & analytics:** financial modeling, DCF and feasibility, concession and tariff modeling, valuation, forecasting (Bayesian hierarchical, TimesFM), backtesting, budgeting and variance analysis, KPIs, cost accounting, pricing
 - **AI:** LLM applications and agents, tool calling and MCP, guardrails and human-in-the-loop, testing and evaluation, multi-provider routing (Claude, Gemini, OpenAI), AI-assisted development
-- **Leadership & domain:** finance team leadership, project and contract management, stakeholder reporting, ERP and digital transformation; infrastructure and utilities (water, wastewater, drainage, solid waste), project finance, public procurement
+- **Leadership & domain:** finance team leadership, project and contract management, stakeholder reporting, ERP and digital transformation; infrastructure and utilities (water, wastewater, drainage), project finance, public procurement
 
 ---
 

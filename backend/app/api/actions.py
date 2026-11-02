@@ -10,6 +10,7 @@ from app.services.pdf_service import PDFService
 from app.services.skill_service import SkillService
 from app.services.ai_service import AIService
 from app.services.ai_settings_service import detect_language
+from app.services import content_guard
 from app.core.config import settings
 
 router = APIRouter(tags=["job-actions"])
@@ -218,6 +219,10 @@ async def job_document_pdf(job_id: int, kind: str = "resume"):
     content = job.get("resume_markdown") if kind == "resume" else job.get("cover_letter")
     if not content:
         raise HTTPException(status_code=404, detail="Documento ainda não gerado")
+    try:
+        content_guard.ensure_clean(content, "O documento")
+    except content_guard.BlockedContent as e:
+        raise HTTPException(status_code=422, detail=str(e))
     name = _pdf_name(job, kind)
     return Response(content=PDFService.generate_pdf(content, name), media_type="application/pdf",
                     headers={"Content-Disposition": f'attachment; filename="{name}"'})

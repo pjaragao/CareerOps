@@ -22,7 +22,8 @@ class JobService:
                     query += " WHERE j.status = %s"
                     params.append(status)
                 else:
-                    query += " WHERE j.status NOT IN ('removed', 'archived')"
+                    # 'discovered': found by a search, waits in Automação until you approve it
+                    query += " WHERE j.status NOT IN ('removed', 'archived', 'discovered')"
                 
                 query += " ORDER BY j.created_at DESC LIMIT %s"
                 params.append(limit)
@@ -151,7 +152,7 @@ class JobService:
 
     @staticmethod
     def update_job_status(job_id: int, new_status: str) -> bool:
-        VALID = {'scraped', 'new', 'applied', 'interviewing', 'offer', 'rejected', 'archived', 'done', 'error'}
+        VALID = {'discovered', 'scraped', 'new', 'applied', 'interviewing', 'offer', 'rejected', 'archived', 'done', 'error'}
         if new_status not in VALID:
             return False
         conn = get_db_connection()

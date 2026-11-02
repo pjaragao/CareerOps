@@ -35,14 +35,27 @@ async function apiBase(force = false) {
     return null;
 }
 
+// Managed mode: this copy runs in the browser on the server. The worker sets { careeropsManaged: { apiBase, token } }
+// in chrome.storage.local; the copy in your own Chrome never has it and works as always.
+async function managedConfig() {
+    const { careeropsManaged } = await chrome.storage.local.get('careeropsManaged');
+    if (careeropsManaged && careeropsManaged.apiBase) {
+        const base = careeropsManaged.apiBase.replace(/\/$/, '');
+        if (!API_BASES.includes(base)) API_BASES.unshift(base);
+        else preferBase(base);
+    }
+    return careeropsManaged || null;
+}
+
 // One request to the reachable backend (no retry on other addresses, so an AI call never runs twice)
 async function callBackend(path, method, body) {
-    const base = await apiBase();
+    const managed = await managedConfig();
+    const base = managed ? managed.apiBase.replace(/\/$/, '') : await apiBase();
     if (!base) return { ok: false, status: 0, data: { detail: 'Backend do CareerOps indisponível. Detalhes: ' + probeErrors.join(' | ') } };
     try {
         const res = await fetch(base + path, {
             method: method || 'GET',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', ...(managed && managed.token ? { 'X-CareerOps-Token': managed.token } : {}) },
             body: body ? JSON.stringify(body) : undefined
         });
         return { ok: res.ok, status: res.status, data: await res.json().catch(() => null) };
@@ -177,8 +190,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 });
 
 // ── LinkedIn Copilot: user-triggered capture (right-click → "Enviar ao CareerOps Copilot") ──
-// Sends only what the user chose: the selected text (a post) or the current profile page.
-// Nothing is liked, commented, followed or sent on LinkedIn — the backend only drafts.
+// Sends only what the user chose: the selected text (a post) or the current profile page. The backend only drafts:
+// what goes out on LinkedIn is what you do, or what you approved in the app (managed mode, linkedin_assist.js section 8).
 
 chrome.runtime.onInstalled.addListener(() => {
     chrome.contextMenus.create({
@@ -286,7 +299,8 @@ chrome.tabs.onRemoved.addListener((tabId) => { setApplyTab(tabId, null); });
 
 // A file from the backend (the tailored resume PDF) as base64, so a content script can attach it to a form
 async function backendFile(path) {
-    const base = await apiBase();
+    const managed = await managedConfig();
+    const base = managed ? managed.apiBase.replace(/\/$/, '') : await apiBase();
     if (!base) return { ok: false, detail: 'Backend do CareerOps indisponível' };
     try {
         const res = await fetch(base + path);
@@ -342,7 +356,8 @@ const CHECK_ALARM = 'careerops-prospect-check';
 const CHECK_TIMEOUT = 'careerops-prospect-check-timeout';
 const CHECK_URL = 'https://www.linkedin.com/mynetwork/invite-connect/connections/#careerops-check-bg';
 
-function scheduleProspectCheck() {
+async function scheduleProspectCheck() {
+    if (await managedConfig()) { chrome.alarms.clear(CHECK_ALARM); return; }   // on the server the backend schedules it
     chrome.alarms.get(CHECK_ALARM, (a) => { if (!a) chrome.alarms.create(CHECK_ALARM, { delayInMinutes: 10, periodInMinutes: 720 }); });
     chrome.idle.setDetectionInterval(60);
 }
@@ -375,6 +390,7 @@ async function finishProspectCheck(tabId) {
 
 // the 12-hourly run: marked due, started at once if you are already away, otherwise at the next idle moment
 async function runDueCheck() {
+    if (await managedConfig()) return;   // on the server the backend schedules it
     const { prospectCheckDue, careeropsPaused } = await chrome.storage.local.get(['prospectCheckDue', 'careeropsPaused']);
     if (prospectCheckDue && !careeropsPaused) startProspectCheck(false);   // paused: stays due for the next idle moment
 }
@@ -402,6 +418,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         return true;
     }
     if (request.action !== 'prospectCheckDone') return;
+    if (request.managedRun) {   // the check was an action of the queue: the backend closes it, the worker closes the window
+        const path = `/automation/actions/${request.managedRun}/${request.ok ? 'complete' : 'escalate'}`;
+        callBackend(path, 'POST', request.ok ? { outcome: 'read', data: { summary: request.summary } } : { code: 'unexpected_layout', text: request.summary || '' });
+        return;
+    }
     const found = request.ok ? request.result.accepted.length + request.result.replied.length + (request.result.invited || []).length : 0;
     chrome.storage.local.set({ prospectCheck: { at: Date.now(), ok: request.ok, summary: request.summary, result: request.result } });
     if (found) setBadge(`+${found}`, '#00d4aa');

@@ -29,7 +29,10 @@ services:
     depends_on:
       - gotenberg
     networks:
-      - supabase_network
+      supabase_network:
+        aliases:
+          # the shared network has other apps' "backend": the worker always uses this name, unique per stack
+          - ${CAREEROPS_BACKEND_ALIAS:-careerops-backend}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
@@ -54,6 +57,8 @@ services:
     restart: unless-stopped
     ports:
       - "${CAREEROPS_FRONTEND_PORT:-5173}:5173"
+    environment:
+      API_TARGET: "http://${CAREEROPS_BACKEND_ALIAS:-careerops-backend}:8000"
     depends_on:
       - backend
     networks:
@@ -68,6 +73,45 @@ services:
       paulojr.stack: "careerops"
       paulojr.type: "application"
       paulojr.origin: "github"
+
+  # ── Autopilot worker: the server browser (Chromium + extension) ──────
+  # Does nothing until you turn it on in the app (Automação). The address of the browser tools and noVNC is the host's
+  # loopback only: noVNC reaches you through nginx_secure, with a password. See automation/README.md.
+  automation:
+    build:
+      context: ./automation
+      dockerfile: Dockerfile
+      additional_contexts:
+        extension: ./extension
+    restart: unless-stopped
+    mem_limit: 2500m
+    shm_size: 1g
+    stop_grace_period: 120s
+    # Only what the browser needs, no env_file: a page must never be one step from the database password or the AI keys
+    environment:
+      CAREEROPS_API_BASE: "http://${CAREEROPS_BACKEND_ALIAS:-careerops-backend}:8000/api"
+      CAREEROPS_WORKER_TOKEN: "${CAREEROPS_WORKER_TOKEN:-}"
+      VNC_PASSWORD: "${VNC_PASSWORD:-}"
+      BROWSER_MODE: "${BROWSER_MODE:-xvfb}"
+    ports:
+      - "127.0.0.1:${CAREEROPS_NOVNC_PORT:-6080}:6080"
+      - "127.0.0.1:${CAREEROPS_MCP_LINKEDIN_PORT:-8931}:8931"
+      - "127.0.0.1:${CAREEROPS_MCP_ATS_PORT:-8932}:8932"
+    volumes:
+      - careerops_browser:/data
+      - careerops_output:/app/output
+    depends_on:
+      - backend
+    networks:
+      - supabase_network
+    labels:
+      paulojr.stack: "careerops"
+      paulojr.type: "application"
+      paulojr.origin: "github"
+      coolify.managed: "true"
+      coolify.applicationId: "1"
+      coolify.type: "application"
+      coolify.name: "slqfhcgt1uvhpqned6me9map"
 
   # ── Gotenberg (HTML → PDF) ─────────────────────────────────
   gotenberg:
@@ -91,6 +135,7 @@ services:
 
 volumes:
   careerops_output:
+  careerops_browser:   # the LinkedIn session lives here: never expose it
 
 networks:
   supabase_network:
