@@ -66,7 +66,7 @@ def db(database, monkeypatch):
     with conn.cursor() as cur:
         cur.execute(f"TRUNCATE {', '.join('public.' + t for t in TABLES)} RESTART IDENTITY CASCADE")
         cur.execute("""UPDATE public.automation_state SET mode = 'live', account_kind = 'main', allow_final_submit = TRUE, halted_at = NULL,
-                       halted_reason = NULL, halted_lanes = '{}', invites_paused_until = NULL, ramp_step = 2, ramp_step_at = NOW(),
+                       halted_reason = NULL, halted_lanes = '{}', invites_paused_until = NULL, ramp_step = 2, ramp_step_at = NOW(), ramp_auto = TRUE,
                        confirm_submit_left = 0, review_cv_left = 0, next_write_at = NULL, session_status = 'logged_in'""")
     conn.commit()
     conn.close()

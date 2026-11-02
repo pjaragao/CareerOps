@@ -74,6 +74,7 @@ export interface AutomationStatus {
     halted_lanes: string[];
     invites_paused_until: string | null;
     ramp_step: number;
+    ramp_auto: boolean;
     confirm_submit_left: number;
     review_cv_left: number;
     session_status: string | null;
@@ -116,7 +117,7 @@ const data = <T,>(p: Promise<{ data: T }>) => p.then((r) => r.data);
 
 export const automationService = {
   status: () => data(api.get<AutomationStatus>(`${base}/status`)),
-  setState: (patch: Partial<Pick<AutomationStatus['state'], 'mode' | 'account_kind' | 'allow_final_submit'>>) => data(api.patch(`${base}/state`, patch)),
+  setState: (patch: Partial<Pick<AutomationStatus['state'], 'mode' | 'account_kind' | 'allow_final_submit' | 'ramp_step' | 'ramp_auto'>>) => data(api.patch(`${base}/state`, patch)),
   halt: () => data(api.post(`${base}/halt`, { reason: 'Parado por você' })),
   resume: () => data(api.post(`${base}/resume`)),
   inbox: () => data(api.get<Inbox>(`${base}/inbox`)),

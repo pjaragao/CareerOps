@@ -35,11 +35,13 @@ class StateIn(BaseModel):
     mode: Optional[Literal["off", "dry_run", "live"]] = None
     account_kind: Optional[Literal["test", "main"]] = None
     allow_final_submit: Optional[bool] = None
+    ramp_step: Optional[int] = Field(None, ge=0, le=2)
+    ramp_auto: Optional[bool] = None
 
 
 @router.patch("/state", dependencies=[Depends(require_approver)])
 async def update_state(req: StateIn):
-    return Auto.update_state(req.mode, req.account_kind, req.allow_final_submit)
+    return Auto.update_state(req.mode, req.account_kind, req.allow_final_submit, req.ramp_step, req.ramp_auto)
 
 
 class HaltIn(BaseModel):

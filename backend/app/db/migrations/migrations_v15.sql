@@ -200,3 +200,5 @@ ALTER TABLE public.job_email_events ADD COLUMN IF NOT EXISTS source TEXT;
 -- What to do with the message in the mailbox (Lolo does it): archive what needs nothing from you, keep the rest
 ALTER TABLE public.job_email_events ADD COLUMN IF NOT EXISTS mail_action TEXT;          -- archive | keep
 ALTER TABLE public.job_email_events ADD COLUMN IF NOT EXISTS mail_done_at TIMESTAMP WITH TIME ZONE;
+-- The ramp of the limits: false = it stays on the step you chose; a LinkedIn warning still lowers it
+ALTER TABLE public.automation_state ADD COLUMN IF NOT EXISTS ramp_auto BOOLEAN NOT NULL DEFAULT TRUE;

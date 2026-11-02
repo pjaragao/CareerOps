@@ -4,7 +4,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { Check, CircleStop, ExternalLink, FileText, Inbox as InboxIcon, ListChecks, Mail, Monitor, Play, RefreshCw, Settings2, UserRound, X } from 'lucide-react';
 import TabbedPage from '../components/TabbedPage';
 import { EligibilityBadge, css as listCss } from './JobBoard';
-import { automationService as auto, Action, AutomationStatus, EmailEvent, FoundJob, FunnelRow, Inbox, Question, SearchRow } from '../services/automationService';
+import { automationService as auto, Action, AutomationStatus, EmailEvent, FoundJob, FunnelRow, Inbox, Limit, Question, SearchRow } from '../services/automationService';
 
 const muted: React.CSSProperties = { color: 'var(--text-muted)', fontSize: '0.88rem' };
 const stack: React.CSSProperties = { display: 'flex', flexDirection: 'column', gap: '0.8rem' };
@@ -565,6 +565,65 @@ const EmailLine = ({ event, onDone }: { event: EmailEvent; onDone: () => void })
 // ── Searches, limits, mode ───────────────────────────────────────────────
 const LIMIT_LABEL: Record<string, string> = { apply: 'Candidaturas', comment: 'Comentários', connect: 'Convites', follow: 'Seguir', search: 'Buscas', job_read: 'Vagas lidas', check: 'Verificações', feed_scan: 'Leituras do feed', follow_scan: 'Sugestões' };
 
+// what each kind reads as, writes first; the reads at the end
+const LIMIT_ORDER = ['apply', 'comment', 'connect', 'follow', 'search', 'job_read', 'check', 'feed_scan', 'follow_scan'];
+const STEP_NAMES = ['Degrau 1', 'Degrau 2', 'Degrau 3'];
+const smallInput: React.CSSProperties = { ...input, width: 64, padding: '0.35rem 0.4rem', textAlign: 'center' };
+
+const LimitRow = ({ limit, step, onSaved, setError }: { limit: Limit; step: number; onSaved: () => void; setError: (e: string) => void }) => {
+  const initial = [limit.step0, limit.step1, limit.step2];
+  const [values, setValues] = useState<string[]>(initial.map(String));
+  const numbers = values.map((v) => Number(v));
+  const valid = numbers.every((n, i) => values[i].trim() !== '' && Number.isInteger(n) && n >= 0 && n <= 200);
+  const dirty = numbers.some((n, i) => n !== initial[i]);
+  const save = () => auto.setLimit(limit.kind, { step0: numbers[0], step1: numbers[1], step2: numbers[2] }).then(onSaved).catch((e) => setError(errorText(e)));
+  return (
+    <tr style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+      <td style={{ padding: '6px 0' }}>{LIMIT_LABEL[limit.kind] || limit.kind}<div style={{ ...muted, fontSize: '0.75rem' }}>{limit.used} usado(s) {limit.period === 'week' ? 'na semana' : 'hoje'}</div></td>
+      {values.map((v, i) => (
+        <td key={i} style={{ textAlign: 'center' }}>
+          <input type="number" min={0} max={200} inputMode="numeric" aria-label={`${LIMIT_LABEL[limit.kind] || limit.kind}, ${STEP_NAMES[i]}`}
+            style={{ ...smallInput, borderColor: i === step ? 'rgba(108,99,255,.7)' : undefined, fontWeight: i === step ? 700 : 400 }}
+            value={v} onChange={(e) => setValues(values.map((x, j) => (j === i ? e.target.value : x)))}
+            onKeyDown={(e) => { if (e.key === 'Enter' && valid && dirty) save(); }} />
+        </td>
+      ))}
+      <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+        {dirty && <button className="jb-icon primary" title="Salvar" disabled={!valid} onClick={save}><Check size={15} /></button>}
+      </td>
+    </tr>
+  );
+};
+
+const LimitsPanel = ({ status, onChange, setError }: { status: AutomationStatus; onChange: () => void; setError: (e: string) => void }) => {
+  const { state } = status;
+  const step = Math.min(Math.max(state.ramp_step, 0), 2);
+  const rows = [...status.limits].sort((a, b) => LIMIT_ORDER.indexOf(a.kind) - LIMIT_ORDER.indexOf(b.kind));
+  const set = (patch: Parameters<typeof auto.setState>[0]) => auto.setState(patch).then(onChange).catch((e) => setError(errorText(e)));
+  return (
+    <div className="panel" style={stack}>
+      <style>{listCss}</style>
+      <h3 style={{ fontSize: '1.05rem', fontWeight: 600 }}>Limites</h3>
+      <p style={muted}>Quanto cada coisa pode acontecer por dia (convites: por semana) em cada degrau. Vale o degrau marcado; mude os números e salve (✓).</p>
+      <div style={row}>
+        {STEP_NAMES.map((name, i) => <button key={name} className={`btn ${step === i ? 'btn-primary' : 'btn-secondary'}`} onClick={() => set({ ramp_step: i })}>{name}</button>)}
+      </div>
+      <label style={checkLabel}>
+        <input type="checkbox" style={checkbox} checked={state.ramp_auto} onChange={(e) => set({ ramp_auto: e.target.checked })} />
+        <span>Subir sozinho um degrau a cada semana sem alerta. Desligado, fica no degrau que você escolher. Um alerta do LinkedIn sempre desce um degrau.</span>
+      </label>
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', fontSize: '0.88rem', borderCollapse: 'collapse' }}>
+          <thead><tr style={{ textAlign: 'left', color: 'var(--text-muted)' }}>
+            <th>&nbsp;</th>{STEP_NAMES.map((n, i) => <th key={n} style={{ textAlign: 'center', fontWeight: i === step ? 700 : 400, color: i === step ? '#fff' : undefined }}>{n.replace('Degrau ', 'D')}</th>)}<th>&nbsp;</th>
+          </tr></thead>
+          <tbody>{rows.map((l) => <LimitRow key={`${l.kind}:${l.step0}:${l.step1}:${l.step2}`} limit={l} step={step} onSaved={onChange} setError={setError} />)}</tbody>
+        </table>
+      </div>
+    </div>
+  );
+};
+
 const SettingsTab = () => {
   const { data: s, error, refresh } = useLive<AutomationStatus>(auto.status, 30000);
   const { data: searches, refresh: refreshSearches } = useLive<SearchRow[]>(auto.searches, 120000);
@@ -589,14 +648,7 @@ const SettingsTab = () => {
         </label>
         <p style={muted}>Restam {s.state.confirm_submit_left} envio(s) com sua confirmação e {s.state.review_cv_left} CV(s) para você ler antes. Rotina Claude hoje: {s.claude_today} de {s.claude_per_day}.</p>
       </div>
-      <div className="panel">
-        <h3 style={{ fontSize: '1.05rem', fontWeight: 600, marginBottom: 6 }}>Limites (degrau {s.state.ramp_step + 1} de 3)</h3>
-        <p style={muted}>Sobe um degrau a cada semana sem alerta. Qualquer alerta do LinkedIn desce um e exige que você religue.</p>
-        <table style={{ width: '100%', fontSize: '0.88rem', borderCollapse: 'collapse', marginTop: 8 }}>
-          <thead><tr style={{ textAlign: 'left', color: 'var(--text-muted)' }}><th>&nbsp;</th><th>Usado</th><th>Limite</th><th>Período</th></tr></thead>
-          <tbody>{s.limits.map((l) => <tr key={l.kind} style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}><td style={{ padding: '5px 0' }}>{LIMIT_LABEL[l.kind] || l.kind}</td><td>{l.used}</td><td>{l.limit}</td><td>{l.period === 'week' ? 'semana' : 'dia'}</td></tr>)}</tbody>
-        </table>
-      </div>
+      <LimitsPanel status={s} onChange={refresh} setError={setActionError} />
       <div className="panel">
         <h3 style={{ fontSize: '1.05rem', fontWeight: 600, marginBottom: 6 }}>Buscas automáticas</h3>
         <p style={muted}>As mesmas de Vagas → Pesquisar. Mais recentes primeiro, últimas 48 h, duas rodadas por dia.</p>

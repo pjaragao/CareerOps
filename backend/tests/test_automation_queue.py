@@ -154,6 +154,29 @@ def test_ramp_goes_by_steps(db, sql):
     assert Auto.state()["ramp_step"] == 1
 
 
+def test_the_step_you_pick_stays_when_the_climb_is_off(db, sql, client):
+    from tests.conftest import APPROVER, BOT
+    assert client.patch("/api/automation/state", json={"ramp_step": 0, "ramp_auto": False}, headers=BOT).status_code == 401
+    assert client.patch("/api/automation/state", json={"ramp_step": 0, "ramp_auto": False}, headers=APPROVER).status_code == 200
+    assert next(l for l in Auto.limits() if l["kind"] == "apply")["limit"] == 3
+    sql("UPDATE public.automation_state SET ramp_step_at = NOW() - INTERVAL '8 days'")
+    Auto.housekeeping()
+    assert Auto.state()["ramp_step"] == 0
+    Auto.update_state(ramp_auto=True)
+    Auto.housekeeping()
+    assert Auto.state()["ramp_step"] == 1
+
+
+def test_you_set_each_step_of_a_limit(db, sql, client):
+    from tests.conftest import APPROVER
+    try:
+        assert client.put("/api/automation/limits/comment", json={"step0": 1, "step1": 2, "step2": 4}, headers=APPROVER).status_code == 200
+        assert next(l for l in Auto.limits() if l["kind"] == "comment")["limit"] == 4   # tests run on step 2
+        assert client.put("/api/automation/limits/nope", json={"step0": 1, "step1": 2, "step2": 4}, headers=APPROVER).status_code == 404
+    finally:
+        sql("UPDATE public.automation_limits SET step0 = 3, step1 = 5, step2 = 10 WHERE kind = 'comment'")
+
+
 def test_ramp_does_not_climb_while_halted(db, sql):
     sql("UPDATE public.automation_state SET ramp_step = 0, ramp_step_at = NOW() - INTERVAL '8 days', halted_at = NOW()")
     Auto.housekeeping()

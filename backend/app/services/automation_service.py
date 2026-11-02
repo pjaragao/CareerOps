@@ -112,12 +112,16 @@ class AutomationService:
         return _one("SELECT * FROM public.automation_state WHERE id = 1") or {}
 
     @staticmethod
-    def update_state(mode: Optional[str] = None, account_kind: Optional[str] = None, allow_final_submit: Optional[bool] = None) -> dict:
+    def update_state(mode: Optional[str] = None, account_kind: Optional[str] = None, allow_final_submit: Optional[bool] = None,
+                     ramp_step: Optional[int] = None, ramp_auto: Optional[bool] = None) -> dict:
+        """A step you pick counts from now: the automatic climb (when on) waits a full ramp_days from it."""
         return _one("""
             UPDATE public.automation_state
                SET mode = COALESCE(%s, mode), account_kind = COALESCE(%s, account_kind),
-                   allow_final_submit = COALESCE(%s, allow_final_submit), updated_at = NOW()
-             WHERE id = 1 RETURNING *""", (mode, account_kind, allow_final_submit))
+                   allow_final_submit = COALESCE(%s, allow_final_submit),
+                   ramp_step = COALESCE(%s, ramp_step), ramp_step_at = CASE WHEN %s IS NULL THEN ramp_step_at ELSE NOW() END,
+                   ramp_auto = COALESCE(%s, ramp_auto), updated_at = NOW()
+             WHERE id = 1 RETURNING *""", (mode, account_kind, allow_final_submit, ramp_step, ramp_step, ramp_auto))
 
     @staticmethod
     def _allow_final(state: dict, kind: str, target_url: Optional[str]) -> bool:
@@ -767,7 +771,7 @@ class AutomationService:
                   WHERE lane = 'linkedin_read' AND status = 'queued' AND created_at < NOW() - INTERVAL '18 hours'""")
         days = (config().get("automation") or {}).get("ramp_days", 7)
         _rows("""UPDATE public.automation_state SET ramp_step = ramp_step + 1, ramp_step_at = NOW()
-                  WHERE id = 1 AND ramp_step < 2 AND mode = 'live' AND halted_at IS NULL AND ramp_step_at < NOW() - make_interval(days => %s)""", (days,))
+                  WHERE id = 1 AND ramp_auto AND ramp_step < 2 AND mode = 'live' AND halted_at IS NULL AND ramp_step_at < NOW() - make_interval(days => %s)""", (days,))
         # what the screens and the queue no longer need: screenshots are removed by the worker, their rows here
         _rows("DELETE FROM public.automation_events WHERE at < NOW() - INTERVAL '90 days'")
 
