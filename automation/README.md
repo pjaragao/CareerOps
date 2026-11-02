@@ -21,7 +21,7 @@ docker compose --env-file ~/.config/careerops/test-stack.env -f automation/test-
 
 ## Produção
 
-Cada `git push` na `main` implanta pelo Coolify (auto-deploy). O serviço `automation` sobe junto, parado até ter token e modo ligado.
+O deploy é manual: um `git push` não dispara nada, é preciso clicar em **Deploy** no Coolify (CareerOps). O serviço `automation` sobe junto, parado até ter token e modo ligado.
 
 1. **Cadastre `CAREEROPS_APPROVER_TOKEN` no Coolify** (CareerOps → Environment Variables) com o valor de `~/.config/careerops/production.env`, faça um redeploy e digite o mesmo valor em Configurações → Chaves de IA → Acesso. Até lá, aprovar e publicar posts pela tela retorna 401; o que já foi aprovado continua saindo no horário.
 
