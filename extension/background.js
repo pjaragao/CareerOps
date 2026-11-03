@@ -350,16 +350,16 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 // convidado/aceitou/respondeu (linkedin_assist.js, section 5). Three list pages per run, no profile visits.
 // The tab must be VISIBLE: Chrome does not render background tabs, and LinkedIn's lists only load more items when
 // their end scrolls into view — a hidden tab reads just the first 10. So a manual run brings the tab to the front for
-// ~40 s and then returns to the tab you were on; the 12-hourly run waits until you are away (idle 1 min, screen
-// unlocked) and does the same.
+// ~40 s and then returns to the tab you were on. Only the server runs it on a schedule (the backend's check_hours): the
+// extension in your own Chrome checks only when you ask (2026-11-03: it opened a tab on its own and you did not want it).
 const CHECK_ALARM = 'careerops-prospect-check';
 const CHECK_TIMEOUT = 'careerops-prospect-check-timeout';
 const CHECK_URL = 'https://www.linkedin.com/mynetwork/invite-connect/connections/#careerops-check-bg';
 
 async function scheduleProspectCheck() {
-    if (await managedConfig()) { chrome.alarms.clear(CHECK_ALARM); return; }   // on the server the backend schedules it
-    chrome.alarms.get(CHECK_ALARM, (a) => { if (!a) chrome.alarms.create(CHECK_ALARM, { delayInMinutes: 10, periodInMinutes: 720 }); });
-    chrome.idle.setDetectionInterval(60);
+    // no schedule here, anywhere: an alarm left by an older version is removed, and nothing stays due
+    chrome.alarms.clear(CHECK_ALARM);
+    await chrome.storage.local.remove('prospectCheckDue');
 }
 chrome.runtime.onInstalled.addListener(scheduleProspectCheck);
 chrome.runtime.onStartup.addListener(scheduleProspectCheck);
@@ -388,19 +388,8 @@ async function finishProspectCheck(tabId) {
     if (checkPrevTab) chrome.tabs.update(checkPrevTab, { active: true }).catch(() => {});
 }
 
-// the 12-hourly run: marked due, started at once if you are already away, otherwise at the next idle moment
-async function runDueCheck() {
-    if (await managedConfig()) return;   // on the server the backend schedules it
-    const { prospectCheckDue, careeropsPaused } = await chrome.storage.local.get(['prospectCheckDue', 'careeropsPaused']);
-    if (prospectCheckDue && !careeropsPaused) startProspectCheck(false);   // paused: stays due for the next idle moment
-}
-chrome.idle.onStateChanged.addListener((state) => { if (state === 'idle') runDueCheck(); });
-
 chrome.alarms.onAlarm.addListener(async (alarm) => {
-    if (alarm.name === CHECK_ALARM) {
-        await chrome.storage.local.set({ prospectCheckDue: true });
-        chrome.idle.queryState(60, (state) => { if (state === 'idle') runDueCheck(); });
-    }
+    if (alarm.name === CHECK_ALARM) { chrome.alarms.clear(CHECK_ALARM); return; }   // left by an older version: never runs
     if (alarm.name === CHECK_TIMEOUT) {
         const { careeropsPaused } = await chrome.storage.local.get('careeropsPaused');
         if (careeropsPaused) { chrome.alarms.create(CHECK_TIMEOUT, { delayInMinutes: 4 }); return; }   // you paused it to look: wait
