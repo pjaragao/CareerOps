@@ -211,11 +211,18 @@ class EngagementIn(BaseModel):
     other_comments: Optional[str] = None
     instruction: Optional[str] = None
     regenerate: bool = False
+    angle: Optional[str] = None
 
 
 class EngagementUpdate(BaseModel):
     status: Optional[Literal["pending", "done", "skipped"]] = None
     comment_draft: Optional[str] = None
+
+
+@router.get("/engagement/angles")
+async def engagement_angles():
+    from app.services.linkedin_copilot_service import COMMENT_ANGLES
+    return [{"key": k, "label": v[0]} for k, v in COMMENT_ANGLES.items()]
 
 
 @router.get("/engagement")
@@ -227,7 +234,7 @@ async def engagement_queue():
 async def add_engagement(req: EngagementIn):
     try:
         return await Copilot.add_engagement(req.post_text, req.post_url, req.author_name, req.author_headline,
-                                            req.other_comments, req.instruction, req.regenerate)
+                                            req.other_comments, req.instruction, req.regenerate, req.angle)
     except RuntimeError as e:
         raise HTTPException(status_code=502, detail=str(e))
 

@@ -37,12 +37,17 @@ PREVIOUS DRAFT (the professional wants a different one — new angle, new openin
 """
 {% endif %}
 
-RELEVANCE (0–100): how useful it is for this professional to be seen commenting here — author is a hiring manager, recruiter or practitioner in the target areas, the topic overlaps one of the two markets (sanitation, infrastructure, concessions, engineering design, cost estimating, construction management, utilities; or financial modeling, forecasting, data, FP&A, AI for finance, AI engineering), and the professional has real experience to add. Below 40 means skip.
+RELEVANCE (0–100): how useful it is for this professional to be seen commenting here — author is a hiring manager, recruiter or practitioner in the target areas, and the topic overlaps one of the two markets (sanitation, infrastructure, concessions, engineering design, cost estimating, construction management, utilities; or financial modeling, forecasting, data, FP&A, AI for finance, AI engineering). Below 40 means skip.
 
 COMMENT (only if relevance ≥ 40):
-- React to THIS post's specific point; add one thing the post and the other comments don't say: a concrete experience, a trade-off, a number from real work, or a sharp question.
-- Mention the professional's background only when it genuinely helps the point; never self-promote, never link, never ask for a job.
-- No hashtags. Only facts from the knowledge base; never numbers marked "(estimate)" or NDA client names.
+- Talk about the SUBJECT, not about the professional. The default is a technical discussion of the post's idea: what it gets right, where it breaks, what it solves, what it costs. Often a short "this is a good approach — it solves X" is enough.
+- Do NOT use the pattern "I did something similar → a possible problem → how this solves it". Do not mention the professional's own projects, career or background{% if angle != "experiencia" %} at all{% else %} unless the chosen angle below asks for it{% endif %}.
+- React to THIS post's specific point; add one thing the post and the other comments don't say.
+- Never self-promote, never link, never ask for a job. No hashtags. Only facts from the knowledge base; never numbers marked "(estimate)" or NDA client names.
+- Use the line of thought below for the professional's opinions and way of reasoning, not to retell their experience.
+
+ANGLE OF THIS COMMENT — {{ angle_label }}:
+{{ angle_rule }}
 
 {{ writing_style("comment") }}
 

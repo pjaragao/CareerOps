@@ -155,7 +155,9 @@ class AISettingsService:
         if entry.get("custom"):
             lines.append(f"- Extra instructions from the candidate: {entry['custom']}")
         lines += [
-            "- Sound like a real, specific person: first person, one concrete detail from real experience, varied sentence length.",
+            ("- Sound like a real, specific person: varied sentence length, plain words; precise about the subject, not about yourself."
+             if kind == "comment" else
+             "- Sound like a real, specific person: first person, one concrete detail from real experience, varied sentence length."),
             "- Never use these clichés: " + "; ".join(AI_CLICHES) + ".",
             "- Don't open with praise or a summary of what the other person said; start with your own point.",
         ]

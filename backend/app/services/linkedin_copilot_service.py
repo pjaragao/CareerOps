@@ -132,6 +132,23 @@ def _score(value: Any) -> int:
         return 0
 
 
+# Kinds of comment the AI can write (the extension shows one button each). "tecnico" is the default.
+COMMENT_ANGLES = {
+    "tecnico": ("Discussão técnica",
+                "Discuss the idea technically: a mechanism, a trade-off, a limit or a condition under which it works or fails. No personal story."),
+    "elogio": ("Elogio + problema que resolve",
+               "Short: say plainly what is good about the solution, then name one concrete problem it solves (or risk it removes). Two or three sentences. No personal story."),
+    "pergunta": ("Pergunta técnica",
+                 "One brief acknowledgement, then one sharp, specific technical question the post leaves open (scale, edge case, cost, data, validation). No personal story."),
+    "contraponto": ("Contraponto respeitoso",
+                    "Agree with what holds, then add a respectful caveat: a case where it does not apply, a hidden cost or a risk, and what would mitigate it. No personal story."),
+    "complemento": ("Complemento / recurso",
+                    "Extend the post with one related technique, tool, standard or metric that pairs well with it, and why. No personal story."),
+    "experiencia": ("Relacionar com sua experiência",
+                    "Connect the point to the professional's real work, from the knowledge base: what was done, what problem appeared, how this idea addresses it. Keep it about the idea, not self-promotion."),
+}
+
+
 def _voice():
     from app.services.linkedin_voice_service import VoiceService   # imports this module: loaded on first use
     return VoiceService
@@ -368,11 +385,11 @@ class LinkedInCopilotService:
     @staticmethod
     async def add_engagement(post_text: str, post_url: Optional[str] = None, author_name: Optional[str] = None,
                              author_headline: Optional[str] = None, other_comments: Optional[str] = None,
-                             instruction: Optional[str] = None, regenerate: bool = False) -> dict:
+                             instruction: Optional[str] = None, regenerate: bool = False, angle: Optional[str] = None) -> dict:
         """Drafts a comment. A post already in the queue returns its draft, unless the user asks for a new one
         (regenerate) or gives an instruction — then the same row gets the new draft."""
         existing = _one("SELECT * FROM public.linkedin_engagement WHERE post_url = %s", (post_url,)) if post_url else None
-        if existing and not (regenerate or instruction):
+        if existing and not (regenerate or instruction or angle):
             return existing
         own_recent = [r["comment_draft"][:220] for r in _rows("""
             SELECT comment_draft FROM public.linkedin_engagement
@@ -383,6 +400,9 @@ class LinkedInCopilotService:
             "lang_name": detect_language(post_text), "other_comments": (other_comments or "")[:3000], "own_recent": own_recent,
             "instruction": (instruction or "")[:1000],
             "previous_draft": existing.get("comment_draft") if existing else None,
+            "angle": angle if angle in COMMENT_ANGLES else "tecnico",
+            "angle_label": COMMENT_ANGLES.get(angle, COMMENT_ANGLES["tecnico"])[0],
+            "angle_rule": COMMENT_ANGLES.get(angle, COMMENT_ANGLES["tecnico"])[1],
         })
         relevance = _score(ai.get("relevance"))
         comment = (ai.get("comment") or "").strip() or None

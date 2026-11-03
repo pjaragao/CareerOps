@@ -369,11 +369,11 @@
         const status = line(box, opts.instruction ? `Gerando com o seu pedido: “${opts.instruction}”…` : 'Analisando o post…');
         const info = postInfo(post);
         if (info.post_text.length < 20) { status.textContent = 'Não encontrei o texto deste post.'; return; }
-        const res = await api('POST', '/engagement', { ...info, instruction: opts.instruction || null, regenerate: !!opts.regenerate });
+        const res = await api('POST', '/engagement', { ...info, instruction: opts.instruction || null, regenerate: !!opts.regenerate, angle: opts.angle || null });
         if (!res.ok) { status.textContent = errText(res); status.style.color = '#d63031'; return; }
         const item = res.data;
         status.textContent = `Relevância ${item.relevance ?? '?'} — ${item.reason || ''}`;
-        const again = (instruction) => draftComment(post, anchor, { instruction, regenerate: true });
+        const again = (instruction, angle = opts.angle) => draftComment(post, anchor, { instruction, angle, regenerate: true });
         if (item.status === 'skipped' || !item.comment_draft) {
             line(box, 'A IA sugere não comentar este post (pouco ligado aos seus mercados).', '#999');
             box.appendChild(button('Gerar mesmo assim', () => again('Write the comment anyway.'), false));
@@ -393,8 +393,25 @@
         actions.appendChild(button('Já comentei', () => api('PATCH', `/engagement/${item.id}`, { status: 'done', comment_draft: ta.value }).then(() => { toast('Registrado'); box.remove(); saveCommented(post, ta.value); }), false));
         actions.appendChild(button('Pular', () => api('PATCH', `/engagement/${item.id}`, { status: 'skipped' }).then(() => box.remove()), false));
         box.appendChild(actions);
+        angleRow(box, opts.angle || 'tecnico', (a) => again(opts.instruction, a));
         likeToggle(box, 'Curtir o post ao comentar');
         promptRow(box, 'Refazer com um pedido (ex.: mais curto, discorde com educação)', again);
+    }
+
+    // Kind of comment: one chip per angle (backend COMMENT_ANGLES); a click writes a new draft with that angle
+    const COMMENT_ANGLES = [
+        ['tecnico', 'Técnico'], ['elogio', 'Elogio + problema'], ['pergunta', 'Pergunta'],
+        ['contraponto', 'Contraponto'], ['complemento', 'Complemento'], ['experiencia', 'Minha experiência'],
+    ];
+    function angleRow(box, current, onPick) {
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px;margin-top:6px;font:12px system-ui,sans-serif';
+        for (const [key, label] of COMMENT_ANGLES) {
+            const b = button(label, () => onPick(key), key === current);
+            b.title = 'Gerar outro comentário neste estilo';
+            row.appendChild(b);
+        }
+        box.appendChild(row);
     }
 
     // Text field + "Gerar": your own request for the comment
@@ -417,7 +434,7 @@
         const box = card('CareerOps · comentário com pedido');
         anchor.insertAdjacentElement('afterend', box);
         line(box, 'Diga o que quer no comentário: ângulo, tom, um ponto a citar, concordar ou discordar…');
-        promptRow(box, 'Ex.: concorde e cite a experiência com concessões de saneamento', (v) => draftComment(post, anchor, { instruction: v, regenerate: true })).focus();
+        promptRow(box, 'Ex.: elogie a solução e diga que problema de escala ela resolve', (v) => draftComment(post, anchor, { instruction: v, regenerate: true })).focus();
     }
 
     // When you click LinkedIn's own submit button in this post, the queue item is marked as done
