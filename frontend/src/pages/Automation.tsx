@@ -4,6 +4,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { Check, CircleStop, Zap, ExternalLink, FileText, Inbox as InboxIcon, ListChecks, Mail, Monitor, Play, RefreshCw, Settings2, UserRound, X } from 'lucide-react';
 import TabbedPage from '../components/TabbedPage';
 import { EligibilityBadge, css as listCss } from './JobBoard';
+import { jobService } from '../services/jobService';
 import { automationService as auto, Action, AutomationStatus, EmailEvent, FoundJob, FunnelRow, Inbox, Limit, Question, SearchRow } from '../services/automationService';
 
 const muted: React.CSSProperties = { color: 'var(--text-muted)', fontSize: '0.88rem' };
@@ -161,6 +162,29 @@ const CommentEditor = ({ action, text, setText, onRevised }: { action: Action; t
   </>;
 };
 
+// The ad as it was read, opened right here: no new tab, nothing leaves the screen
+const JobText = ({ jobId }: { jobId: number }) => {
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState<string | null>(null);
+  const [error, setError] = useState('');
+  const toggle = () => {
+    setOpen(!open);
+    if (text === null && !open) jobService.getJob(jobId).then((j) => setText(j.description || '')).catch((e) => setError(errorText(e)));
+  };
+  return (
+    <div>
+      <button type="button" style={{ ...muted, background: 'none', border: 'none', padding: 0, cursor: 'pointer', textDecoration: 'underline' }} onClick={toggle}>
+        <FileText size={12} /> {open ? 'Ocultar texto da vaga' : 'Ver texto da vaga'}
+      </button>
+      {open && (
+        <div style={{ ...muted, whiteSpace: 'pre-wrap', maxHeight: 360, overflow: 'auto', marginTop: 6, padding: '0.6rem 0.75rem', border: '1px solid var(--border)', borderRadius: 8, background: 'rgba(255,255,255,.02)' }}>
+          {error ? <Failure text={error} /> : text === null ? 'Carregando…' : (text.trim() || 'Sem texto salvo para esta vaga.')}
+        </div>
+      )}
+    </div>
+  );
+};
+
 const ProposalDetail = ({ action, text, setText, onRevised }: { action: Action; text: string; setText: (t: string) => void; onRevised: () => void }) => {
   const p = action.payload;
   return (
@@ -175,6 +199,7 @@ const ProposalDetail = ({ action, text, setText, onRevised }: { action: Action; 
         {(action.eligibility_issues || []).map((i, n) => (
           <p key={n} style={{ ...muted, color: action.eligibility_status === 'blocked' ? RED : YELLOW }}>“{i.quote}”{i.reason ? ` — ${i.reason}` : ''}</p>
         ))}
+        {action.target_id != null && <JobText jobId={action.target_id} />}
       </>}
       {action.kind === 'comment' && <>
         {p.reason && <p style={muted}>{p.reason}</p>}
@@ -253,6 +278,7 @@ const FoundList = ({ title, hint, jobs, action }: { title: string; hint: string;
           </div>
           <div style={muted}>{j.company}{j.triage_score != null ? ` · fit ${j.triage_score}` : ''}</div>
           {j.triage_reason && <p style={muted}>{j.triage_reason}</p>}
+          <JobText jobId={j.id} />
           {action && action(j)}
         </div>
       ))}

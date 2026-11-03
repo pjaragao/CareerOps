@@ -54,6 +54,7 @@ export interface AIOptions {
 }
 
 export const jobService = {
+  getJob: async (id: number) => (await api.get<Job>(`/jobs/${id}`)).data,
   getJobs: async (status?: string) => {
     const url = status ? `/jobs/?status=${status}` : '/jobs/';
     const response = await api.get<{ jobs: Job[] }>(url);
