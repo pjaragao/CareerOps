@@ -111,7 +111,7 @@ class ReviseIn(BaseModel):
     text: Optional[str] = Field(None, max_length=3000)
 
 
-@router.post("/actions/{action_id}/revise", dependencies=[Depends(require_approver)])
+@router.post("/actions/{action_id}/revise", dependencies=[Depends(require_decider)])   # Lolo too: it only rewrites a draft that still waits for approval
 async def revise(action_id: int, req: ReviseIn):
     """A comment still to approve, rewritten by the AI with your request; it waits for your approval again."""
     try:
