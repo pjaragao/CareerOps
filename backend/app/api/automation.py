@@ -107,15 +107,18 @@ async def approve(action_id: int, req: ApproveIn):
 
 
 class ReviseIn(BaseModel):
-    instruction: str = Field(..., min_length=2, max_length=1000)
+    instruction: str = Field("", max_length=1000)
     text: Optional[str] = Field(None, max_length=3000)
+    angle: Optional[str] = Field(None, max_length=30)   # kind of comment (COMMENT_ANGLES): técnico, elogio, pergunta…
 
 
 @router.post("/actions/{action_id}/revise", dependencies=[Depends(require_decider)])   # Lolo too: it only rewrites a draft that still waits for approval
 async def revise(action_id: int, req: ReviseIn):
     """A comment still to approve, rewritten by the AI with your request; it waits for your approval again."""
     try:
-        return _found(await Auto.revise(action_id, req.instruction.strip(), req.text))
+        if len(req.instruction.strip()) < 2 and not req.angle:
+            raise ValueError("Diga o que mudar ou o tipo de comentário")
+        return _found(await Auto.revise(action_id, req.instruction.strip(), req.text, req.angle))
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
@@ -556,7 +559,8 @@ async def bot_overview():
 
 @router.get("/bot/inbox", dependencies=[Depends(require_decider)])
 async def bot_inbox():
-    return {"text": BotService.inbox_text()}
+    text, ids = BotService.inbox()
+    return {"text": text, "ids": ids}
 
 
 class CommentLinkIn(BaseModel):
@@ -564,12 +568,13 @@ class CommentLinkIn(BaseModel):
     suggestion: str = Field("", max_length=1500)
     post_text: str = Field("", max_length=8000)
     author: str = Field("", max_length=200)
+    angle: Optional[str] = Field(None, max_length=30)
 
 
 @router.post("/bot/comment-link", dependencies=[Depends(require_decider)])
 async def bot_comment_link(req: CommentLinkIn):
     """A post you sent to be commented: the draft comes back and waits for your OK, like any other comment."""
     try:
-        return await BotService.comment_link(req.url, req.suggestion, req.post_text, req.author)
+        return await BotService.comment_link(req.url, req.suggestion, req.post_text, req.author, req.angle)
     except (ValueError, content_guard.BlockedContent) as e:
         raise HTTPException(status_code=422, detail=str(e))

@@ -46,7 +46,10 @@ def test_new_proposals_come_together_once(db, sql, awake):
     BotService.collect()
     digest = notes(sql, "proposals")
     assert len(digest) == 1
-    assert f"#{a['id']}" in digest[0]["text"] and f"#{b['id']}" in digest[0]["text"] and "Outro ponto" in digest[0]["text"]
+    # numbered lines, no ids: Lolo keeps which id each line is, and a reply "ok 1 3" is about those lines
+    assert "*1.*" in digest[0]["text"] and "*2.*" in digest[0]["text"] and "Outro ponto" in digest[0]["text"]
+    assert f"#{a['id']}" not in digest[0]["text"] and sorted(digest[0]["data"]["ids"]) == sorted([a["id"], b["id"]])
+    assert digest[0]["data"]["reply"] == "list"
 
 
 def test_the_digest_links_to_the_approval_list(db, sql, awake):
@@ -64,9 +67,9 @@ def test_a_long_digest_comes_one_message_per_kind(db, sql, add_job, awake):
     digest = notes(sql, "proposals")
     assert [d["data"]["kind"] for d in digest] == ["apply", "comment"]
     vagas, posts = digest[0]["text"], digest[1]["text"]
-    assert "Vagas" in vagas and "&tipo=apply" in vagas and all(f"#{j['id']}" in vagas for j in jobs)
+    assert "Vagas" in vagas and "&tipo=apply" in vagas and "*4.*" in vagas and sorted(digest[0]["data"]["ids"]) == sorted(j["id"] for j in jobs)
     assert "fit 88" in vagas and "🔴 residência" in vagas
-    assert "&tipo=comment" in posts and all(f"#{c['id']}" in posts for c in comments) and "#" + str(jobs[0]["id"]) not in posts
+    assert "&tipo=comment" in posts and "*6.*" in posts and sorted(digest[1]["data"]["ids"]) == sorted(c["id"] for c in comments)
 
 
 def test_a_short_digest_stays_one_message(db, sql, add_job, awake):
@@ -254,7 +257,7 @@ def drafted(monkeypatch, sql):
     """The comment AI, replaced: it writes from your suggestion and records the post like the real one."""
     calls = []
 
-    async def add_engagement(post_text, post_url=None, author_name=None, author_headline=None, other_comments=None, instruction=None, regenerate=False):
+    async def add_engagement(post_text, post_url=None, author_name=None, author_headline=None, other_comments=None, instruction=None, regenerate=False, angle=None):
         calls.append({"post_text": post_text, "instruction": instruction})
         row = sql("SELECT * FROM public.linkedin_engagement WHERE post_url = %s", (post_url,))
         if row:

@@ -294,7 +294,7 @@ class AutomationService:
             conn.close()
 
     @staticmethod
-    async def revise(action_id: int, instruction: str, text: Optional[str] = None) -> Optional[dict]:
+    async def revise(action_id: int, instruction: str, text: Optional[str] = None, angle: Optional[str] = None) -> Optional[dict]:
         """Your request for a comment still to approve: the AI rewrites it (from your edit, if any) and it waits for you again."""
         from app.services.linkedin_copilot_service import LinkedInCopilotService as Copilot
         action = _one("SELECT * FROM public.automation_actions WHERE id = %s AND status = 'proposed' AND kind = 'comment'", (action_id,))
@@ -306,7 +306,7 @@ class AutomationService:
         if not post or not post.get("post_url"):
             raise ValueError("Post do comentário não encontrado")
         item = await Copilot.add_engagement(post.get("post_text") or "", post["post_url"], post.get("author_name"), post.get("author_headline"),
-                                            instruction=instruction, regenerate=True)
+                                            instruction=instruction or "Write the comment in the chosen angle.", regenerate=True, angle=angle)
         if not (item.get("comment_draft") or "").strip():
             raise ValueError("A IA não devolveu um comentário: tente outro pedido")
         payload = {**(action["payload"] or {}), "text": item["comment_draft"], "relevance": item.get("relevance"), "reason": item.get("reason")}
@@ -314,7 +314,7 @@ class AutomationService:
                            WHERE id = %s AND status = 'proposed' RETURNING *""", (Json(payload), action_id))
         if updated:
             _rows("INSERT INTO public.automation_events (action_id, source, event, data) VALUES (%s, 'user', 'revised', %s)",
-                  (action_id, Json({"instruction": instruction[:500]})))
+                  (action_id, Json({"instruction": instruction[:500], "angle": angle})))
             updated["fit"] = AutomationService.fit_of(updated)
         return updated
 

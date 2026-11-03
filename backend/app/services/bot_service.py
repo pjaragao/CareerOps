@@ -9,7 +9,7 @@ import logging
 import re
 import urllib.error
 import urllib.request
-from typing import Dict, List, Optional
+from typing import Tuple, Dict, List, Optional
 from urllib.parse import urlparse
 
 from psycopg2.extras import Json
@@ -192,46 +192,47 @@ class BotService:
         title = a.get("title") or ""
         if a["status"] == "needs_user":
             questions = [q for q in (a.get("questions") or []) if isinstance(q, dict)]
-            lines = [f"🙋 *Precisa de você* #{a['id']} · {title}", a.get("error_text") or a.get("error_code") or ""]
+            lines = [f"🙋 *Precisa de você* · {title}", a.get("error_text") or a.get("error_code") or ""]
             if questions:
                 lines.append("Perguntas do formulário:")
                 lines += [f"• {q.get('label') or q.get('question') or '(pergunta sem texto na página)'}" + (f" (opções: {', '.join(str(o) for o in q['options'][:6])})" if q.get("options") else "")
                           for q in questions[:8]]
-                lines.append(f"Responda aqui (ex.: “#{a['id']}: aviso prévio = 30 dias”); a resposta fica salva para as próximas.")
+                lines.append("Responda a esta mensagem (ex.: “aviso prévio = 30 dias”); a resposta fica salva para as próximas.")
             elif a.get("error_code") in ("captcha", "account_required", "email_verification", "session_expired", "checkpoint"):
                 lines.append(f"Isso se resolve no navegador do servidor: {settings.CAREEROPS_NOVNC_URL}")
-                lines.append(f"Depois me diga “tentar de novo #{a['id']}”.")
+                lines.append("Depois responda a esta mensagem com “de novo”.")
             elif a.get("error_code") == "confirm_timeout":   # your OK still counts: it is filled again and sent without another wait
-                lines.append(f"Diga “confirmar #{a['id']}” (preenche de novo e envia, sem esperar outra vez) ou “cancelar #{a['id']}”.")
+                lines.append("Responda a esta mensagem com “ok” (preenche de novo e envia, sem esperar outra vez) ou “não” (desiste).")
             else:
-                lines.append(f"Diga “tentar de novo #{a['id']}” ou “cancelar #{a['id']}”.")
-            return "\n".join(l for l in lines if l), {"action_id": a["id"], "questions": questions}, False
+                lines.append("Responda a esta mensagem com “de novo” ou “não” (desiste).")
+            return "\n".join(l for l in lines if l), {"action_id": a["id"], "questions": questions, "reply": "needs_user",
+                                                         "error_code": a.get("error_code")}, False
         if a["status"] == "review_docs":
             job = a.get("target_id")
             files = [{"name": "CV", "path": f"/api/jobs/{job}/document.pdf?kind=resume"},
                      {"name": "Carta", "path": f"/api/jobs/{job}/document.pdf?kind=cover"}]
             if a.get("error_code") == "cv_review_failed":   # the reviewer agent sent it back and the redo still failed
-                return (f"📄 *O revisor não aprovou o CV* #{a['id']} · {a.get('job_title') or title} · {a.get('company') or ''}\n"
+                return (f"📄 *O revisor não aprovou o CV* · {a.get('job_title') or title} · {a.get('company') or ''}\n"
                         f"{a.get('error_text') or ''}\n"
-                        f"Mando o CV e a carta. “pode enviar #{a['id']}” envia assim mesmo; “cancelar #{a['id']}” desiste da vaga."), \
-                    {"action_id": a["id"], "files": files}, False
-            return (f"📄 *CV para revisar* #{a['id']} · {a.get('job_title') or title} · {a.get('company') or ''}\n"
-                    f"Mando o CV e a carta em seguida. Se estiver bom, diga “pode enviar #{a['id']}”; se não, “cancelar #{a['id']}”."), \
-                {"action_id": a["id"], "files": files}, False
+                        "Mando o CV e a carta. Responda a esta mensagem com “ok” para enviar assim mesmo, ou “não” para desistir da vaga."), \
+                    {"action_id": a["id"], "files": files, "reply": "review_docs"}, False
+            return (f"📄 *CV para revisar* · {a.get('job_title') or title} · {a.get('company') or ''}\n"
+                    "Mando o CV e a carta em seguida. Responda a esta mensagem com “ok” se estiver bom, ou “não” para desistir."), \
+                {"action_id": a["id"], "files": files, "reply": "review_docs"}, False
         if a["status"] == "awaiting_confirm":
-            return (f"🟢 *Pronto para enviar* #{a['id']} · {title}\nO formulário está preenchido e parado no botão Enviar. "
-                    f"Responda “ok” a esta mensagem (ou diga “confirmar #{a['id']}”) para o clique final; “cancelar #{a['id']}” desiste. "
-                    f"Ele espera 30 minutos; depois disso, “confirmar” ainda vale: preenche de novo e envia."), {"action_id": a["id"]}, True
+            return (f"🟢 *Pronto para enviar* · {title}\nO formulário está preenchido e parado no botão Enviar. "
+                    "Responda a esta mensagem com “ok” para o clique final, ou “não” para desistir. "
+                    "Ele espera 30 minutos; depois disso, o “ok” ainda vale: preenche de novo e envia."), {"action_id": a["id"], "reply": "awaiting_confirm"}, True
         if a["kind"] == "saved_import":   # only the one you asked for: the hourly ones are quiet
             r = a.get("result") or {}
             new = (r.get("added") or 0) + (r.get("promoted") or 0)
             seen = max((r.get("known") or 0) - (r.get("promoted") or 0), 0)
-            return (f"📥 *Vagas salvas* #{a['id']}: " + (f"{new} nova(s) no CareerOps, a caminho da lista para aprovar" if new else "nenhuma nova")
+            return ("📥 *Vagas salvas*: " + (f"{new} nova(s) no CareerOps, a caminho da lista para aprovar" if new else "nenhuma nova")
                     + (f"; {seen} já estava(m) lá" if seen else "")
                     + (f"; {r['no_text']} sem texto do anúncio, tento na próxima" if r.get("no_text") else "") + "."), {"action_id": a["id"]}, False
         if a["kind"] == "comment":
-            return f"💬 Comentário publicado #{a['id']} no post de {(a.get('payload') or {}).get('author') or title}.", {"action_id": a["id"]}, False
-        return f"✅ *Candidatura enviada* #{a['id']} · {a.get('job_title') or title} · {a.get('company') or ''}", {"action_id": a["id"]}, False
+            return f"💬 Comentário publicado no post de {(a.get('payload') or {}).get('author') or title}.", {"action_id": a["id"]}, False
+        return f"✅ *Candidatura enviada* · {a.get('job_title') or title} · {a.get('company') or ''}", {"action_id": a["id"]}, False
 
     @staticmethod
     def _proposals_digest() -> int:
@@ -247,13 +248,13 @@ class BotService:
         kinds = [k for k in KIND_LABEL if any(i["kind"] == k for i in items)]
         # a long list reads better one subject at a time: one message per kind, each with the list filtered to it
         if len(ids) <= int(_cfg().get("split_over", 8)) or len(kinds) < 2:
-            text = BotService.inbox_text(ids, header=f"🗂️ *Para aprovar* ({len(ids)} nova(s))")
-            return bool(BotService.notify("proposals", text, {"ids": ids}))
+            text, shown = BotService.inbox(ids, header=f"🗂️ *Para aprovar* ({len(ids)} nova(s))")
+            return bool(BotService.notify("proposals", text, {"ids": shown, "reply": "list"}))
         made = 0
         for kind in kinds:
             group = [i["id"] for i in items if i["kind"] == kind]
-            text = BotService.inbox_text(group, header=f"🗂️ *Para aprovar · {KIND_LABEL[kind]}* ({len(group)} nova(s))", kind=kind)
-            made += bool(BotService.notify("proposals", text, {"ids": group, "kind": kind}))
+            text, shown = BotService.inbox(group, header=f"🗂️ *Para aprovar · {KIND_LABEL[kind]}* ({len(group)} nova(s))", kind=kind)
+            made += bool(BotService.notify("proposals", text, {"ids": shown, "kind": kind, "reply": "list"}))
         return made
 
     # ── Texts for the bot's answers ──────────────────────────────────────
@@ -273,6 +274,12 @@ class BotService:
 
     @staticmethod
     def inbox_text(ids: Optional[List[int]] = None, header: str = "🗂️ *Para aprovar*", limit: int = 25, kind: Optional[str] = None) -> str:
+        return BotService.inbox(ids, header, limit, kind)[0]
+
+    @staticmethod
+    def inbox(ids: Optional[List[int]] = None, header: str = "🗂️ *Para aprovar*", limit: int = 25,
+              kind: Optional[str] = None) -> Tuple[str, List[int]]:
+        """The list to approve, numbered 1, 2, 3… and the ids in that order: a reply “ok 1 3” is about those lines."""
         where = "a.id = ANY(%s)" if ids is not None else "TRUE"
         rows = _rows(f"""
             SELECT a.*, j.triage_score, j.triage_reason, j.posted_at, j.easy_apply, j.company, j.job_title, j.location, j.salary_flag,
@@ -280,8 +287,9 @@ class BotService:
               FROM public.automation_actions a LEFT JOIN public.job_listings j ON a.target_type = 'job' AND j.id = a.target_id
              WHERE a.status = 'proposed' AND {where} ORDER BY a.kind, a.rank, a.sort_at DESC""", (ids,) if ids is not None else ())
         if not rows:
-            return "Nada esperando aprovação agora."
-        lines, shown = [header], 0
+            return "Nada esperando aprovação agora.", []
+        lines, order = [header], []
+        shown = 0
         several = len({r["kind"] for r in rows}) > 1
         for k, label in KIND_LABEL.items():
             group = [r for r in rows if r["kind"] == k]
@@ -293,28 +301,31 @@ class BotService:
                 if shown >= limit:
                     break
                 shown += 1
+                order.append(r["id"])
+                n = f"*{shown}.*"
                 p = r.get("payload") or {}
                 fit = AutomationService.fit_of(r)
                 fit = f"fit {fit}" if fit is not None else ""
                 if k == "apply":
                     bits = [fit, BotService._eligibility_tag(r), "Easy Apply" if r.get("easy_apply") else "",
                             _ago(r.get("posted_at")), "⚠️ salário abaixo do piso" if r.get("salary_flag") else ""]
-                    lines.append(f"#{r['id']} {r.get('job_title') or p.get('title')} · {r.get('company') or p.get('company') or ''} — "
+                    lines.append(f"{n} {r.get('job_title') or p.get('title')} · {r.get('company') or p.get('company') or ''} — "
                                  + ", ".join(b for b in bits if b))
                     if r.get("triage_reason"):
                         lines.append(f"   ↳ {_short(r['triage_reason'], 160)}")
                 elif k == "comment":
-                    lines.append(f"#{r['id']} no post de {p.get('author') or r.get('title')}{f' ({fit})' if fit else ''}: “{_short(p.get('text'), 600)}”")
+                    lines.append(f"{n} no post de {p.get('author') or r.get('title')}{f' ({fit})' if fit else ''}: “{_short(p.get('text'), 600)}”")
                     lines.append(f"   ↳ {r.get('target_url')}")
                 elif k == "connect":
-                    lines.append(f"#{r['id']} {p.get('name') or r.get('title')} — {_short(p.get('headline'), 90)}{f' · {fit}' if fit else ''}")
+                    lines.append(f"{n} {p.get('name') or r.get('title')} — {_short(p.get('headline'), 90)}{f' · {fit}' if fit else ''}")
                 else:
-                    lines.append(f"#{r['id']} {p.get('name') or r.get('title')}" + (f" — {_short(p.get('why'), 90)}" if p.get("why") else ""))
+                    lines.append(f"{n} {p.get('name') or r.get('title')}" + (f" — {_short(p.get('why'), 90)}" if p.get("why") else ""))
         if len(rows) > shown:
             lines.append(f"\n…e mais {len(rows) - shown} na lista abaixo.")
         lines.append(f"\n🔎 Lista com detalhes: {BotService.approval_link(kind)}")
-        lines.append("Responda, por exemplo: “aprovar 12 15” (vai no horário, 8h–20h), “aprovar 12 agora” (executa já), “rejeitar 13” ou “aprovar todas as vagas”.")
-        return "\n".join(lines)
+        lines.append("Responda a esta mensagem: “ok” aprova todas (vai no horário, 8h–20h), “ok 1 3” só essas, “ok agora” executa já, "
+                     "“não 2” rejeita a 2, “não” rejeita todas.")
+        return "\n".join(lines), order
 
     @staticmethod
     def overview_text() -> str:
@@ -384,7 +395,7 @@ class BotService:
 
     # ── A post you sent to be commented ──────────────────────────────────
     @staticmethod
-    async def comment_link(url: str, suggestion: str = "", post_text: str = "", author: str = "") -> dict:
+    async def comment_link(url: str, suggestion: str = "", post_text: str = "", author: str = "", angle: Optional[str] = None) -> dict:
         """You sent a post: a comment is drafted (following your suggestion, if any) and waits for your OK, like any other."""
         from app.services.linkedin_copilot_service import LinkedInCopilotService as Copilot
         url = normalize_post_url(url)
@@ -404,7 +415,8 @@ class BotService:
         if existing and existing["status"] not in ("proposed", "rejected", "expired", "cancelled", "discarded"):
             return {"ok": False, "detail": f"Este post já tem um comentário em andamento (#{existing['id']}, {existing['status']})."}
         engagement = await Copilot.add_engagement(post_text or f"(texto do post não disponível; link: {url})", url, author or None,
-                                                  instruction=suggestion or "O Paulo escolheu este post para comentar.", regenerate=True)
+                                                  instruction=suggestion or "O Paulo escolheu este post para comentar.", regenerate=True,
+                                                  angle=angle)
         text = (engagement.get("comment_draft") or "").strip()
         if not text:
             return {"ok": False, "detail": "A IA não devolveu um comentário. Tente de novo ou mande a sua ideia."}
