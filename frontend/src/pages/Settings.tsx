@@ -1,7 +1,71 @@
 import React, { useEffect, useState } from 'react';
 import { settingsService, AppSettings } from '../services/settingsService';
 import api, { getAccessToken, setAccessToken } from '../services/api';
-import { Save, Key, Zap, Shield, Lock } from 'lucide-react';
+import { Save, Key, Zap, Shield, Lock, Bookmark } from 'lucide-react';
+import { automationService, SavedImportSettings, SavedImportRun } from '../services/automationService';
+
+const field = { padding: '0.5rem', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: '#fff' };
+const hours = (from: number, to: number) => Array.from({ length: to - from + 1 }, (_, i) => from + i);
+const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '');
+
+// Your saved jobs on LinkedIn, read by the server browser: when (hours of the day and of the night) and the last reads
+const SavedImportPanel = () => {
+  const [value, setValue] = useState<SavedImportSettings | null>(null);
+  const [runs, setRuns] = useState<SavedImportRun[]>([]);
+  const [note, setNote] = useState('');
+  const load = () => automationService.savedImport().then((r) => { setValue(r.settings); setRuns(r.runs); }).catch(() => setNote('Precisa do token de aprovador (acima).'));
+  useEffect(() => { load(); }, []);
+  if (!value) return <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>{note || 'Carregando…'}</p>;
+  const set = (patch: Partial<SavedImportSettings>) => { setValue({ ...value, ...patch }); setNote(''); };
+  const save = async () => {
+    try { setValue(await automationService.setSavedImport(value)); setNote('✓ Salvo'); } catch { setNote('Não foi possível salvar'); }
+  };
+  const runNow = async () => {
+    try {
+      const r = await automationService.runSavedImport();
+      setNote(r.mode === 'off' ? 'Na fila, mas a automação está desligada (Automação → Buscas e limites)' : r.already ? `Já estava na fila (#${r.id}): vai agora` : `Na fila (#${r.id}): começa em instantes`);
+      load();
+    } catch { setNote('Não foi possível pedir agora'); }
+  };
+  const result = (r: SavedImportRun) => {
+    if (r.status === 'done') {
+      const n = (r.result.added || 0) + (r.result.promoted || 0);
+      return `${r.result.cards ?? 0} na lista · ${n} nova(s)`;
+    }
+    return r.error_text || r.status;
+  };
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.9rem', fontSize: '0.9rem' }}>
+      <label style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+        <input type="checkbox" checked={value.enabled} onChange={(e) => set({ enabled: e.target.checked })} /> Importar automaticamente
+      </label>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', alignItems: 'center' }}>
+        Das <select style={field} value={value.day_start} onChange={(e) => set({ day_start: +e.target.value })}>{hours(0, 23).map((h) => <option key={h} value={h}>{h}h</option>)}</select>
+        às <select style={field} value={value.day_end} onChange={(e) => set({ day_end: +e.target.value })}>{hours(1, 24).map((h) => <option key={h} value={h}>{h}h</option>)}</select>
+        a cada <select style={field} value={value.day_every} onChange={(e) => set({ day_every: +e.target.value })}>{hours(1, 12).map((h) => <option key={h} value={h}>{h}h</option>)}</select>
+      </div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', alignItems: 'center' }}>
+        Fora desse horário <select style={field} value={value.night_every} onChange={(e) => set({ night_every: +e.target.value })}>
+          <option value={0}>não importar</option>{hours(1, 12).map((h) => <option key={h} value={h}>a cada {h}h</option>)}
+        </select>
+      </div>
+      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+        <button className="btn btn-primary" onClick={save}>Salvar horários</button>
+        <button className="btn" onClick={runNow}>Importar agora</button>
+      </div>
+      {note && <p style={{ fontSize: '0.85rem', margin: 0 }}>{note}</p>}
+      <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem', margin: 0 }}>
+        Só lê a lista e o anúncio de cada vaga nova; elas entram em Vagas como novas e vão para a lista de aprovação. Vale também
+        fora da janela das outras ações. No WhatsApp: “importar vagas salvas”.
+      </p>
+      {runs.length > 0 && (
+        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+          {runs.map((r) => <div key={r.id}>#{r.id} · {when(r.finished_at || r.created_at)}{r.run_now ? ' · pedido' : ''} · {result(r)}</div>)}
+        </div>
+      )}
+    </div>
+  );
+};
 
 const SettingsPage = () => {
   const [settings, setSettings] = useState<AppSettings>({
@@ -98,6 +162,14 @@ const SettingsPage = () => {
             <button className="btn btn-primary" onClick={handleToken}>Salvar e testar</button>
           </div>
           {tokenStatus && <p style={{ fontSize: '0.85rem', marginTop: '0.6rem' }}>{tokenStatus}</p>}
+        </div>
+
+        {/* Saved jobs */}
+        <div className="panel">
+          <div className="panel-header">
+            <h3 className="panel-title"><Bookmark size={20} color="var(--accent)" /> Vagas salvas no LinkedIn</h3>
+          </div>
+          <SavedImportPanel />
         </div>
 
         {/* AI Configuration */}

@@ -131,6 +131,26 @@ def search_page():
     return "Busca", f"<ul>{items}</ul>", ""
 
 
+def jobs_tracker_page():
+    """Late 2026: your saved jobs at /jobs-tracker/ (the old address sends you here). No list items: each card is a link whose
+    text is the title with "(Verified job)", the title again, "Company · Place" and the age; ten a page, "Next" swaps the list."""
+    def card(i):
+        return (f'<div><a href="/jobs/view/{i}/" componentkey="card-{i}"><div>Vaga salva {i} (Verified job)</div><div>Vaga salva {i}</div>'
+                f'<div>Salva {i} · Brazil (Remote)</div><div>Posted 2w ago</div></a><a href="/jobs/view/{i}/">{"Easy Apply" if i % 2 else "Apply"}</a></div>')
+    pages = [[card(i) for i in range(321, 331)], [card(i) for i in (331, 332)]]
+    script = (f"const pages={json.dumps(['' .join(p) for p in pages])};let at=0;const list=document.getElementById('list'),next=document.getElementById('next');"
+              "next.onclick=()=>{at++;list.innerHTML=pages[at];if(at===pages.length-1)next.remove();};list.innerHTML=pages[0];")
+    body = ('<div>Job tracker</div><div>Saved · 12</div><div id="list"></div>'
+            '<button type="button" id="next" data-testid="pagination-controls-next-button-visible"><span>Next</span></button>')
+    return "Job tracker | LinkedIn", body, script
+
+
+def saved_jobs_page():
+    """The saved-jobs page before late 2026 (kept: LinkedIn may still serve it): list items with the title, company and place."""
+    items = "".join(f'<li><a href="/jobs/view/{i}/">Vaga salva {i}</a><div>Antiga {i}</div><div>Remote</div></li>' for i in (341, 342))
+    return "Saved jobs", f"<h1>My jobs</h1><ul>{items}</ul>", ""
+
+
 def ats_page(job_id):
     if job_id in STATE["ats_sent"]:
         return "Acme Careers", "<h1>Thank you for applying!</h1><p>Your application has been received.</p>", ""
@@ -226,6 +246,12 @@ class Handler(BaseHTTPRequestHandler):
             return self.page(search_results_page())
         if path.startswith("/jobs/search"):
             return self.page(search_page())
+        if path.startswith("/my-items/saved-jobs"):
+            if "layout=old" in url.query:
+                return self.page(saved_jobs_page())
+            return self.send(302, headers={"Location": "/jobs-tracker/"})
+        if path.startswith("/jobs-tracker"):
+            return self.page(jobs_tracker_page())
         if path.startswith("/jobs-guest/jobs/api/jobPosting/"):
             i = path.rstrip("/").split("/")[-1]
             return self.send(body=f"""<h2 class="top-card-layout__title">Vaga buscada {i}</h2><a class="topcard__org-name-link">Acme {i}</a><span class="topcard__flavor--bullet">Remote</span><div class="show-more-less-html__markup"><p>Descrição {i}</p></div>""")

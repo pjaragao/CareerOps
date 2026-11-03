@@ -117,6 +117,8 @@ def main():
     check("worker online, extension loaded, session seen", status["worker_online"] and status["state"]["session_status"] == "logged_in", json.dumps(status["state"], default=str)[:300])
 
     sql("UPDATE public.automation_limits SET step0 = 100, step1 = 100, step2 = 100")   # the limits have their own tests
+    # the hourly read of your saved jobs keeps its hours in the database, not in automation.yml: off, like the other scheduled reads
+    call("PUT", "/automation/saved-import", {"enabled": False, "day_start": 8, "day_end": 24, "day_every": 1, "night_every": 2})
 
     print("mode off")
     follow = propose("follow", "off-test", "https://www.linkedin.com/company/acme", {"url": "x", "name": "Acme"})
@@ -260,6 +262,28 @@ def main():
     row = wait_status(old, ("done", "needs_user", "escalated", "failed"), 90)
     found = sql("SELECT linkedin_job_id FROM public.job_listings WHERE linkedin_job_id IN ('311','312','313')")
     check("the old search layout is still read", row["status"] == "done" and len(found) == 3, f"{row['status']} {row['error_text']} {found}")
+
+    print("your saved jobs")
+    sql("""INSERT INTO public.job_listings (linkedin_job_id, url, status, job_title, company, description) VALUES
+           ('322', 'https://www.linkedin.com/jobs/view/322/', 'discovered', 'Vaga salva 322', 'Salva 322', 'Descrição 322'),
+           ('323', 'https://www.linkedin.com/jobs/view/323/', 'archived', 'Vaga salva 323', 'Salva 323', 'Descrição 323')""")
+    asked = call("POST", "/automation/saved-import/run")
+    row = wait_status(asked["id"], ("done", "needs_user", "escalated", "failed"), 150)
+    saved = {r["linkedin_job_id"]: r["status"] for r in sql("SELECT linkedin_job_id, status FROM public.job_listings WHERE linkedin_job_id BETWEEN '321' AND '332'")}
+    check("saved jobs: the old address leads to the job tracker, both pages are read", row["status"] == "done" and row["result"].get("cards") == 12 and row["result"].get("pages") == 2,
+          f"{row['status']} {row['error_code']} {row['error_text']} {row['result']}")
+    check("saved jobs: the new ones come in as new, with their ad", all(saved.get(str(i)) == "new" for i in [321] + list(range(324, 333))), str(saved))
+    check("saved jobs: one the search found moves to new; one you archived stays", saved.get("322") == "new" and saved.get("323") == "archived", str(saved))
+    check("saved jobs: title and company from the ad", sql("SELECT company FROM public.job_listings WHERE linkedin_job_id = '321'")[0]["company"] == "Acme 321")
+    payload = {}
+    old = sql("""INSERT INTO public.automation_actions (kind, lane, status, target_url, title, rank, payload, payload_hash, idempotency_key)
+                 VALUES ('saved_import', 'linkedin_read', 'queued', 'https://www.linkedin.com/my-items/saved-jobs/?layout=old', 'Vagas salvas (antiga)', 39, %s, %s, 'saved-e2e-old') RETURNING id""",
+              (json.dumps(payload), hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=False).encode()).hexdigest()))[0]["id"]
+    row = wait_status(old, ("done", "needs_user", "escalated", "failed"), 90)
+    found = sql("SELECT linkedin_job_id FROM public.job_listings WHERE linkedin_job_id IN ('341','342') AND status = 'new'")
+    check("saved jobs: the old page is still read", row["status"] == "done" and len(found) == 2, f"{row['status']} {row['error_text']} {row['result']} {found}")
+    # out of the way of what follows: as new jobs they would become proposals, scored by the AI while the next scenarios run
+    sql("UPDATE public.job_listings SET status = 'archived' WHERE linkedin_job_id BETWEEN '321' AND '342' RETURNING id")
 
     print("the stop button")
     slow = propose("follow", "stop-test", "https://www.linkedin.com/company/stopme", {"url": "x", "name": "Stop"})

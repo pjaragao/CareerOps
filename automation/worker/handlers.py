@@ -19,7 +19,7 @@ log = logging.getLogger("worker.handlers")
 ARTIFACTS = Path(os.environ.get("ARTIFACTS_DIR", "/app/output/automation"))
 RUN_DIR = Path(os.environ.get("RUN_DIR", "/data/run"))
 # How long an action may take with nothing new, in seconds. Waiting for your click has its own limit.
-DEADLINES = {"apply": 480, "comment": 180, "follow": 120, "connect": 120, "search": 300, "check": 300, "feed_scan": 300, "follow_scan": 180}
+DEADLINES = {"apply": 480, "comment": 180, "follow": 120, "connect": 120, "search": 300, "check": 300, "feed_scan": 300, "follow_scan": 180, "saved_import": 600}
 CONFIRM_TIMEOUT = 1800
 EXTERNAL_FORM_TIMEOUT = 300
 POLL_SECONDS = 3
@@ -184,7 +184,9 @@ class Runner:
                 await asyncio.sleep(VERIFY_SETTLE_SECONDS)
                 await self.run_verify(page, action)
                 return
-            if status in ("escalated", "running_claude") and action["lane"] == "ats":   # the form stays open for the Claude routine
+            # the form stays open for the Claude routine; also when the routine was quicker than this loop and already sent it
+            # (unknown_outcome): the page that proves it is this one, and the check that follows picks it up from self.kept
+            if status in ("escalated", "running_claude", "unknown_outcome") and action["lane"] == "ats":
                 self.kept[action_id] = page
                 return
             if status == "awaiting_confirm":

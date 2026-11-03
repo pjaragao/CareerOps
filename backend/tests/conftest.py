@@ -53,7 +53,7 @@ TABLES = ("automation_login_links", "bot_notifications", "improvement_suggestion
 
 @pytest.fixture
 def db(database, monkeypatch):
-    """Clean tables, automation live on the main account, any hour, no gap between writes."""
+    """Clean tables, automation live on the main account, any hour, no gap between writes, saved jobs not read on a schedule."""
     from app.db.session import get_db_connection
     from app.services import automation_service, job_search_service
     base = dict(automation_service.config())
@@ -67,7 +67,8 @@ def db(database, monkeypatch):
         cur.execute(f"TRUNCATE {', '.join('public.' + t for t in TABLES)} RESTART IDENTITY CASCADE")
         cur.execute("""UPDATE public.automation_state SET mode = 'live', account_kind = 'main', allow_final_submit = TRUE, halted_at = NULL,
                        halted_reason = NULL, halted_lanes = '{}', invites_paused_until = NULL, ramp_step = 2, ramp_step_at = NOW(), ramp_auto = TRUE,
-                       confirm_submit_left = 0, review_cv_left = 0, next_write_at = NULL, session_status = 'logged_in'""")
+                       confirm_submit_left = 0, review_cv_left = 0, next_write_at = NULL, session_status = 'logged_in',
+                       saved_import = '{"enabled": false, "day_start": 8, "day_end": 24, "day_every": 1, "night_every": 2}'""")
     conn.commit()
     conn.close()
     yield cfg

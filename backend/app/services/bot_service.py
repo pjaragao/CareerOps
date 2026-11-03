@@ -178,7 +178,8 @@ class BotService:
               LEFT JOIN public.job_listings j ON a.target_type = 'job' AND j.id = a.target_id
              WHERE a.notified_status IS DISTINCT FROM a.status
                AND (a.status IN ('needs_user', 'review_docs', 'awaiting_confirm')
-                    OR (a.status = 'done' AND a.kind = ANY(%s) AND a.finished_at > NOW() - INTERVAL '1 day'))
+                    OR (a.status = 'done' AND a.kind = ANY(%s) AND a.finished_at > NOW() - INTERVAL '1 day')
+                    OR (a.status = 'done' AND a.kind = 'saved_import' AND a.run_now AND a.finished_at > NOW() - INTERVAL '1 day'))
              ORDER BY a.id LIMIT 30""", (done_kinds,)):
             if not BotService._mark(a["id"], a["status"]):
                 continue
@@ -221,6 +222,13 @@ class BotService:
             return (f"🟢 *Pronto para enviar* #{a['id']} · {title}\nO formulário está preenchido e parado no botão Enviar. "
                     f"Responda “ok” a esta mensagem (ou diga “confirmar #{a['id']}”) para o clique final; “cancelar #{a['id']}” desiste. "
                     f"Ele espera 30 minutos; depois disso, “confirmar” ainda vale: preenche de novo e envia."), {"action_id": a["id"]}, True
+        if a["kind"] == "saved_import":   # only the one you asked for: the hourly ones are quiet
+            r = a.get("result") or {}
+            new = (r.get("added") or 0) + (r.get("promoted") or 0)
+            seen = max((r.get("known") or 0) - (r.get("promoted") or 0), 0)
+            return (f"📥 *Vagas salvas* #{a['id']}: " + (f"{new} nova(s) no CareerOps, a caminho da lista para aprovar" if new else "nenhuma nova")
+                    + (f"; {seen} já estava(m) lá" if seen else "")
+                    + (f"; {r['no_text']} sem texto do anúncio, tento na próxima" if r.get("no_text") else "") + "."), {"action_id": a["id"]}, False
         if a["kind"] == "comment":
             return f"💬 Comentário publicado #{a['id']} no post de {(a.get('payload') or {}).get('author') or title}.", {"action_id": a["id"]}, False
         return f"✅ *Candidatura enviada* #{a['id']} · {a.get('job_title') or title} · {a.get('company') or ''}", {"action_id": a["id"]}, False

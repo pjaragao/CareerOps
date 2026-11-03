@@ -163,6 +163,31 @@ class JobSearchService:
             _rows("UPDATE public.job_searches SET last_run_at = NOW(), jobs_found = jobs_found + %s WHERE slug = %s", (added, search_slug))
         return added
 
+    @staticmethod
+    def add_saved(jobs: List[dict], ids: List[str]) -> dict:
+        """Your saved jobs, read by the server: a new one enters as 'new' (like the import button), so it goes to the approval
+        list with its CV and cover letter; one the search found and nobody decided yet ('discovered') moves there too. What
+        you already moved on (applied, archived, rejected...) stays as it is: saving is no reason to bring it back."""
+        added = 0
+        for j in jobs:
+            job_id = str(j.get("linkedin_job_id") or "").strip()
+            if not job_id or not (j.get("description") or "").strip():
+                continue
+            row = _one("""
+                INSERT INTO public.job_listings (linkedin_job_id, url, job_title, company, location, description, status, scraped_at,
+                                                 easy_apply, posted_at)
+                VALUES (%s, %s, %s, %s, %s, %s, 'new', NOW(), %s, %s)
+                ON CONFLICT DO NOTHING RETURNING id""",
+                       (job_id, f"https://www.linkedin.com/jobs/view/{job_id}/", j.get("title") or "", j.get("company") or "", j.get("location") or "",
+                        j["description"], bool(j.get("easy_apply")), parse_posted(j.get("posted"))))
+            added += bool(row)
+        promoted = len(_rows("""UPDATE public.job_listings SET status = 'new', updated_at = NOW()
+                                 WHERE linkedin_job_id = ANY(%s) AND status IN ('discovered', 'scraped') RETURNING id""", ([str(i) for i in ids],)))
+        if added or promoted:
+            from app.services.job_pipeline_service import JobPipelineService
+            JobPipelineService.kick()
+        return {"added": added, "promoted": promoted}
+
     # ── Triage ───────────────────────────────────────────────────────────
     @staticmethod
     def decide(job: dict, triage: dict, eligibility: dict) -> str:

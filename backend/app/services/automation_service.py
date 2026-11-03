@@ -27,7 +27,9 @@ from app.services import content_guard
 log = logging.getLogger("automation")
 
 WRITE_KINDS = ("apply", "comment", "follow", "connect")
-READ_KINDS = ("search", "check", "feed_scan", "follow_scan")
+READ_KINDS = ("search", "check", "feed_scan", "follow_scan", "saved_import")
+# Reads that keep their own hours (Configurações) instead of the time window of the rest
+ANYTIME_KINDS = ("saved_import",)
 RUNNING = ("running_ext", "verifying", "awaiting_confirm", "running_claude")
 OPEN = ("proposed", "approved", "review_docs", "queued", "unknown_outcome", "escalated", "needs_user") + RUNNING
 
@@ -38,6 +40,10 @@ DISCARD_CODES = {"job_closed", "already_applied", "post_deleted", "already_follo
 # Everything else (unknown question, captcha, login, an account to create…) is yours: Precisa de você
 
 LINKEDIN_LANES = ["linkedin_read", "linkedin_write"]
+
+# The old address of your saved jobs: LinkedIn sends it to the page of the day (/jobs-tracker/ since late 2026)
+SAVED_JOBS_URL = "https://www.linkedin.com/my-items/saved-jobs/"
+SAVED_IMPORT_DEFAULT = {"enabled": True, "day_start": 8, "day_end": 24, "day_every": 1, "night_every": 2}
 
 
 def now() -> datetime:
@@ -466,7 +472,8 @@ class AutomationService:
                 # outside the window only what you approved with "executar agora" goes
                 only_now = not AutomationService.in_window()
                 if not refusal and only_now:
-                    cur.execute("SELECT 1 FROM public.automation_actions WHERE lane = %s AND run_now AND status IN ('queued', 'unknown_outcome') LIMIT 1", (lane,))
+                    cur.execute("""SELECT 1 FROM public.automation_actions WHERE lane = %s AND (run_now OR kind = ANY(%s))
+                                     AND status IN ('queued', 'unknown_outcome') LIMIT 1""", (lane, list(ANYTIME_KINDS)))
                     if not cur.fetchone():
                         refusal = "outside_window"
                 if refusal:
@@ -488,8 +495,8 @@ class AutomationService:
                         SELECT * FROM public.automation_actions
                          WHERE lane = %s AND status = 'queued' AND NOT (kind = ANY(%s))
                            AND (scheduled_for IS NULL OR scheduled_for <= NOW()) AND (expires_at IS NULL OR expires_at > NOW())
-                           AND (run_now OR NOT %s)
-                         ORDER BY run_now DESC, rank, sort_at DESC LIMIT 1 FOR UPDATE SKIP LOCKED""", (lane, exhausted, only_now))
+                           AND (run_now OR kind = ANY(%s) OR NOT %s)
+                         ORDER BY run_now DESC, rank, sort_at DESC LIMIT 1 FOR UPDATE SKIP LOCKED""", (lane, exhausted, list(ANYTIME_KINDS), only_now))
                     row = cur.fetchone()
                 if not row:
                     conn.commit()
@@ -937,6 +944,10 @@ class AutomationService:
             if local.hour >= hour:
                 made += bool(AutomationService.create_action(
                     "feed_scan", f"feed_scan:{day}:{hour}", "Posts do feed", "https://www.linkedin.com/feed/", {"limit": 8}, status="queued", rank=42))
+        if AutomationService.saved_import_due(local) and not _one(
+                "SELECT 1 FROM public.automation_actions WHERE kind = 'saved_import' AND status = ANY(%s) LIMIT 1", (list(OPEN),)):
+            made += bool(AutomationService.create_action(
+                "saved_import", f"saved_import:{day}:{local.hour}", "Vagas salvas no LinkedIn", SAVED_JOBS_URL, {}, status="queued", rank=39))
         for hour in cfg.get("follow_scan_hours") or []:
             if local.hour >= hour:
                 target = JobSearchService.next_follow_scan()
@@ -944,6 +955,54 @@ class AutomationService:
                     made += bool(AutomationService.create_action(
                         "follow_scan", f"follow_scan:{target['key']}", target["name"], target["url"], target, status="queued", rank=43))
         return made
+
+    # ── Your saved jobs on LinkedIn ──────────────────────────────────────
+    @staticmethod
+    def saved_import_settings(state: Optional[dict] = None) -> dict:
+        state = state or AutomationService.state()
+        return {**SAVED_IMPORT_DEFAULT, **(state.get("saved_import") or {})}
+
+    @staticmethod
+    def set_saved_import(enabled: bool, day_start: int, day_end: int, day_every: int, night_every: int) -> dict:
+        value = {"enabled": enabled, "day_start": day_start, "day_end": day_end, "day_every": day_every, "night_every": night_every}
+        row = _one("UPDATE public.automation_state SET saved_import = %s, updated_at = NOW() WHERE id = 1 RETURNING *", (Json(value),))
+        return AutomationService.saved_import_settings(row)
+
+    @staticmethod
+    def saved_import_due(local: datetime, settings_: Optional[dict] = None) -> bool:
+        """Whether this hour is one of the slots: every day_every hours counted from day_start, during the day (which may
+        cross midnight); every night_every hours counted from day_end, outside it."""
+        s = settings_ or AutomationService.saved_import_settings()
+        if not s.get("enabled"):
+            return False
+        start, end, hour = s["day_start"] % 24, s["day_end"] % 24, local.hour
+        by_day = start <= hour < end if start < end else (hour >= start or hour < end)
+        if start == end:   # the whole day is "day"
+            by_day = True
+        every, origin = (s["day_every"], start) if by_day else (s["night_every"], end)
+        return bool(every) and (hour - origin) % every == 0
+
+    @staticmethod
+    def saved_import_overview() -> dict:
+        """What Configurações shows: the hours and the last reads."""
+        runs = _rows("""SELECT id, status, run_now, created_at, finished_at, result, error_code, error_text FROM public.automation_actions
+                         WHERE kind = 'saved_import' ORDER BY id DESC LIMIT 8""")
+        return {"settings": AutomationService.saved_import_settings(), "runs": runs}
+
+    @staticmethod
+    def run_saved_import() -> dict:
+        """Now (Lolo, or the button in Configurações): one read at a time; a failed one waiting for you is replaced by this."""
+        running = _one("""SELECT * FROM public.automation_actions WHERE kind = 'saved_import' AND status = ANY(%s)
+                           ORDER BY id DESC LIMIT 1""", (["queued"] + list(RUNNING),))
+        if running:
+            _rows("UPDATE public.automation_actions SET run_now = TRUE WHERE id = %s", (running["id"],))
+            return {**running, "already": True}
+        _rows("""UPDATE public.automation_actions SET status = 'cancelled', finished_at = NOW(), updated_at = NOW()
+                  WHERE kind = 'saved_import' AND status IN ('needs_user', 'escalated')""")
+        # run_now: it does not wait for a slot, and Lolo tells you what came in
+        action = AutomationService.create_action("saved_import", f"saved_import:now:{now().isoformat()}", "Vagas salvas no LinkedIn",
+                                                 SAVED_JOBS_URL, {}, status="queued", rank=39)
+        return _one("UPDATE public.automation_actions SET run_now = TRUE WHERE id = %s RETURNING *", (action["id"],))
 
     @staticmethod
     def expire_stale_proposals() -> None:

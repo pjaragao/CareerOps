@@ -226,6 +226,30 @@ async def toggle_search(search_id: int, req: SearchToggle):
     return _found(JobSearchService.set_enabled(search_id, req.enabled))
 
 
+# ── Your saved jobs on LinkedIn: when they are read (Configurações), and now (the button, or Lolo) ─────
+class SavedImportIn(BaseModel):
+    enabled: bool = True
+    day_start: int = Field(8, ge=0, le=23)
+    day_end: int = Field(24, ge=1, le=24)
+    day_every: int = Field(1, ge=1, le=24)
+    night_every: int = Field(2, ge=0, le=24)   # 0: nothing outside the day hours
+
+
+@router.get("/saved-import", dependencies=[Depends(require_decider)])
+async def saved_import():
+    return Auto.saved_import_overview()
+
+
+@router.put("/saved-import", dependencies=[Depends(require_approver)])
+async def set_saved_import(req: SavedImportIn):
+    return Auto.set_saved_import(req.enabled, req.day_start, req.day_end, req.day_every, req.night_every)
+
+
+@router.post("/saved-import/run", dependencies=[Depends(require_decider)])
+async def run_saved_import():
+    return {**Auto.run_saved_import(), "mode": Auto.state().get("mode")}
+
+
 # ── What the executors report ────────────────────────────────────────────
 class ClaimIn(BaseModel):
     lane: Literal["linkedin_read", "linkedin_write", "ats"]
@@ -350,6 +374,16 @@ class DiscoveredIn(BaseModel):
 @router.post("/discovered", dependencies=[Depends(require_worker)])
 async def discovered(req: DiscoveredIn):
     return {"added": JobSearchService.add_discovered([j.model_dump() for j in req.jobs], req.search)}
+
+
+class SavedJobsIn(BaseModel):
+    jobs: List[DiscoveredJob] = Field(..., max_length=60)
+    ids: List[str] = Field(..., max_length=200)
+
+
+@router.post("/saved-jobs", dependencies=[Depends(require_worker)])
+async def saved_jobs(req: SavedJobsIn):
+    return JobSearchService.add_saved([j.model_dump() for j in req.jobs], req.ids)
 
 
 class FollowTarget(BaseModel):

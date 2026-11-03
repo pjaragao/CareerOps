@@ -213,3 +213,11 @@ CREATE TABLE IF NOT EXISTS public.automation_login_links (
 
 -- "Executar agora": an approval that does not wait for the time window (stop, limits and the gap between writes still apply)
 ALTER TABLE public.automation_actions ADD COLUMN IF NOT EXISTS run_now BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- Your saved jobs on LinkedIn come in by themselves (Configurações): every day_every hours from day_start to day_end, every
+-- night_every hours outside it. A read only, so it may run outside the time window of the other actions.
+ALTER TABLE public.automation_state ADD COLUMN IF NOT EXISTS saved_import JSONB NOT NULL
+    DEFAULT '{"enabled": true, "day_start": 8, "day_end": 24, "day_every": 1, "night_every": 2}';
+ALTER TABLE public.automation_actions DROP CONSTRAINT IF EXISTS automation_actions_kind_check;
+ALTER TABLE public.automation_actions ADD CONSTRAINT automation_actions_kind_check
+    CHECK (kind IN ('apply', 'comment', 'follow', 'connect', 'search', 'check', 'feed_scan', 'follow_scan', 'saved_import'));

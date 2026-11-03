@@ -1412,17 +1412,31 @@
     });
     const isSavedJobsPage = () => /\/my-items\/saved-jobs|\/jobs-tracker/.test(location.pathname);
 
+    // The job tracker (/jobs-tracker/, late 2026; the old address goes there) has no list items: the card's first link holds
+    // its lines (the title ending in "(Verified job)", the title again, "Company · Place", "Posted 2w ago"). The old page
+    // (my-items/saved-jobs) has li / entity-result boxes with the title, the company and the place.
+    const VERIFIED = /\s*\((verified job|vaga verificada)\)\s*$/i;
     function savedJobsOnScreen() {
         const jobs = new Map();
         document.querySelectorAll('main a[href*="/jobs/view/"]').forEach((a) => {
             const m = a.href.match(/\/jobs\/view\/(\d+)/);
             if (!m || jobs.has(m[1])) return;
-            const box = a.closest('li, .entity-result, div[data-chameleon-result-urn], .reusable-search__result-container') || a.parentElement;
-            const lines = clean(box ? box.innerText : a.innerText).split('\n').map((l) => l.trim()).filter(Boolean);
-            jobs.set(m[1], { id: m[1], title: clean(a.innerText) || lines[0] || '', company: lines[1] || '', location: lines[2] || '' });
+            const box = a.closest('li, .entity-result, div[data-chameleon-result-urn], .reusable-search__result-container');
+            const lines = clean(box ? box.innerText : a.innerText).split('\n').map((l) => l.trim().replace(VERIFIED, '')).filter(Boolean);
+            if (!lines.length) return;
+            const title = lines[0];
+            const rest = lines[1] === title ? lines.slice(2) : lines.slice(1);
+            const [company, location] = / · /.test(rest[0] || '') ? rest[0].split(' · ', 2) : [rest[0], rest[1]];
+            jobs.set(m[1], { id: m[1], title, company: company || '', location: location || '',
+                             easy_apply: /easy apply|candidatura simplificada/i.test(box ? box.innerText : (a.parentElement || a).innerText) });
         });
         return [...jobs.values()].slice(0, 25);
     }
+
+    // The next page of the list: the tracker's button (data-testid), the old artdeco one, or a button that says so
+    const savedNextButton = () => [...document.querySelectorAll('button, a')].find((b) => !b.closest('.careerops-card, .careerops-bar, .careerops-actions')
+        && (b.matches('[data-testid^="pagination-controls-next-button"], .artdeco-pagination__button--next') || /^(next|pr[oó]xima)$/i.test(label(b)))
+        && !b.disabled && b.getAttribute('aria-disabled') !== 'true' && b.offsetParent !== null);
 
     // Text of a parsed (not rendered) HTML block, keeping paragraphs and bullets: innerText doesn't work there
     function htmlText(el) {
@@ -1960,6 +1974,46 @@
         await managedRead({ cards: cards.length, unseen: fresh.length, added: added.ok ? added.data.added : 0 });
     }
 
+    // Your saved jobs, every page of the list (at most 5): the new ones are read from their public ad and go in as "new",
+    // like the import button does. Nothing is clicked but the list's own "Next".
+    const NO_SAVED = /no saved jobs|nenhuma vaga salva|you haven.t saved|voc[eê] ainda n[aã]o salvou|\bsaved\s*·\s*0\b|\bsalvas?\s*·\s*0\b/i;
+    async function managedSavedImport() {
+        const cards = new Map();
+        let pages = 0;
+        await waitFor(() => savedJobsOnScreen().length || NO_SAVED.test((document.querySelector('main') || document.body).innerText || ''), 20000);
+        for (; pages < 5; pages++) {
+            await wait(1500);
+            const onScreen = savedJobsOnScreen();
+            onScreen.forEach((j) => cards.has(j.id) || cards.set(j.id, j));
+            const next = onScreen.length && savedNextButton();
+            if (!next) { pages++; break; }
+            const first = onScreen[0].id;
+            await gate();
+            next.click();
+            if (!(await waitFor(() => { const now = savedJobsOnScreen(); return now.length && now[0].id !== first; }, 15000))) { pages++; break; }
+        }
+        if (!cards.size) {
+            if (NO_SAVED.test((document.querySelector('main') || document.body).innerText || '')) { await managedRead({ cards: 0, known: 0, added: 0, promoted: 0 }); return; }
+            managedStuck('unexpected_layout', 'Lista de vagas salvas não reconhecida');
+            return;
+        }
+        const all = [...cards.values()];
+        const seen = await managedApi('POST', '/automation/discovered/unseen', { ids: all.map((c) => c.id).slice(0, 100) });
+        if (!seen.ok) { managedStuck('unexpected_layout', errText(seen)); return; }
+        const fresh = all.filter((c) => seen.data.unseen.includes(c.id)).slice(0, 40);
+        const jobs = [];
+        for (const c of fresh) {
+            await gate();
+            const extra = await jobPosting(c.id);
+            if (extra.description) jobs.push({ linkedin_job_id: c.id, title: extra.title || c.title, company: extra.company || c.company, location: extra.location || c.location, description: extra.description, easy_apply: !!c.easy_apply });
+            await wait(1500 + Math.random() * 1000);
+        }
+        const res = await managedApi('POST', '/automation/saved-jobs', { jobs, ids: all.map((c) => c.id).slice(0, 200) });
+        if (!res.ok) { managedStuck('unexpected_layout', errText(res)); return; }
+        await managedRead({ cards: all.length, pages, known: all.length - fresh.length, unseen: fresh.length, no_text: fresh.length - jobs.length,
+                            added: res.data.added, promoted: res.data.promoted });
+    }
+
     async function managedFeedScan() {
         await waitFor(() => findPosts().length, 20000);
         for (let k = 0; k < 4; k++) { window.scrollBy(0, window.innerHeight); await wait(1500 + Math.random() * 800); }
@@ -2005,7 +2059,7 @@
         managedRun = { id: info.id, nonce, info, fields: [], closed: false };
         history.replaceState(null, '', location.pathname + location.search);
         activity(`Automação: ${info.kind}`);
-        const run = { apply: managedApply, connect: managedConnect, follow: managedFollow, comment: managedComment, search: managedSearch, check: managedCheck, feed_scan: managedFeedScan, follow_scan: managedFollowScan }[info.kind];
+        const run = { apply: managedApply, connect: managedConnect, follow: managedFollow, comment: managedComment, search: managedSearch, check: managedCheck, feed_scan: managedFeedScan, follow_scan: managedFollowScan, saved_import: managedSavedImport }[info.kind];
         try {
             await run();
         } catch (e) {

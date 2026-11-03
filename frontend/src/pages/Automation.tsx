@@ -34,7 +34,7 @@ const ago = (iso?: string | null): string => {
 const isRecent = (iso?: string | null) => !!iso && Date.now() - new Date(iso).getTime() < 48 * 3600000;
 const when = (iso?: string | null) => (iso ? new Date(iso).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '');
 
-const KIND_LABEL: Record<string, string> = { apply: 'Candidatura', comment: 'Comentário', connect: 'Conexão', follow: 'Seguir', search: 'Busca', check: 'Verificação', feed_scan: 'Leitura do feed', follow_scan: 'Sugestões para seguir' };
+const KIND_LABEL: Record<string, string> = { apply: 'Candidatura', comment: 'Comentário', connect: 'Conexão', follow: 'Seguir', search: 'Busca', check: 'Verificação', feed_scan: 'Leitura do feed', follow_scan: 'Sugestões para seguir', saved_import: 'Vagas salvas' };
 const STATUS_LABEL: Record<string, string> = {
   approved: 'Gerando documentos', review_docs: 'Aguarda você ler o CV', queued: 'Na fila', running_ext: 'Executando', verifying: 'Conferindo na página', awaiting_confirm: 'Aguarda seu envio',
   unknown_outcome: 'Vai conferir antes de repetir', escalated: 'Aguarda rotina Claude', running_claude: 'Rotina Claude', needs_user: 'Precisa de você', done: 'Feito', discarded: 'Descartada', failed: 'Falhou', expired: 'Expirou', cancelled: 'Cancelada',

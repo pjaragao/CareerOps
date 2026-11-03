@@ -2,7 +2,7 @@
 import api from './api';
 import type { EligibilityIssue } from './jobService';
 
-export type ActionKind = 'apply' | 'comment' | 'follow' | 'connect' | 'search' | 'check' | 'feed_scan' | 'follow_scan';
+export type ActionKind = 'apply' | 'comment' | 'follow' | 'connect' | 'search' | 'check' | 'feed_scan' | 'follow_scan' | 'saved_import';
 
 export interface Question { key?: string; label: string; type?: string; options?: string[] }
 
@@ -115,6 +115,9 @@ export interface SearchRow { id: number; slug: string; name: string; enabled: bo
 const base = '/automation';
 const data = <T,>(p: Promise<{ data: T }>) => p.then((r) => r.data);
 
+export interface SavedImportSettings { enabled: boolean; day_start: number; day_end: number; day_every: number; night_every: number }
+export interface SavedImportRun { id: number; status: string; run_now: boolean; created_at: string; finished_at: string | null; result: Record<string, any>; error_code: string | null; error_text: string | null }
+
 export const automationService = {
   status: () => data(api.get<AutomationStatus>(`${base}/status`)),
   setState: (patch: Partial<Pick<AutomationStatus['state'], 'mode' | 'account_kind' | 'allow_final_submit' | 'ramp_step' | 'ramp_auto'>>) => data(api.patch(`${base}/state`, patch)),
@@ -138,6 +141,9 @@ export const automationService = {
   artifactUrl: async (id: number, name: string) => URL.createObjectURL((await api.get(`${base}/actions/${id}/artifacts/${name}`, { responseType: 'blob' })).data),
   searches: () => data(api.get<{ items: SearchRow[] }>(`${base}/searches`)).then((r) => r.items),
   toggleSearch: (id: number, enabled: boolean) => data(api.patch(`${base}/searches/${id}`, { enabled })),
+  savedImport: () => data(api.get<{ settings: SavedImportSettings; runs: SavedImportRun[] }>(`${base}/saved-import`)),
+  setSavedImport: (value: SavedImportSettings) => data(api.put<SavedImportSettings>(`${base}/saved-import`, value)),
+  runSavedImport: () => data(api.post<SavedImportRun & { already?: boolean; mode: string }>(`${base}/saved-import/run`)),
   setLimit: (kind: string, steps: { step0: number; step1: number; step2: number }) => data(api.put(`${base}/limits/${kind}`, steps)),
   emailEvents: () => data(api.get<{ items: EmailEvent[]; configured: boolean; auto_status: boolean; last_run: { started_at: string; ok: boolean | null; summary: any } | null }>(`${base}/email/events`)),
   emailFunnel: () => data(api.get<{ by_age: FunnelRow[]; by_search: FunnelRow[]; by_market: FunnelRow[]; by_executor: FunnelRow[] }>(`${base}/email/funnel`)),
