@@ -48,6 +48,7 @@ async def generate_resume(job_id: int, options: ActionOptions):
     # Brazilian (Portuguese) jobs start from the Brazil CV; everything else from the international one
     resume_base = ProfileService.get_resume_base("pt" if get_job_lang(job) == "Portuguese" else "en")
     
+    from app.services.automation_service import config as automation_config
     response = await SkillService.run_skill(
         "jobs/resume.md",
         {
@@ -56,6 +57,7 @@ async def generate_resume(job_id: int, options: ActionOptions):
             "lang_name": get_job_lang(job),
             "job_description": job['description'][:10000],
             "resume_base": resume_base,
+            "max_chars": (automation_config().get("jobs") or {}).get("resume_max_chars", 4800),
             "orientation": options.orientation
         }
     )

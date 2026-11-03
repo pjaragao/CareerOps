@@ -145,3 +145,9 @@ def test_trying_again_writes_the_documents_from_scratch(approved_job, reviewer, 
     assert Auto.retry(approved_job["id"])["status"] == "approved"
     job = _one("SELECT resume_markdown, cover_letter FROM public.job_listings WHERE id = %s", (approved_job["target_id"],))
     assert job == {"resume_markdown": None, "cover_letter": None}
+
+
+def test_the_first_resume_is_asked_at_a_size_that_fits_two_pages():
+    prompt = asyncio.run(cr.SkillService.render_prompt("jobs/resume.md", {"job_title": "x", "company": "y", "lang_name": "English",
+                                                                            "job_description": "d", "resume_base": "b", "max_chars": 4800, "orientation": ""}))
+    assert "at most 4800" in prompt

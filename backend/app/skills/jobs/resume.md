@@ -18,7 +18,8 @@ Additional Professional Context (Knowledge Base):
 {{ orientation }}
 
 {{ writing_style("application") }}
-(For the resume, the length rule does not apply: keep it to two pages.)
+(For the resume, the length rule does not apply: it fits two pages, which means resume_markdown has at most {{ max_chars }}
+characters. Keep the roles closest to this job in full; older or less related roles get one line each; at most 3 bullets per role.)
 
 Return JSON:
 {

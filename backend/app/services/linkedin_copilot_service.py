@@ -27,6 +27,12 @@ MIN_SCORE = 40           # below this the AI recommends skipping
 DAILY_ENGAGEMENT = 10    # size of the daily engagement queue
 WEEKLY_PROSPECTS = 20    # weekly connection-request target
 AUTO_DRAFTS = 2          # drafts kept ready from saved themes (see auto_draft)
+
+
+def own_posts_on() -> bool:
+    """Posts of your own are off until you have a way of posting you like (config/automation.yml → linkedin.own_posts)."""
+    from app.services.automation_service import config
+    return bool((config().get("linkedin") or {}).get("own_posts", False))
 # badges LinkedIn glues to names in the page text ("Ana Lima Verified Profile 3rd+")
 _BADGES = re.compile(r"(\s*(•.*|verified profile|premium profile|perfil verificado|perfil premium|author|autor|you|você|1st|2nd|3rd\+?|[123]º\+?))+\s*$", re.I)
 
@@ -233,6 +239,8 @@ class LinkedInCopilotService:
     @staticmethod
     def publish_post(post_id: int) -> dict:
         """Publishes one approved post via the API. Claims the row first so a post can never go out twice."""
+        if not own_posts_on():
+            raise LinkedInApiError("Postagens próprias estão desligadas (config/automation.yml → linkedin.own_posts)")
         if LinkedInCopilotService._published_today() >= settings.LINKEDIN_MAX_POSTS_PER_DAY:
             raise LinkedInApiError(f"Daily limit reached ({settings.LINKEDIN_MAX_POSTS_PER_DAY} posts in 24 h)")
         claimed = _one("""
@@ -254,6 +262,8 @@ class LinkedInCopilotService:
     @staticmethod
     def publish_due() -> int:
         """Scheduler tick: publishes approved posts whose time has come (oldest first, within the daily limit)."""
+        if not own_posts_on():
+            return 0
         if not LinkedInApiService.status()["connected"]:
             return 0
         due = _rows("""
@@ -339,6 +349,8 @@ class LinkedInCopilotService:
 
         Bounded by the themes themselves: each theme is used once, and nothing is generated while enough drafts wait.
         """
+        if not own_posts_on():
+            return None
         waiting = _one("SELECT COUNT(*) AS n FROM public.linkedin_posts WHERE status = 'draft'")["n"]
         if waiting >= AUTO_DRAFTS:
             return None

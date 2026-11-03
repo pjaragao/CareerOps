@@ -30,6 +30,9 @@ automation:
   follow_scan_hours: [11]
   ramp_days: 7                               # a week with no warning goes up one step of the limits
 
+linkedin:
+  own_posts: false                           # posts of your own (drafted from themes, scheduled, published): off; comments go on
+
 jobs:
   markets: [intl]                            # add br to take Brazilian employers again
   min_score: 70                              # below it the job goes to "Descartadas" (recoverable)
@@ -38,6 +41,7 @@ jobs:
   # cv_review_rounds times, and only calls you if they still fail) or "you" (the first 20 on the main account wait for you)
   cv_review: agent
   cv_review_rounds: 2
+  resume_max_chars: 4800                     # the first version already fits two pages (the approved ones: 4,300–5,500)
 
 claude:
   per_day: 15
