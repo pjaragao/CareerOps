@@ -22,8 +22,10 @@ TIMEOUT_SECONDS = 480
 MAX_BUDGET_USD = "1.00"
 
 TOOLS = ["browser_snapshot", "browser_navigate", "browser_click", "browser_type", "browser_select_option", "browser_file_upload",
-         "browser_wait_for", "browser_take_screenshot", "browser_tabs", "browser_press_key", "browser_hover"]
+         "browser_wait_for", "browser_take_screenshot", "browser_tabs", "browser_press_key", "browser_hover", "browser_find"]
 ALLOWED_TOOLS = [f"mcp__playwright__{t}" for t in TOOLS]
+# Claude Code's own plumbing, not actions: loading a tool's definition, and the final answer in the --json-schema format
+HARNESS_TOOLS = {"ToolSearch", "StructuredOutput"}
 # Also refused by name: whatever a settings file may have allowed
 DENIED_TOOLS = ["Bash", "Read", "Write", "Edit", "NotebookEdit", "WebFetch", "WebSearch", "Agent", "Task", "Skill", "Glob", "Grep",
                 "mcp__playwright__browser_evaluate", "mcp__playwright__browser_run_code", "mcp__playwright__browser_install"]
@@ -132,6 +134,8 @@ def audit(calls: list, action: dict) -> list:
     allowed = allowed_hosts(action)
     for call in calls:
         name = call.get("name") or ""
+        if name in HARNESS_TOOLS:
+            continue
         if name not in ALLOWED_TOOLS:
             flags.append(f"ferramenta não permitida: {name}")
             continue

@@ -51,6 +51,16 @@ def external_job_page(job_id):
 
 def post_page(activity):
     comments = "".join(f"<div class='comments-comment-item'><b>Eu</b><p>{html.escape(c)}</p></div>" for c in STATE["comments"].get(activity, []))
+    if activity.startswith("7"):
+        # LinkedIn's layout of late 2026: no data-urn, and the comment box outside the post's card (what broke on 2026-11-03)
+        body = f"""<div role="list"><div role="listitem"><a href="/in/ana">Ana Lima</a>
+          <div class="update-components-text">Project finance is changing how infrastructure gets built. {activity}</div>
+          <button aria-label="Reaction button state: no reaction">12</button><button aria-label="Comment">3</button><button>Repost</button></div></div>
+          <div class="x1"><div class="tiptap ProseMirror" contenteditable="true" role="textbox" aria-label="Text editor for creating comment"></div>
+            <div><button aria-label="Show Emoji Picker"></button><button id="send">Comment</button></div></div>
+          <div class="x2">{comments}</div>"""
+        script = f"""document.getElementById('send').onclick=()=>{{fetch('/__comment/{activity}',{{method:'POST',body:document.querySelector('.ProseMirror').innerText}}).then(()=>location.reload())}};"""
+        return "Post", body, script
     body = f"""<div data-urn="urn:li:activity:{activity}"><div class="update-components-actor__title"><span aria-hidden="true">Ana Lima</span></div>
       <div class="update-components-text">Project finance is changing how infrastructure gets built. {activity}</div>
       <button>Like</button><button id="open" aria-label="Comment">Comment</button><button>Repost</button>

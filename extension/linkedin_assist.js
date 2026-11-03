@@ -1842,7 +1842,9 @@
             managedStuck('unexpected_layout', 'O post desta página não é o que foi aprovado');
             return;
         }
-        const ed = await openCommentBox(post);
+        // a page with one post may keep its comment box outside the post's card (LinkedIn's layout of late 2026)
+        const single = /^\/(feed\/update|posts)\//.test(location.pathname) && findPosts().length === 1;
+        const ed = await openCommentBox(post) || (single && await openCommentBox(document.querySelector('main') || document.body));
         if (!ed) { managedStuck('selector_not_found', 'Caixa de comentário não encontrada'); return; }
         await gate();
         fill(ed, text);

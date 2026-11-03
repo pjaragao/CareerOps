@@ -165,6 +165,14 @@ def main():
     check("comment: exactly the approved text, once", fake_state()["comments"].get("555") == [text], str(fake_state()["comments"]))
     check("comment: queue item done", sql("SELECT status FROM public.linkedin_engagement WHERE id = %s", (item,))[0]["status"] == "done")
 
+    item3 = sql("""INSERT INTO public.linkedin_engagement (post_url, post_text, comment_draft) VALUES ('https://www.linkedin.com/feed/update/urn:li:activity:7557/', 'Project finance is changing how infrastructure gets built. 7557', 'x') RETURNING id""")[0]["id"]
+    text3 = "Boa: e o risco cambial entra onde nesse desenho?"
+    new_layout = propose("comment", "comment-new-layout", "https://www.linkedin.com/feed/update/urn:li:activity:7557/", {"text": "x", "post_head": "Project finance is changing how infrastructure gets built. 7557"}, "engagement", item3)
+    call("POST", f"/automation/actions/{new_layout}/approve", {"text": text3, "run_now": True})
+    row = wait_status(new_layout, ("done", "needs_user", "escalated"), 150)
+    check("comment, late-2026 layout (box outside the post card): published", row["status"] == "done", f"{row['status']} {row['error_code']} {row['error_text']}")
+    check("comment, late-2026 layout: exactly once", fake_state()["comments"].get("7557") == [text3], str(fake_state()["comments"]))
+
     item2 = sql("""INSERT INTO public.linkedin_engagement (post_url, post_text, comment_draft) VALUES ('https://www.linkedin.com/feed/update/urn:li:activity:556/', 'Outro post', 'x') RETURNING id""")[0]["id"]
     wrong = propose("comment", "comment-wrong-post", "https://www.linkedin.com/feed/update/urn:li:activity:556/", {"text": "Texto", "post_head": "Um post totalmente diferente do aprovado"}, "engagement", item2)
     call("POST", f"/automation/actions/{wrong}/approve", {})

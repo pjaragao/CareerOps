@@ -197,7 +197,7 @@ async def delete_answer(answer_id: int):
     return _found(Auto.delete_answer(answer_id))
 
 
-@router.get("/running", dependencies=[Depends(require_approver)])
+@router.get("/running", dependencies=[Depends(require_decider)])   # read-only: Lolo shows what is approved and waiting
 async def running():
     return {"items": Auto.running()}
 

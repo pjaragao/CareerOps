@@ -90,3 +90,10 @@ def test_a_run_that_did_not_end_cleanly_is_never_done():
 
 def test_an_unrecognized_answer_is_not_done():
     assert run.outcome(run.parse_stream(stream({"type": "result", "result": "I did it!"})), 0, ACTION)["status"] == "needs_user"
+
+
+def test_claude_codes_own_plumbing_is_not_an_action():
+    calls = [{"name": "ToolSearch", "input": {"query": "select:mcp__playwright__browser_click"}},
+             {"name": "StructuredOutput", "input": {"status": "done", "summary": "ok"}},
+             call("browser_find", text="Comment")]
+    assert run.audit(calls, ACTION) == []
