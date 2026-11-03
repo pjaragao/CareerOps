@@ -466,7 +466,7 @@ def test_the_dossier_carries_no_secrets(db, add_job, sql):
     text = str(dossier)
     assert "worker-token" not in text and "approver-token" not in text
     assert dossier["facts"]["salary_expectation"]["abroad_usd_monthly"] == 7000
-    assert dossier["files"]["resume"].startswith(f"/data/run/{got['id']}/")
+    assert dossier["files"]["resume"].startswith(f"/tmp/careerops-run/{got['id']}/")
 
 
 # ── Proposals and expiry ─────────────────────────────────────────────────

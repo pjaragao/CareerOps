@@ -7,11 +7,17 @@
 set -u
 ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
 E2E="$ROOT/automation/tests/e2e"
-NET=careerops-e2e
-PG=careerops-e2e-pg
-BACKEND=careerops-e2e-backend
-WORKER=careerops-e2e-worker
-FAKE=careerops-e2e-fake
+# E2E_NAME: another set of names, when a container of an earlier run cannot be removed (a process stuck in the kernel)
+NAME="${E2E_NAME:-careerops-e2e}"
+NET=$NAME
+PG=$NAME-pg
+BACKEND=$NAME-backend
+WORKER=$NAME-worker
+FAKE=$NAME-fake
+export E2E_WORKER=$WORKER
+# the worker's ports on the host: noVNC, then the two browser tools (E2E_PORT shifts them, for the same reason)
+P="${E2E_PORT:-0}"
+export E2E_MCP_LINKEDIN=$((18931 + P)) E2E_MCP_ATS=$((18932 + P))
 PYTHON="${E2E_PYTHON:-python3}"
 KEEP=""; CLAUDE=""
 for a in "$@"; do [ "$a" = "--keep" ] && KEEP=1; [ "$a" = "--claude" ] && CLAUDE=1; done
@@ -20,12 +26,12 @@ cleanup() {
     [ -n "$KEEP" ] && return
     docker rm -f "$WORKER" "$FAKE" "$BACKEND" "$PG" >/dev/null 2>&1
     docker network rm "$NET" >/dev/null 2>&1
-    docker volume rm careerops-e2e-output >/dev/null 2>&1
+    docker volume rm $NAME-output >/dev/null 2>&1
 }
 trap cleanup EXIT
 docker rm -f "$WORKER" "$FAKE" "$BACKEND" "$PG" >/dev/null 2>&1
 docker network rm "$NET" >/dev/null 2>&1
-docker volume rm careerops-e2e-output >/dev/null 2>&1
+docker volume rm $NAME-output >/dev/null 2>&1
 
 set -e
 echo "== images"
@@ -51,15 +57,15 @@ t = t.replace("external_apply: false", "external_apply: true")
 open(p, "w", encoding="utf-8").write(t)
 EOF
 docker run -d --name "$FAKE" --network "$NET" --memory 128m -p 127.0.0.1:18443:8443 -v "$E2E:/e2e:ro" careerops-automation:e2e python /e2e/fake_linkedin.py 8443 >/dev/null
-docker run -d --name "$BACKEND" --network "$NET" --memory 600m -p 127.0.0.1:18005:8000 -v "$CONFIG:/app/config:ro" -v careerops-e2e-output:/app/output \
+docker run -d --name "$BACKEND" --network "$NET" --memory 600m -p 127.0.0.1:18005:8000 -v "$CONFIG:/app/config:ro" -v $NAME-output:/app/output \
     -e SUPABASE_DB_HOST="$PG" -e SUPABASE_DB_PASSWORD=e2e -e CAREEROPS_APPROVER_TOKEN=e2e-approver -e CAREEROPS_WORKER_TOKEN=e2e-worker \
     -e AI_PROVIDER=openai -e AI_API_KEY=x -e AI_MODEL=fake -e AI_BASE_URL="http://$FAKE:8080/v1" \
     -e AUTOMATION_ALLOW_FINAL_SUBMIT=true careerops-backend:e2e >/dev/null
 until curl -sf http://127.0.0.1:18005/health >/dev/null; do sleep 1; done
 
-docker run -d --name "$WORKER" --network "$NET" --memory 2500m --shm-size 1g \
-    -p 127.0.0.1:16080:6080 -p 127.0.0.1:18931:8931 -p 127.0.0.1:18932:8932 \
-    -v careerops-e2e-output:/app/output \
+docker run -d --init --name "$WORKER" --network "$NET" --memory 2500m --shm-size 1g \
+    -p 127.0.0.1:$((16080 + P)):6080 -p 127.0.0.1:$E2E_MCP_LINKEDIN:8931 -p 127.0.0.1:$E2E_MCP_ATS:8932 \
+    -v $NAME-output:/app/output \
     -e CAREEROPS_API_BASE="http://$BACKEND:8000/api" -e CAREEROPS_WORKER_TOKEN=e2e-worker -e VNC_PASSWORD=e2e \
     -e BROWSER_IGNORE_HTTPS_ERRORS=1 -e BROWSER_MODE="${BROWSER_MODE:-xvfb}" \
     -e "BROWSER_EXTRA_ARGS=--host-resolver-rules=MAP www.linkedin.com $FAKE:8443,MAP fake-ats.example $FAKE:8443|--ignore-certificate-errors" \

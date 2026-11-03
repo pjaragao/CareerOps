@@ -114,11 +114,12 @@ class Runner:
                 await self.prepare_documents(action)
             external = asyncio.Queue()
             page.on("popup", lambda p: external.put_nowait(p))
-            response = await page.goto(run_url(action), wait_until="domcontentloaded", timeout=60000)
+            response = await self.open(page, action)
             stop = await self.stop_sign(page, response.status if response else None)
             if stop:
                 await self.report_stop(page, action, stop)
                 return
+            await self.keep_marker(page, action)
             await self.watch(page, action, external)
         except PlaywrightError as e:
             log.warning("action %s: browser error: %s", action["id"], e)
@@ -132,6 +133,31 @@ class Runner:
         finally:
             if page is not None and not page.is_closed() and action["id"] not in self.kept:
                 await page.close()
+
+    async def open(self, page: Page, action: dict):
+        """Opens the action's page, also when the page redirects itself while loading."""
+        url = run_url(action)
+        try:
+            response = await page.goto(url, wait_until="domcontentloaded", timeout=60000)
+        except PlaywrightError as e:
+            # a redirect done by the page itself aborts the first navigation: what matters is where it landed
+            if "ERR_ABORTED" not in str(e) or not page.url.startswith("http"):
+                raise
+            response = None
+            await page.wait_for_load_state("domcontentloaded", timeout=60000)
+        return response
+
+    async def keep_marker(self, page: Page, action: dict) -> None:
+        """LinkedIn's newer pages rewrite their address as they load (the job search goes to /jobs/search-results/ and
+        drops the #fragment): the marker is put back for the extension, which listens for it. Only after the page was
+        checked for a warning, so a checkpoint page never gets the extension started on it."""
+        target, marker = run_url(action).split("#", 1)
+        await page.wait_for_timeout(2500)
+        # only when the page itself changed its address: the extension also drops the marker once it has started (and a
+        # page reloaded by a click is the same address), and starting it twice must never happen
+        if marker not in page.url and page.url.split("#")[0] != target:
+            log.info("action %s: the page dropped its #fragment; putting it back", action["id"])
+            await page.evaluate("m => { location.hash = m }", marker)
 
     async def watch(self, page: Page, action: dict, external: asyncio.Queue) -> None:
         action_id = action["id"]

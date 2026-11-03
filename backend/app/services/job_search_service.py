@@ -109,11 +109,11 @@ class JobSearchService:
 
     @staticmethod
     def linkedin_url(search: dict) -> str:
-        """Newest first, last 48 hours: the same address the tab opens."""
+        """Newest first, last 48 hours: the same address the tab opens (LinkedIn's search page since late 2026)."""
         params = {"keywords": search["keywords"], "location": search["location"], "sortBy": "DD", "f_TPR": f"r{RECENT_SECONDS}"}
         if (search.get("filters") or {}).get("remote"):
             params["f_WT"] = "2"
-        return f"https://www.linkedin.com/jobs/search/?{urlencode(params)}"
+        return f"https://www.linkedin.com/jobs/search-results/?{urlencode(params)}"   # /jobs/search/ redirects there, adding a salary filter
 
     @staticmethod
     def round_for(day: date) -> List[dict]:

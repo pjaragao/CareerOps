@@ -24,7 +24,7 @@ const PLATFORMS: { name: string; note: string; modes: ModeId[]; url: (s: Search)
       const p = new URLSearchParams({ keywords: s.query + m.extra, location: m.location, sortBy: 'DD' });
       if (m.remote) p.set('f_WT', '2');
       if (s.recent) p.set('f_TPR', 'r172800');
-      return `https://www.linkedin.com/jobs/search/?${p}`;
+      return `https://www.linkedin.com/jobs/search-results/?${p}`;
     },
   },
   {

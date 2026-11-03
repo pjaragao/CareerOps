@@ -1197,11 +1197,16 @@
         return done;
     }
 
+    // Late-2026 form: the question is a <p> right before the fieldset (ending in "*" when required), every input repeats it
+    // in aria-label, and the <label for> is empty. The older form (label / legend / .fb-dash-form-element) is still read.
+    const questionBlock = (el) => el.closest('[componentkey^="easyApplyFieldFocus"]') || (el.closest('fieldset') || {}).parentElement || null;
+    const blockTitle = (el) => { const b = questionBlock(el); return b ? clean(b.innerText).split('\n')[0].trim() : ''; };
+
     function labelFor(el, modal) {
-        if (el.id) { const l = modal.querySelector(`label[for="${CSS.escape(el.id)}"]`); if (l) return clean(l.innerText); }
+        if (el.id) { const l = modal.querySelector(`label[for="${CSS.escape(el.id)}"]`); if (l && clean(l.innerText)) return clean(l.innerText); }
         const fs = el.closest('fieldset');
-        if (fs && fs.querySelector('legend')) return clean(fs.querySelector('legend').innerText);
-        if (el.getAttribute('aria-label')) return el.getAttribute('aria-label');
+        if (fs && fs.querySelector('legend') && clean(fs.querySelector('legend').innerText)) return clean(fs.querySelector('legend').innerText);
+        if (el.getAttribute('aria-label')) return clean(el.getAttribute('aria-label')) + (/\*$/.test(blockTitle(el)) ? ' *' : '');
         const wrap = el.closest('.fb-dash-form-element, .jobs-easy-apply-form-element, .artdeco-text-input, div');
         return wrap ? clean(wrap.innerText).split('\n')[0] : '';
     }
@@ -1226,7 +1231,9 @@
                 f.current = sel && !PLACEHOLDER.test(sel.text.trim()) ? sel.text.trim() : null;
             } else if (type === 'radio') {
                 f.els = [...modal.querySelectorAll(`input[type="radio"][name="${CSS.escape(el.name)}"]`)];
-                f.options = f.els.map((r) => clean((modal.querySelector(`label[for="${CSS.escape(r.id)}"]`) || r.parentElement).innerText) || r.value);
+                // the option's text: its label, or (late-2026 form, empty label) the text next to the radio's own box
+                f.options = f.els.map((r) => clean((modal.querySelector(`label[for="${CSS.escape(r.id)}"]`) || {}).innerText || '')
+                    || clean(r.parentElement.innerText) || clean((r.parentElement.parentElement || {}).innerText || '') || r.value);
                 const on = f.els.find((r) => r.checked);
                 f.current = on ? f.options[f.els.indexOf(on)] : null;
             } else if (type === 'checkbox') {
@@ -1259,7 +1266,7 @@
     }
 
     // LinkedIn marks required questions on the input or with a "*" / "required" / "obrigatório" in the label
-    const isRequired = (f) => f.els.some((el) => el.required || el.getAttribute('aria-required') === 'true')
+    const isRequired = (f) => f.els.some((el) => el.required || el.getAttribute('aria-required') === 'true' || /\*$/.test(blockTitle(el)))
         || /\*\s*$|\b(required|obrigat[oó]rio)\b/i.test(f.label || '');
 
     const mark = (f, color) => f.els.forEach((el) => { (el.type === 'radio' || el.type === 'checkbox' ? el.parentElement : el).style.outline = `2px solid ${color}`; });
@@ -1660,6 +1667,8 @@
         apStatus(r.ok ? '✓ Candidatura enviada — vaga marcada como "Candidatado" no CareerOps.' : `Enviada. ${errText(r)}`, '#00b894');
     }
 
+    const FIELD_ERROR = /this field is required|please (make a selection|enter a valid)|campo (é )?obrigat[oó]rio|selecione uma op[cç][aã]o|dieses feld ist erforderlich|este campo es obligatorio/i;
+
     async function driveAutopilot() {
         const ap = autopilot;
         if (ap && ap.box) { const b = ap.box.querySelector('.careerops-pause'); if (b) b.textContent = paused ? '▶ Continuar' : '⏸ Pausar'; }
@@ -1709,7 +1718,9 @@
             if (ap.done || !next.isConnected) return;
             next.click();
             await wait(1800);
-            if (modal.querySelector('.artdeco-inline-feedback--error, [data-test-form-element-error-messages]')) {
+            // the old form's error classes, or (late 2026, hashed classes) the message itself / aria-invalid
+            if (modal.querySelector('.artdeco-inline-feedback--error, [data-test-form-element-error-messages], [aria-invalid="true"]')
+                || FIELD_ERROR.test(modal.innerText || '')) {
                 // same step stays marked: wait for you (no retry loop); the next step changes the signature
                 apStatus('O LinkedIn marcou campos nesta etapa: corrija e clique em Avançar — continuo depois.', '#b7791f');
                 managedQuestions({ questions: collectFields(modal).filter((f) => !f.current).map((f) => ({ key: f.key, label: f.label, type: f.type, options: f.options })) }, 'O LinkedIn recusou uma resposta nesta etapa');
@@ -1880,6 +1891,21 @@
 
     const searchCards = () => {
         const cards = new Map();
+        // late 2026 (/jobs/search-results/): no links per card; each one is a div[role=button] keyed by the job id, its lines
+        // the title (twice, the first may end in "(Verified job)"), the company and the place
+        document.querySelectorAll('[role="button"][componentkey^="job-card-component-ref-"]').forEach((el) => {
+            const id = (el.getAttribute('componentkey').match(/(\d+)$/) || [])[1];
+            if (!id || cards.has(id)) return;
+            const text = el.innerText || '';
+            const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
+            const title = (lines[0] || '').replace(/\s*\((verified job|vaga verificada)\)\s*$/i, '');
+            const rest = lines[1] === title ? lines.slice(2) : lines.slice(1);
+            cards.set(id, {
+                id, title, company: rest[0] || '', location: rest[1] || '',
+                easy_apply: /easy apply|candidatura simplificada/i.test(text),
+                posted: (text.match(/(\d+\s*(minutes?|hours?|days?|weeks?|months?)\s*ago|h[aá]\s*\d+\s*(minutos?|horas?|dias?|semanas?|m[eê]s(es)?)|just now|agora mesmo)/i) || [])[0] || '',
+            });
+        });
         document.querySelectorAll('[data-job-id], a[href*="/jobs/view/"], a[href*="currentJobId="]').forEach((el) => {
             const id = el.getAttribute('data-job-id') || ((el.href || '').match(/\/jobs\/view\/(\d+)/) || [])[1] || ((el.href || '').match(/currentJobId=(\d+)/) || [])[1];
             if (!id || !/^\d+$/.test(id) || cards.has(id)) return;
@@ -2228,6 +2254,8 @@
         if (root && root !== watchedRoot) { watcher.observe(root, { childList: true, subtree: true }); watchedRoot = root; }
     }, 1000);
     refresh();
+    // pages that rewrite their address while loading (the new job search) lose the #fragment: the worker puts it back
+    window.addEventListener('hashchange', () => { if (!managedRun && /careerops-run=/.test(location.hash)) managedStart(); });
     if (/careerops-run=/.test(location.hash)) {
         managedStart();
     } else {

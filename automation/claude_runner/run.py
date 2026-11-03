@@ -10,7 +10,6 @@ import re
 import shutil
 import subprocess
 import sys
-import tempfile
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -19,6 +18,9 @@ from urllib.parse import urlparse
 ENV_FILE = Path(os.environ.get("CAREEROPS_RUNNER_ENV", Path.home() / ".config" / "careerops" / "runner.env"))
 CLAUDE = os.environ.get("CLAUDE_BIN") or shutil.which("claude") or str(Path.home() / ".local" / "bin" / "claude")
 TIMEOUT_SECONDS = 480
+# The working folder of each run, /tmp/careerops-run/<action id>. The browser tool (in the container) uploads files only
+# from its client's working folder; in the container this same path is a link to the folder with the action's CV and letter.
+RUN_ROOT = Path("/tmp/careerops-run")
 MAX_BUDGET_USD = "1.00"
 
 TOOLS = ["browser_snapshot", "browser_navigate", "browser_click", "browser_type", "browser_select_option", "browser_file_upload",
@@ -187,8 +189,11 @@ def run_once(env: dict) -> int:
                            dossier=json.dumps(dossier, ensure_ascii=False, indent=1, default=str))
     port = env.get("CAREEROPS_MCP_PORT_ATS", 8932) if action["lane"] == "ats" else env.get("CAREEROPS_MCP_PORT_LINKEDIN", 8931)
     # An empty folder: no CLAUDE.md, no project settings, nothing to read
-    with tempfile.TemporaryDirectory(prefix="careerops-claude-") as folder:
-        mcp_config = Path(folder) / "mcp.json"
+    folder = RUN_ROOT / str(action["id"])
+    shutil.rmtree(folder, ignore_errors=True)
+    folder.mkdir(parents=True, mode=0o700)
+    try:
+        mcp_config = folder / "mcp.json"
         mcp_config.write_text(json.dumps({"mcpServers": {"playwright": {"type": "http", "url": f"http://127.0.0.1:{port}/mcp"}}}), encoding="utf-8")
         clean_env = {k: v for k, v in env.items() if not k.startswith("CAREEROPS_")}
         try:
@@ -197,6 +202,8 @@ def run_once(env: dict) -> int:
         except subprocess.TimeoutExpired as e:
             out = e.stdout.decode("utf-8", "replace") if isinstance(e.stdout, bytes) else (e.stdout or "")
             parsed, code = parse_stream(out.splitlines()), 124
+    finally:
+        shutil.rmtree(folder, ignore_errors=True)
     result = outcome(parsed, code, action)
     api(env, f"/automation/actions/{action['id']}/claude-result", {"run_id": action["run_id"], **result})
     print(f"action {action['id']}: {result['status']} ({len(parsed['calls'])} tool calls, flags: {len(result['audit_flags'])})")

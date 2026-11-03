@@ -29,6 +29,8 @@ fi
 unset VNC_PASSWORD   # only x11vnc needed it
 
 mkdir -p /data/profiles /data/run
+# the Claude routine works in /tmp/careerops-run/<id> on the host; here that path leads to the action's CV and cover letter
+ln -sfn /data/run /tmp/careerops-run
 cd /data/run
 
 # The browser tools the Claude routine uses, one per browser. They only hold the CV and cover letter of the action (cwd).

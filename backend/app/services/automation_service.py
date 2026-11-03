@@ -752,8 +752,10 @@ class AutomationService:
         if action["kind"] == "apply":
             from app.api.actions import _pdf_name
             job = _one("SELECT job_title, company, location, url, resume_markdown, cover_letter, language, description FROM public.job_listings WHERE id = %s", (action["target_id"],)) or {}
-            # the worker saved these in the container, where the browser tools run (handlers.prepare_documents)
-            folder = f"/data/run/{action['id']}"
+            # the worker saved these in /data/run/<id>, in the container where the browser tools run (handlers.prepare_documents).
+            # They are named by /tmp/careerops-run/<id>, a link to that folder: the routine's own working folder has this same
+            # path on the host, and the browser tool uploads only from its client's working folder (symlinks resolved).
+            folder = f"/tmp/careerops-run/{action['id']}"
             dossier.update({"job": {k: job.get(k) for k in ("job_title", "company", "location", "url")}, "facts": Copilot._facts(),
                             "saved_answers": [{"question": a["question"], "answer": a["answer"]} for a in AutomationService.answers_list()],
                             "resume_markdown": job.get("resume_markdown") or "",

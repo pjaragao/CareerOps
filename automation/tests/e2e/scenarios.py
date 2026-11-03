@@ -10,6 +10,9 @@ import urllib.error
 import urllib.request
 
 import psycopg2
+
+MCP_LINKEDIN = int(os.environ.get("E2E_MCP_LINKEDIN", 18931))
+MCP_ATS = int(os.environ.get("E2E_MCP_ATS", 18932))
 from psycopg2.extras import RealDictCursor
 
 API = "http://127.0.0.1:18005/api"
@@ -213,11 +216,20 @@ def main():
     row = wait_status(ask, ("done", "needs_user", "escalated"), 150)
     check("your answer resumes it and it goes through", row["status"] == "done" and fake_state()["submitted"].count("202") == 1, f"{row['status']} {row['error_code']} {row['error_text']}")
 
+    # late-2026 form: a required radio question marked only by a "*" before it, refused by LinkedIn if left blank
+    add_job("206")
+    klingon = approve_job("206")
+    row = wait_status(klingon, ("done", "needs_user", "escalated"), 150)
+    questions = [q.get("label") if isinstance(q, dict) else q for q in (row.get("questions") or [])]
+    check("late-2026 form: a required radio question comes to you", row["status"] == "needs_user" and any("Klingon" in str(q) for q in questions), f"{row['status']} {row['error_code']} {row['error_text']} {questions}")
+    check("late-2026 form: nothing sent", "206" not in fake_state()["submitted"])
+    call("POST", f"/automation/actions/{klingon}/cancel")
+
     print("search")
     set_state(mode="off")
     time.sleep(1)
     search = sql("""INSERT INTO public.automation_actions (kind, lane, status, target_url, title, rank, payload, payload_hash, idempotency_key)
-                    VALUES ('search', 'linkedin_read', 'queued', 'https://www.linkedin.com/jobs/search/?keywords=x', 'Busca', 40, %s, %s, 'search-e2e') RETURNING id""", (json.dumps({"search": "financas:remoto-br"}), ""))[0]["id"]
+                    VALUES ('search', 'linkedin_read', 'queued', 'https://www.linkedin.com/jobs/search-results/?keywords=x', 'Busca', 40, %s, %s, 'search-e2e') RETURNING id""", (json.dumps({"search": "financas:remoto-br"}), ""))[0]["id"]
     sql("UPDATE public.automation_actions SET payload_hash = %s WHERE id = %s", (hashlib.sha256(json.dumps({"search": "financas:remoto-br"}, sort_keys=True, ensure_ascii=False).encode()).hexdigest(), search))
     set_state(mode="live")
     row = wait_status(search, ("done", "needs_user", "escalated", "failed"), 90)
@@ -225,6 +237,15 @@ def main():
     check("search reads the list and adds new jobs", row["status"] == "done" and len(found) == 3, f"{row['status']} {row['error_text']} {row['result']} {found}")
     check("found jobs stay discovered, with no documents", all(j["status"] == "discovered" and j["resume_markdown"] is None for j in found))
     check("age and Easy Apply are read from the card", found and found[0]["posted_at"] is not None and found[0]["easy_apply"] is True and found[1]["easy_apply"] is False, str(found))
+
+    # the layout before late 2026 still works: LinkedIn may serve it again (CLAUDE.md)
+    payload = {"search": "financas:remoto-latam"}
+    old = sql("""INSERT INTO public.automation_actions (kind, lane, status, target_url, title, rank, payload, payload_hash, idempotency_key)
+                 VALUES ('search', 'linkedin_read', 'queued', 'https://www.linkedin.com/jobs/search/?keywords=y', 'Busca antiga', 40, %s, %s, 'search-e2e-old') RETURNING id""",
+              (json.dumps(payload), hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=False).encode()).hexdigest()))[0]["id"]
+    row = wait_status(old, ("done", "needs_user", "escalated", "failed"), 90)
+    found = sql("SELECT linkedin_job_id FROM public.job_listings WHERE linkedin_job_id IN ('311','312','313')")
+    check("the old search layout is still read", row["status"] == "done" and len(found) == 3, f"{row['status']} {row['error_text']} {found}")
 
     print("the stop button")
     slow = propose("follow", "stop-test", "https://www.linkedin.com/company/stopme", {"url": "x", "name": "Stop"})
@@ -325,8 +346,8 @@ def routine_without_model():
     print("a company form, with the fields filled by the extension")
     claimed = call("POST", "/automation/escalated/claim", {"runner": "e2e"}, WORKER)["action"]
     check("the company form comes to the routine", claimed and claimed["id"] == external, str(claimed)[:300])
-    check("the dossier has your data and the files", claimed and claimed["dossier"]["facts"]["salary_expectation"]["abroad_usd_yearly"] == 84000 and "/data/run/" in claimed["dossier"]["files"]["resume"])
-    mcp = Mcp(18932)
+    check("the dossier has your data and the files", claimed and claimed["dossier"]["facts"]["salary_expectation"]["abroad_usd_yearly"] == 84000 and "/tmp/careerops-run/" in claimed["dossier"]["files"]["resume"])
+    mcp = Mcp(MCP_ATS)
     tabs = mcp.call("browser_tabs", action="list")
     check("the form is still open, in the browser without your session", "fake-ats.example/apply/400" in tabs, tabs[:400])
     for line in tabs.splitlines():
@@ -344,7 +365,7 @@ def routine_without_model():
     job = sql("SELECT status, applied_via_bot FROM public.job_listings WHERE linkedin_job_id = '400'")[0]
     check("the job is marked as applied", job["status"] == "applied" and job["applied_via_bot"], str(job))
 
-    blocked = Mcp(18932)
+    blocked = Mcp(MCP_ATS)
     refused = blocked.call("browser_navigate", url="https://www.linkedin.com/feed/")
     check("the company-site browser refuses LinkedIn", "linkedin.com/feed" not in refused.split("### Page")[-1] or "ERR_" in refused, refused[:400])
 
@@ -355,7 +376,7 @@ def routine_without_model():
     check("the extension gives up and passes it on", row["status"] == "escalated", f"{row['status']} {row['error_code']} {row['error_text']}")
     claimed = call("POST", "/automation/escalated/claim", {"runner": "e2e"}, WORKER)["action"]
     check("the routine gets the stuck action", claimed and claimed["id"] == stuck, str(claimed)[:300])
-    mcp = Mcp(18931)
+    mcp = Mcp(MCP_LINKEDIN)
     tools = mcp.tools()
     wanted = {t.replace("mcp__playwright__", "") for t in run.ALLOWED_TOOLS}
     check("every tool the routine allows exists", wanted <= set(tools), str(wanted - set(tools)))
@@ -386,10 +407,10 @@ def crash_scenario():
     deadline = time.time() + 150
     while time.time() < deadline and "205" not in fake_state()["submitted"]:
         time.sleep(0.2)
-    subprocess.run(["docker", "kill", "careerops-e2e-worker"], capture_output=True)
+    subprocess.run(["docker", "kill", os.environ.get("E2E_WORKER", "careerops-e2e-worker")], capture_output=True)
     sent_before = fake_state()["submitted"].count("205")
     sql("UPDATE public.automation_actions SET lease_until = NOW() - INTERVAL '1 minute' WHERE id = %s AND status <> 'done'", (crash,))
-    subprocess.run(["docker", "start", "careerops-e2e-worker"], capture_output=True)
+    subprocess.run(["docker", "start", os.environ.get("E2E_WORKER", "careerops-e2e-worker")], capture_output=True)
     row = wait_status(crash, ("done", "needs_user"), 240)
     check("killed right after sending: the application was sent", sent_before == 1, str(fake_state()["submitted"]))
     check("after the crash it looks at the page instead of sending again", row["status"] == "done" and fake_state()["submitted"].count("205") == 1 and row["attempts"] == 1, f"{row['status']} attempts={row['attempts']} {fake_state()['submitted']}")
@@ -397,7 +418,7 @@ def crash_scenario():
     deadline = time.time() + 150
     tabs = ""
     while time.time() < deadline:
-        tabs = Mcp(18932).call("browser_tabs", action="list")
+        tabs = Mcp(MCP_ATS).call("browser_tabs", action="list")
         if "### Error" not in tabs:
             break
         time.sleep(5)
@@ -414,7 +435,7 @@ def claude_scenario():
     check("the extension gives up and passes it on", row["status"] == "escalated", f"{row['status']} {row['error_code']} {row['error_text']}")
     if row["status"] != "escalated":
         return
-    env = {**os.environ, "CAREEROPS_API_BASE": API, "CAREEROPS_WORKER_TOKEN": "e2e-worker", "CAREEROPS_MCP_PORT_LINKEDIN": "18931", "CAREEROPS_MCP_PORT_ATS": "18932"}
+    env = {**os.environ, "CAREEROPS_API_BASE": API, "CAREEROPS_WORKER_TOKEN": "e2e-worker", "CAREEROPS_MCP_PORT_LINKEDIN": str(MCP_LINKEDIN), "CAREEROPS_MCP_PORT_ATS": str(MCP_ATS)}
     run = os.path.join(os.path.dirname(__file__), "..", "..", "claude_runner", "run.py")
     done = subprocess.run([sys.executable, run], env=env, capture_output=True, text=True, timeout=540)
     print("   ", done.stdout.strip()[-400:], done.stderr.strip()[-400:])
