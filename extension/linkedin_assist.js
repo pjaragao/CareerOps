@@ -1206,7 +1206,11 @@
         if (el.id) { const l = modal.querySelector(`label[for="${CSS.escape(el.id)}"]`); if (l && clean(l.innerText)) return clean(l.innerText); }
         const fs = el.closest('fieldset');
         if (fs && fs.querySelector('legend') && clean(fs.querySelector('legend').innerText)) return clean(fs.querySelector('legend').innerText);
-        if (el.getAttribute('aria-label')) return clean(el.getAttribute('aria-label')) + (/\*$/.test(blockTitle(el)) ? ' *' : '');
+        // the question in aria-label: on the input, or (some radio groups) on the div[role=radio] around it
+        const aria = el.getAttribute('aria-label') || (el.closest('[role="radio"], [role="checkbox"]') || { getAttribute: () => '' }).getAttribute('aria-label');
+        if (aria) return clean(aria) + (/\*$/.test(blockTitle(el)) ? ' *' : '');
+        // the <p> heading the question's block, when nothing else names it
+        if (el.closest('[componentkey^="easyApplyFieldFocus"]') && blockTitle(el)) return blockTitle(el).replace(/\s*\*$/, ' *');
         const wrap = el.closest('.fb-dash-form-element, .jobs-easy-apply-form-element, .artdeco-text-input, div');
         return wrap ? clean(wrap.innerText).split('\n')[0] : '';
     }

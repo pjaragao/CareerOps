@@ -228,6 +228,7 @@ def main():
     row = wait_status(klingon, ("done", "needs_user", "escalated"), 150)
     questions = [q.get("label") if isinstance(q, dict) else q for q in (row.get("questions") or [])]
     check("late-2026 form: a required radio question comes to you", row["status"] == "needs_user" and any("Klingon" in str(q) for q in questions), f"{row['status']} {row['error_code']} {row['error_text']} {questions}")
+    check("late-2026 form: the question named by its option's wrapper comes with its text", any("on site every day" in str(q) for q in questions), str(questions))
     check("late-2026 form: nothing sent", "206" not in fake_state()["submitted"])
     call("POST", f"/automation/actions/{klingon}/cancel")
 
