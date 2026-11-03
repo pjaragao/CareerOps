@@ -1635,6 +1635,17 @@
         if (EASY.test(label(btn))) {
             apStatus('Abrindo o Easy Apply…');
             btn.click();
+            // a click before LinkedIn has wired the button does nothing (2026-11-03): try again, then say so instead of
+            // waiting for a form that never comes
+            for (let k = 0; k < 2 && !(await waitFor(easyApplyModal, 10000)); k++) {
+                if (ap.done) return;
+                const again = [...document.querySelectorAll('main button, main a')].find((b) => !own(b) && b.offsetParent !== null && EASY.test(label(b)));
+                if (again) { apStatus('O Easy Apply não abriu: clicando de novo…'); again.click(); }
+            }
+            if (!ap.done && !easyApplyModal()) {
+                apStatus('O formulário do Easy Apply não abriu.', '#d63031');
+                managedStuck('step_stuck', 'O formulário do Easy Apply não abriu depois de 3 cliques');
+            }
         } else if (managedRun) {
             // The worker catches the tab this click opens and passes its address to the backend
             apStatus('Candidatura no site da empresa: passando o endereço ao sistema…');

@@ -216,6 +216,12 @@ def main():
     row = wait_status(ask, ("done", "needs_user", "escalated"), 150)
     check("your answer resumes it and it goes through", row["status"] == "done" and fake_state()["submitted"].count("202") == 1, f"{row['status']} {row['error_code']} {row['error_text']}")
 
+    # the first click on Easy Apply does nothing: clicked again, it goes through
+    add_job("207")
+    slow = approve_job("207")
+    row = wait_status(slow, ("done", "needs_user", "escalated"), 150)
+    check("Easy Apply that ignores the first click: clicked again and sent", row["status"] == "done" and fake_state()["submitted"].count("207") == 1, f"{row['status']} {row['error_code']} {row['error_text']}")
+
     # late-2026 form: a required radio question marked only by a "*" before it, refused by LinkedIn if left blank
     add_job("206")
     klingon = approve_job("206")

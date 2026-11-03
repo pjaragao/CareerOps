@@ -43,7 +43,9 @@ def job_page(job_id):
     </div>"""
     script = f"""
     const $=(i)=>document.getElementById(i);
-    $('ea').onclick=()=>{{$('modal').style.display='block'}};
+    // job 207: the first click on Easy Apply does nothing, as when LinkedIn has not wired the button yet
+    let eaClicks=0;
+    $('ea').onclick=()=>{{ if ('{job_id}'==='207' && ++eaClicks===1) return; $('modal').style.display='block'}};
     $('next').onclick=()=>{{
       if ($('kerr') && !document.querySelector('input[name="radio-group-k"]:checked')) {{ $('kerr').style.display='block'; return; }}
       $('s1').style.display='none';$('s2').style.display='block'}};
