@@ -264,6 +264,19 @@ def test_first_submissions_wait_for_your_click(db, add_job, sql):
     assert Auto.state()["confirm_submit_left"] == 2
 
 
+def test_your_ok_after_the_wait_ran_out_sends_it_without_another_wait(db, add_job, sql):
+    sql("UPDATE public.automation_state SET confirm_submit_left = 3")
+    a = Auto.propose_job(add_job())
+    sql("UPDATE public.automation_actions SET status = 'queued' WHERE id = %s", (a["id"],))
+    got = claim()["action"]
+    Auto.ready_to_submit(got["id"], [])
+    sql("UPDATE public.automation_actions SET status = 'needs_user', error_code = 'confirm_timeout' WHERE id = %s", (got["id"],))
+    assert Auto.confirm_submit(got["id"])["status"] == "queued"
+    again = claim()["action"]
+    assert again["id"] == got["id"] and not again["confirm_required"] and again["confirmed"]
+    assert Auto.state()["confirm_submit_left"] == 2   # one OK, counted once
+
+
 def test_nonce_is_required_for_the_extension(db):
     queued_follow()
     got = claim()["action"]

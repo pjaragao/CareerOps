@@ -57,4 +57,27 @@ async def prove(page, action: dict) -> Tuple[bool, dict]:
     labels = await _button_labels(page)
     pattern = FOLLOWING if kind == "follow" else PENDING
     found = next((label for label in labels if pattern.search(label)), None)
+    if not found:   # 1st-degree profiles (and others): no Following/Pending on top, it sits in the "More" menu
+        found = await _in_more_menu(page, IN_MENU_FOLLOWING if kind == "follow" else IN_MENU_PENDING)
     return bool(found), {"url": page.url, "button": found}
+
+
+# what the "More" menu says once it happened: you can unfollow / the invitation can be withdrawn
+IN_MENU_FOLLOWING = re.compile(r"^\s*(unfollow|deixar de seguir|following|seguindo)\b", re.I)
+IN_MENU_PENDING = re.compile(r"^\s*(pending|pendente|withdraw|retirar)\b", re.I)
+MORE = re.compile(r"^\s*(more|mais)(\s+(actions|a[cç][oõ]es))?\s*$", re.I)
+
+
+async def _in_more_menu(page, pattern):
+    """Opens the profile's "More" menu, reads its items and closes it (Escape): a look, never a click on an item."""
+    more = page.locator("main").get_by_role("button", name=MORE).first
+    if not await more.count():
+        return None
+    try:
+        await more.click(timeout=5000)
+        await page.wait_for_timeout(1200)
+        items = page.get_by_role("menuitem")   # in the page or in LinkedIn's shadow-root layer: the locator reaches both
+        texts = [t.strip().split("\n")[0] for t in await items.all_inner_texts()]
+        return next((t for t in texts if pattern.search(t)), None)
+    finally:
+        await page.keyboard.press("Escape")

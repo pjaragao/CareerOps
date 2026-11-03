@@ -151,6 +151,13 @@ def main():
     check("follow: done after the worker saw it", row["status"] == "done" and (row["result"].get("proof") or {}).get("button"), f"{row['status']} {row['error_text']} {row['result']}")
     check("follow: happened once on the site", fake_state()["following"].count("globex") == 1)
 
+    # a 1st-degree connection: Follow is in the More menu, and so is the proof (Unfollow)
+    follow3 = propose("follow", "follow-first", "https://www.linkedin.com/in/first", {"url": "x", "name": "First"})
+    call("POST", f"/automation/actions/{follow3}/approve", {})
+    row = wait_status(follow3, ("done", "needs_user", "escalated"), 120)
+    check("follow from the More menu: done, proof read in that menu", row["status"] == "done" and (row["result"].get("proof") or {}).get("button") == "Unfollow", f"{row['status']} {row['error_code']} {row['result']}")
+    check("follow from the More menu: once", fake_state()["following"].count("first") == 1)
+
     prospect = sql("INSERT INTO public.linkedin_prospects (profile_url, name, status) VALUES ('https://www.linkedin.com/in/ana', 'Ana', 'to_contact') RETURNING id")[0]["id"]
     connect = propose("connect", "connect-live", "https://www.linkedin.com/in/ana", {"profile_url": "x", "name": "Ana"}, "prospect", prospect)
     call("POST", f"/automation/actions/{connect}/approve", {})

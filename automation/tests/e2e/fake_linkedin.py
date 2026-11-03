@@ -92,6 +92,10 @@ def profile_page(slug):
         actions = "<button>Pending</button><button>More</button>"
     elif slug == "broken":   # no element the extension recognizes as Follow: only the Claude routine gets past it
         actions = '<span role="link" tabindex="0" id="odd" onclick="fetch(\'/__follow/broken\',{method:\'POST\'}).then(()=>location.reload())">Acompanhar novidades</span>' if slug not in STATE["following"] else "<button>Following</button>"
+    elif slug == "first":   # a 1st-degree connection: Message and More on top, Follow / Unfollow only inside the More menu
+        item = "Unfollow" if slug in STATE["following"] else "Follow"
+        actions = (f'<button>Message</button><button id="more">More</button><div id="menu" role="menu" style="display:none">'
+                   f'<div role="menuitem" id="mfol" tabindex="0" aria-label="{item} First Lima">{item}</div><div role="menuitem" tabindex="0">Remove connection</div></div>')
     elif slug in STATE["following"]:
         actions = "<button>Following</button><button>More</button>"
     else:
@@ -103,7 +107,10 @@ def profile_page(slug):
     root.innerHTML='<div id="dlg" role="dialog" style="display:none"><p>Add a note? If you know their e-mail, add it.</p><input type="email"><button id="nonote">Send without a note</button></div>';
     const c=document.getElementById('conn');if(c)c.onclick=()=>{{root.getElementById('dlg').style.display='block'}};
     root.getElementById('nonote').onclick=()=>{{{post_js(f'/__invite/{slug}')}}};
-    const f=document.getElementById('fol');if(f)f.onclick=()=>{{{post_js(f'/__follow/{slug}')}}};"""
+    const f=document.getElementById('fol');if(f)f.onclick=()=>{{{post_js(f'/__follow/{slug}')}}};
+    const mo=document.getElementById('more');if(mo&&document.getElementById('menu'))mo.onclick=()=>{{const m=document.getElementById('menu');m.style.display=m.style.display==='none'?'block':'none'}};
+    document.addEventListener('keydown',(e)=>{{if(e.key==='Escape'&&document.getElementById('menu'))document.getElementById('menu').style.display='none'}});
+    const mf=document.getElementById('mfol');if(mf&&mf.innerText==='Follow')mf.onclick=()=>{{{post_js(f'/__follow/{slug}')}}};"""
     return title, body, script
 
 

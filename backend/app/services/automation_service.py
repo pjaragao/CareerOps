@@ -335,9 +335,15 @@ class AutomationService:
 
     @staticmethod
     def confirm_submit(action_id: int) -> Optional[dict]:
-        """One of the first applications, you watching: the click that sends it."""
+        """One of the first applications, you watching: the click that sends it. If the wait ran out before your OK, the
+        application goes back to the queue already confirmed: it is filled again and sent without waiting for you a second time."""
         action = _one("""UPDATE public.automation_actions SET result = result || '{"confirmed": true}'::jsonb, updated_at = NOW()
                           WHERE id = %s AND status = 'awaiting_confirm' RETURNING *""", (action_id,))
+        if not action:
+            action = _one("""UPDATE public.automation_actions
+                                SET result = result || '{"confirmed": true}'::jsonb, status = 'queued', error_code = NULL, error_text = NULL,
+                                    questions = '[]', updated_at = NOW()
+                              WHERE id = %s AND status = 'needs_user' AND error_code = 'confirm_timeout' RETURNING *""", (action_id,))
         if action:
             _rows("UPDATE public.automation_state SET confirm_submit_left = GREATEST(confirm_submit_left - 1, 0) WHERE id = 1")
         return action

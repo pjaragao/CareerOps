@@ -194,12 +194,14 @@ class BotService:
             lines = [f"🙋 *Precisa de você* #{a['id']} · {title}", a.get("error_text") or a.get("error_code") or ""]
             if questions:
                 lines.append("Perguntas do formulário:")
-                lines += [f"• {q.get('label') or q.get('question')}" + (f" (opções: {', '.join(str(o) for o in q['options'][:6])})" if q.get("options") else "")
+                lines += [f"• {q.get('label') or q.get('question') or '(pergunta sem texto na página)'}" + (f" (opções: {', '.join(str(o) for o in q['options'][:6])})" if q.get("options") else "")
                           for q in questions[:8]]
                 lines.append(f"Responda aqui (ex.: “#{a['id']}: aviso prévio = 30 dias”); a resposta fica salva para as próximas.")
             elif a.get("error_code") in ("captcha", "account_required", "email_verification", "session_expired", "checkpoint"):
                 lines.append(f"Isso se resolve no navegador do servidor: {settings.CAREEROPS_NOVNC_URL}")
                 lines.append(f"Depois me diga “tentar de novo #{a['id']}”.")
+            elif a.get("error_code") == "confirm_timeout":   # your OK still counts: it is filled again and sent without another wait
+                lines.append(f"Diga “confirmar #{a['id']}” (preenche de novo e envia, sem esperar outra vez) ou “cancelar #{a['id']}”.")
             else:
                 lines.append(f"Diga “tentar de novo #{a['id']}” ou “cancelar #{a['id']}”.")
             return "\n".join(l for l in lines if l), {"action_id": a["id"], "questions": questions}, False
@@ -217,7 +219,8 @@ class BotService:
                 {"action_id": a["id"], "files": files}, False
         if a["status"] == "awaiting_confirm":
             return (f"🟢 *Pronto para enviar* #{a['id']} · {title}\nO formulário está preenchido e parado no botão Enviar. "
-                    f"Diga “confirmar #{a['id']}” para o clique final."), {"action_id": a["id"]}, True
+                    f"Responda “ok” a esta mensagem (ou diga “confirmar #{a['id']}”) para o clique final; “cancelar #{a['id']}” desiste. "
+                    f"Ele espera 30 minutos; depois disso, “confirmar” ainda vale: preenche de novo e envia."), {"action_id": a["id"]}, True
         if a["kind"] == "comment":
             return f"💬 Comentário publicado #{a['id']} no post de {(a.get('payload') or {}).get('author') or title}.", {"action_id": a["id"]}, False
         return f"✅ *Candidatura enviada* #{a['id']} · {a.get('job_title') or title} · {a.get('company') or ''}", {"action_id": a["id"]}, False
