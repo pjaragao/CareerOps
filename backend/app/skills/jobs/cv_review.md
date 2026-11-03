@@ -26,6 +26,15 @@ GENERATED COVER LETTER:
 {{ cover_letter }}
 COVER>>>
 
+{% if previous_fixes %}
+THIS IS A REDONE VERSION. The previous review asked the writer for exactly these fixes:
+<<<FIXES
+{{ previous_fixes }}
+FIXES>>>
+Mark as "critical" or "major" only: a fix above that is still not done, or something this version broke (an invented or
+changed fact, a wrong target, a leftover, the length). Anything else you notice now is "minor": the writer already had its
+chance at it, and each round must get closer to sending, not move the target.
+{% endif %}
 Check, in this order:
 1. Invented or changed facts (critical): an employer, title, date, degree, certification, number, tool or result that is not in the
    real history, or a real one changed. Rewording and choosing what to highlight is fine; inventing is not.
@@ -36,7 +45,13 @@ Check, in this order:
 6. Experience years (major): a total that contradicts a career started in 2008.
 7. Style (minor): weak verbs, generic sentences, small inconsistencies.
 
-severity: "critical" or "major" means it must not go as it is; "minor" means it may go.
+Not problems of the documents:
+- A requirement of the ad that the candidate does not meet in the real history (a language such as German, years in a field,
+  a degree, a location): no rewrite can fix it, and claiming it would be inventing. Report it with severity "gap", the problem
+  only, and never ask the writer to claim it or to "address" it. The candidate already chose to apply.
+- The resume not naming the target company: it is company-agnostic on purpose. (The cover letter does name it.)
+
+severity: "critical" or "major" means it must not go as it is; "minor" means it may go; "gap" is the fit note above.
 For each problem, "fix" says exactly what the writer must change, as an instruction ("Remove the AWS certification: it is not in
 the history", "Name Acme, not Globex, in the first paragraph", "Cut the 2008–2012 roles to one line each to fit two pages").
 resume_instructions / cover_instructions: all the fixes for that document together, for the writer who will redo it; empty if

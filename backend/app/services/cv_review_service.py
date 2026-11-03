@@ -19,8 +19,8 @@ PLACEHOLDER = re.compile(r"\[[^\]\n]{0,40}\b(company|empresa|nome|name|cargo|rol
                          r"\b[^\]\n]{0,40}\](?!\()|\bTODO\b|lorem ipsum|\bX{2,}\b|<\s*insert|\{\{|\}\}|as an ai\b|como (uma )?ia\b", re.I)
 BLOCKING = ("critical", "major")
 MAX_PAGES = 2
-REDO = ("A reviewer rejected the previous version of this document. Write it again from the base resume, fixing exactly "
-        "this and keeping everything else that was right:\n")
+REDO = ("A reviewer rejected the previous version of this document. Start from that version (below) and fix exactly what the "
+        "reviewer asked; keep everything else as it is, so nothing that was right breaks now:\n")
 
 
 def _job(job_id: int) -> dict:
@@ -64,7 +64,8 @@ def quick_issues(resume: str, cover: str, pages: Optional[int]) -> List[dict]:
 
 class CvReviewService:
     @staticmethod
-    async def review(job_id: int) -> dict:
+    async def review(job_id: int, previous_fixes: str = "") -> dict:
+        """previous_fixes: what the last round asked for. A redone version is judged against it, not against a new list."""
         from app.api.actions import get_job_lang
         from app.services.profile_service import ProfileService
         job = _job(job_id)
@@ -78,10 +79,15 @@ class CvReviewService:
                 "job_title": job.get("job_title"), "company": job.get("company"), "lang_name": lang,
                 "job_description": (job.get("description") or "")[:8000],
                 "resume_base": ProfileService.get_resume_base("pt" if lang == "Portuguese" else "en"),
-                "resume_markdown": resume, "cover_letter": cover, "pdf_pages": pages})
+                "resume_markdown": resume, "cover_letter": cover, "pdf_pages": pages, "previous_fixes": previous_fixes})
             if not isinstance(reading, dict):
                 raise RuntimeError("o revisor não devolveu uma avaliação")
             issues += [i for i in reading.get("issues") or [] if isinstance(i, dict) and i.get("doc") in ("resume", "cover")]
+        # what the candidate lacks (German, years in a field) is no fault of the documents: noted, never redone
+        for i in issues:
+            if i.get("severity") == "gap":
+                i["severity"] = "minor"
+                i["gap"] = True
         blocking = [i for i in issues if i.get("severity") in BLOCKING]
 
         def instructions(doc: str) -> str:
@@ -99,17 +105,31 @@ class CvReviewService:
         """Review; redo what failed; review again. Returns the last verdict and every round's."""
         from app.api.actions import ActionOptions, generate_cover_letter, generate_resume
         rounds = int((config().get("jobs") or {}).get("cv_review_rounds", 2) if rounds is None else rounds)
-        history = []
+        history, asked = [], ""
         for n in range(rounds + 1):
-            verdict = await CvReviewService.review(job_id)
+            verdict = await CvReviewService.review(job_id, asked)
             history.append({k: verdict[k] for k in ("approved", "issues", "pages", "summary")})
             if verdict["approved"] or n == rounds:
                 return {**verdict, "rounds": n, "history": history}
-            if verdict["resume_instructions"] or not _job(job_id).get("resume_markdown"):
-                await generate_resume(job_id, ActionOptions(orientation=REDO + verdict["resume_instructions"]))
-            if verdict["cover_instructions"] or not _job(job_id).get("cover_letter"):
-                await generate_cover_letter(job_id, ActionOptions(orientation=REDO + verdict["cover_instructions"]))
+            job = _job(job_id)
+            resume, cover = job.get("resume_markdown") or "", job.get("cover_letter") or ""
+            if verdict["resume_instructions"] or not resume:
+                await generate_resume(job_id, ActionOptions(orientation=redo(verdict["resume_instructions"], resume, verdict["pages"])))
+            if verdict["cover_instructions"] or not cover:
+                await generate_cover_letter(job_id, ActionOptions(orientation=redo(verdict["cover_instructions"], cover)))
+            asked = "\n".join(f"{'Resume' if d == 'resume' else 'Cover letter'}:\n{verdict[d + '_instructions']}"
+                              for d in ("resume", "cover") if verdict[d + "_instructions"])
         return {**verdict, "rounds": rounds, "history": history}   # not reached
+
+
+def redo(fixes: str, previous: str, pages: Optional[int] = None) -> str:
+    """What the writer gets for another version: the fixes, the version they apply to, and (resume) a size that fits."""
+    if not previous.strip():
+        return fixes
+    size = ""
+    if pages is not None and pages <= MAX_PAGES:   # it fits now: adding what the reviewer asked must not push it to 3 pages
+        size = f"\nIt fits {MAX_PAGES} pages now: the new version stays within {len(previous)} characters; cut something less relevant to add."
+    return f"{REDO}{fixes}{size}\n\nPREVIOUS VERSION:\n<<<PREVIOUS\n{previous}\nPREVIOUS>>>"
 
 
 def reasons(verdict: dict, limit: int = 4) -> str:

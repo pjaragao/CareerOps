@@ -54,17 +54,18 @@ class SkillService:
         """Renders a Jinja2 template with the given context."""
         template = cls._env.get_template(skill_path)
         prompt = template.render(**context)
-        return prompt + content_guard.prompt_rule() if skill_path in cls.OUTGOING_SKILLS else prompt
+        return prompt + content_guard.prompt_rule(prompt) if skill_path in cls.OUTGOING_SKILLS else prompt
 
     @classmethod
     def generate_checked(cls, skill_path: str, prompt: str, generate: Callable[[str], Any]) -> Any:
-        """Calls the AI. A text to be sent that cites a forbidden subject is written once more; if it still does, it is refused."""
+        """Calls the AI. A text to be sent that cites a forbidden subject is written once more; if it still does, the sentences
+        that cite it are dropped; if that would cut too much, it is refused."""
         result = generate(prompt)
         if skill_path not in cls.OUTGOING_SKILLS:
             return result
         found = content_guard.forbidden_in(result)
         if found:
-            result = generate(prompt + content_guard.retry_rule(found))
+            result = content_guard.scrub(generate(prompt + content_guard.retry_rule(found)))
             content_guard.ensure_clean(result, "O texto gerado")
         return result
 

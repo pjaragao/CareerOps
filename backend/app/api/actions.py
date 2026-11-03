@@ -84,6 +84,7 @@ async def generate_cover_letter(job_id: int, options: ActionOptions):
             "company": job['company'],
             "job_description": job['description'][:4000],
             "profile_summary": profile_summary,
+            "candidate_name": (profile.get("personal") or {}).get("name") or "",
             "orientation": options.orientation
         },
         response_format="text"

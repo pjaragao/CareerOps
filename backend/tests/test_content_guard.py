@@ -50,6 +50,18 @@ def test_outgoing_text_that_keeps_it_is_refused():
         SkillService.generate_checked("jobs/resume.md", "prompt", lambda p: {"resume_markdown": "sanitary landfill"})
 
 
+def test_a_sentence_that_keeps_it_after_the_retry_is_dropped():
+    cv = "\n".join(["# Paulo", "- Built CentralOps, a planning platform.", "- Modeled water and drainage tariffs.",
+                    "- Led studies. Planned sanitary landfill sites.", "- Wrote 2,000 pgTAP tests."] + ["- Shipped a thing."] * 6)
+    out = SkillService.generate_checked("jobs/resume.md", "prompt", lambda p: {"resume_markdown": cv})["resume_markdown"]
+    assert content_guard.forbidden_in(out) == [] and "- Led studies." in out and "pgTAP" in out
+
+
+def test_the_rule_names_the_subjects_only_when_the_prompt_brings_them():
+    assert "landfill" not in content_guard.prompt_rule("A job about data platforms").lower()
+    assert "landfill" in content_guard.prompt_rule("A job about landfill gas").lower()
+
+
 def test_reading_someone_elses_text_is_not_blocked():
     assert SkillService.generate_checked("jobs/eligibility.md", "p", lambda p: {"quote": "solid waste"}) == {"quote": "solid waste"}
 

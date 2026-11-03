@@ -66,7 +66,27 @@ def test_an_invented_fact_is_sent_back_and_redone(db, add_job, reviewer):
     reviewer["readings"] = [INVENTED, CLEAN]
     verdict = asyncio.run(CvReviewService.run(job["id"]))
     assert verdict["approved"] and verdict["rounds"] == 1
-    assert reviewer["redone"] == [("resume", cr.REDO + "- Remove the AWS certification\nRemove the AWS certification")]
+    [(doc, told)] = reviewer["redone"]
+    assert doc == "resume" and told.startswith(cr.REDO + "- Remove the AWS certification")
+    assert "PREVIOUS VERSION" in told and "stays within" in told   # it edits the version it read, at a size that fits
+
+
+def test_a_redone_version_is_judged_against_what_was_asked(db, add_job, reviewer, monkeypatch):
+    seen = []
+
+    async def run_skill(path, context, response_format="json"):
+        seen.append(context["previous_fixes"])
+        return INVENTED if len(seen) == 1 else CLEAN
+    monkeypatch.setattr(cr.SkillService, "run_skill", staticmethod(run_skill))
+    asyncio.run(CvReviewService.run(add_job(status="new")["id"]))
+    assert seen[0] == "" and "Remove the AWS certification" in seen[1]
+
+
+def test_what_the_candidate_lacks_does_not_send_it_back(db, add_job, reviewer):
+    reviewer["readings"] = [{"issues": [{"doc": "cover", "severity": "gap", "problem": "the job asks for German"}],
+                             "resume_instructions": "", "cover_instructions": "", "summary": "ok"}]
+    verdict = asyncio.run(CvReviewService.run(add_job(status="new")["id"]))
+    assert verdict["approved"] and reviewer["redone"] == [] and verdict["issues"][0]["gap"]
 
 
 def test_it_gives_up_after_the_rounds(db, add_job, reviewer):
@@ -116,3 +136,12 @@ def test_only_the_document_with_a_problem_is_redone(db, add_job, reviewer):
     reviewer["readings"] = [{**INVENTED, "cover_instructions": "Mention the company culture"}, CLEAN]
     asyncio.run(CvReviewService.run(job["id"]))
     assert [doc for doc, _ in reviewer["redone"]] == ["resume"]
+
+
+def test_trying_again_writes_the_documents_from_scratch(approved_job, reviewer, sql):
+    reviewer["readings"] = [INVENTED]
+    Auto.prepare_documents()
+    sql("UPDATE public.job_listings SET resume_markdown = 'old CV', cover_letter = 'old letter' WHERE id = %s", (approved_job["target_id"],))
+    assert Auto.retry(approved_job["id"])["status"] == "approved"
+    job = _one("SELECT resume_markdown, cover_letter FROM public.job_listings WHERE id = %s", (approved_job["target_id"],))
+    assert job == {"resume_markdown": None, "cover_letter": None}

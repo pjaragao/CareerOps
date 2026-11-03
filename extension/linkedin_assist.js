@@ -783,6 +783,16 @@
     const COMMENT_BTN = /^(comment|comentar)$/i;
     const own = (el) => el.closest('.careerops-card, .careerops-bar, .careerops-actions, .careerops-reply');
 
+    // LinkedIn now draws its dialogs (the invite one, late 2026) inside the shadow root of #interop-outlet, where
+    // document.querySelectorAll does not look. Closed or open, the extension can reach it.
+    function shadowRoots() {
+        const host = document.querySelector('#interop-outlet, [data-testid="interop-shadowdom"]');
+        if (!host) return [];
+        const root = host.shadowRoot || (chrome.dom && chrome.dom.openOrClosedShadowRoot ? chrome.dom.openOrClosedShadowRoot(host) : null);
+        return root ? [root] : [];
+    }
+    const deepAll = (selector) => [document, ...shadowRoots()].flatMap((r) => [...r.querySelectorAll(selector)]);
+
     // The post's action bar (Like · Comment · Repost · Send): the smallest element holding its Comment and Repost buttons
     function actionBar(post) {
         const btns = [...post.querySelectorAll('button, [role="button"]')].filter((b) => !own(b));
@@ -895,18 +905,18 @@
     const CONNECT = /^\+?\s*(conectar|connect)$/i;
     const SEND_NO_NOTE = ['enviar sem nota', 'send without a note', 'send without note'];
     const SEND = ['enviar', 'send', 'enviar convite', 'send invitation'];
-    const dialogs = () => [...document.querySelectorAll('div[role="dialog"], .artdeco-modal, [aria-modal="true"], dialog[open]')]
+    const dialogs = () => deepAll('div[role="dialog"], .artdeco-modal, [aria-modal="true"], dialog[open]')
         .filter((d) => (d.offsetParent !== null || d.getClientRects().length) && !own(d));
     const NO_NOTE = /^(send without( a)? note|enviar sem( uma)? nota)$/i;
-    const EMAIL = 'input[type="email"], input[name="email"], input[id*="email" i]';
-    // "Send without a note" anywhere in the open dialogs; plain "Send" only when no email field is asked for
+    // "Send without a note" anywhere in the open dialogs, else "Send". A note asking for the person's e-mail does not
+    // stop the invite; when LinkedIn really needs the e-mail, it keeps Send disabled and nothing is found here.
     function sendButton(open) {
         for (const d of open) {
-            const btns = [...d.querySelectorAll('button')].filter((b) => b.offsetParent !== null && !b.disabled);
+            const btns = [...d.querySelectorAll('button')].filter((b) => (b.offsetParent !== null || b.getClientRects().length) && !b.disabled);
             const noNote = btns.find((b) => NO_NOTE.test(btnLabel(b)) || NO_NOTE.test(clean(b.getAttribute('aria-label') || '')));
             if (noNote) return noNote;
             const send = btns.find((b) => SEND.includes(btnLabel(b)));
-            if (send && !d.querySelector(EMAIL)) return send;
+            if (send) return send;
         }
         return null;
     }
@@ -1044,7 +1054,8 @@
 
     // Clicking LinkedIn's own "Enviar" in the invite dialog (manual connect) marks the prospect as invited
     document.addEventListener('click', (e) => {
-        const b = e.target.closest('button');
+        const hit = e.composedPath()[0];   // a click inside LinkedIn's shadow-root dialog reaches here retargeted to its host
+        const b = hit && hit.closest ? hit.closest('button') : null;
         if (!b || !b.closest('div[role="dialog"], .artdeco-modal')) return;
         if (![...SEND_NO_NOTE, ...SEND].includes(btnLabel(b)) || !isProfilePage()) return;
         ensureProspect().then((res) => { if (res.ok) api('PATCH', `/prospects/${res.data.id}`, { status: 'invited' }); });
@@ -1110,7 +1121,7 @@
     // offsetParent, so visibility is checked with getClientRects)
     const shown = (el) => el.offsetParent !== null || el.getClientRects().length > 0;
     function easyApplyModal() {
-        return [...document.querySelectorAll('.jobs-easy-apply-modal, div[role="dialog"], dialog[open]')]
+        return deepAll('.jobs-easy-apply-modal, div[role="dialog"], dialog[open]')
             .find((d) => shown(d) && (d.classList.contains('jobs-easy-apply-modal')
                 || /candidatura simplificada|easy apply|apply to |candidatar-se|candidatura para/i.test(d.innerText.slice(0, 400))));
     }
@@ -1653,7 +1664,7 @@
         const ap = autopilot;
         if (ap && ap.box) { const b = ap.box.querySelector('.careerops-pause'); if (b) b.textContent = paused ? '▶ Continuar' : '⏸ Pausar'; }
         if (!ap || ap.done || ap.running || !ap.prep.job || paused) return;   // paused: this step is looked at when you continue
-        if ([...document.querySelectorAll('div[role="dialog"], .artdeco-modal, dialog[open]')].some((d) => shown(d) && SENT.test(d.innerText))) { finishApplied(); return; }
+        if (deepAll('div[role="dialog"], .artdeco-modal, dialog[open]').some((d) => shown(d) && SENT.test(d.innerText))) { finishApplied(); return; }
         const modal = easyApplyModal();
         if (!modal) return;
         const panel = modal.querySelector('.careerops-apply');
@@ -2208,8 +2219,14 @@
         scoreBtn.style.display = listPage ? '' : 'none';
         savedBtn.style.display = isSavedJobsPage() ? '' : 'none';
     }
-    new MutationObserver(() => { clearTimeout(refresh.t); refresh.t = setTimeout(refresh, 400); })
-        .observe(document.documentElement, { childList: true, subtree: true });
+    const watcher = new MutationObserver(() => { clearTimeout(refresh.t); refresh.t = setTimeout(refresh, 400); });
+    watcher.observe(document.documentElement, { childList: true, subtree: true });
+    // changes inside LinkedIn's shadow-root dialogs are not seen from the document: watch that root too (it can be redrawn)
+    let watchedRoot = null;
+    setInterval(() => {
+        const [root] = shadowRoots();
+        if (root && root !== watchedRoot) { watcher.observe(root, { childList: true, subtree: true }); watchedRoot = root; }
+    }, 1000);
     refresh();
     if (/careerops-run=/.test(location.hash)) {
         managedStart();

@@ -82,10 +82,13 @@ def profile_page(slug):
         actions = "<button>Following</button><button>More</button>"
     else:
         actions = f"""<button id="conn" aria-label="Invite {slug.title()} Lima to connect">Connect</button><button id="fol">Follow</button><button>More</button>"""
+    # late 2026: the invite dialog lives in the closed shadow root of #interop-outlet, with a note about the e-mail
     body = f"""<section><div><h1>{slug.title()} Lima</h1><div class="text-body-medium">CFO</div><div class="row">{actions}</div></div></section>
-      <div id="dlg" role="dialog" style="display:none"><button id="nonote">Send without a note</button></div>"""
-    script = f"""const c=document.getElementById('conn');if(c)c.onclick=()=>{{document.getElementById('dlg').style.display='block'}};
-    const n=document.getElementById('nonote');if(n)n.onclick=()=>{{{post_js(f'/__invite/{slug}')}}};
+      <div id="interop-outlet" data-testid="interop-shadowdom"></div>"""
+    script = f"""const root=document.getElementById('interop-outlet').attachShadow({{mode:'closed'}});
+    root.innerHTML='<div id="dlg" role="dialog" style="display:none"><p>Add a note? If you know their e-mail, add it.</p><input type="email"><button id="nonote">Send without a note</button></div>';
+    const c=document.getElementById('conn');if(c)c.onclick=()=>{{root.getElementById('dlg').style.display='block'}};
+    root.getElementById('nonote').onclick=()=>{{{post_js(f'/__invite/{slug}')}}};
     const f=document.getElementById('fol');if(f)f.onclick=()=>{{{post_js(f'/__follow/{slug}')}}};"""
     return title, body, script
 

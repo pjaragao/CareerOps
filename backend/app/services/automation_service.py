@@ -403,11 +403,17 @@ class AutomationService:
 
     @staticmethod
     def retry(action_id: int) -> Optional[dict]:
-        """You solved it (captcha, login…) or want it tried again: first looks at the page if it may have gone out."""
-        action = _one("SELECT * FROM public.automation_actions WHERE id = %s AND status = 'needs_user'", (action_id,))
+        """You solved it (captcha, login…) or want it tried again: first looks at the page if it may have gone out. A job whose
+        CV or cover letter failed (not generated, or refused by the reviewer) gets both written again from scratch."""
+        action = _one("""SELECT * FROM public.automation_actions WHERE id = %s
+                          AND (status = 'needs_user' OR (status = 'review_docs' AND error_code = 'cv_review_failed'))""", (action_id,))
         if not action:
             return None
-        status = "unknown_outcome" if (action["result"] or {}).get("executed") else "queued"
+        if action["kind"] == "apply" and action["error_code"] in ("documents_failed", "cv_review_failed"):
+            _rows("UPDATE public.job_listings SET resume_markdown = NULL, cover_letter = NULL WHERE id = %s", (action["target_id"],))
+            status = "approved"
+        else:
+            status = "unknown_outcome" if (action["result"] or {}).get("executed") else "queued"
         return _one("""UPDATE public.automation_actions SET status = %s, error_code = NULL, error_text = NULL, questions = '[]', updated_at = NOW()
                         WHERE id = %s RETURNING *""", (status, action_id))
 
