@@ -30,6 +30,7 @@ WRITE_KINDS = ("apply", "comment", "follow", "connect")
 READ_KINDS = ("search", "check", "feed_scan", "follow_scan", "saved_import")
 # Reads that keep their own hours (Configurações) instead of the time window of the rest
 ANYTIME_KINDS = ("saved_import",)
+WRITE_KINDS = ("apply", "comment", "follow", "connect")
 RUNNING = ("running_ext", "verifying", "awaiting_confirm", "running_claude")
 OPEN = ("proposed", "approved", "review_docs", "queued", "unknown_outcome", "escalated", "needs_user") + RUNNING
 
@@ -195,6 +196,12 @@ class AutomationService:
             start = _period_start(row["period"])
             if row["kind"] == "job_read":
                 used = _one("SELECT COUNT(*) AS n FROM public.job_listings WHERE search_slug IS NOT NULL AND created_at >= %s", (start,))["n"]
+            elif row["kind"] in WRITE_KINDS:
+                # what went out or may have (done, clicked, running now): a try that stopped before the final click sent
+                # nothing to LinkedIn and is not counted (2026-11-04: invites that never left had filled the week's 20)
+                used = _one("""SELECT COUNT(*) AS n FROM public.automation_actions
+                                WHERE kind = %s AND started_at >= %s
+                                  AND (status = 'done' OR status = ANY(%s) OR result ? 'executed')""", (row["kind"], start, list(RUNNING)))["n"]
             else:
                 used = _one("""SELECT COUNT(*) AS n FROM public.automation_actions
                                 WHERE kind = %s AND started_at >= %s AND status NOT IN ('discarded', 'cancelled')""", (row["kind"], start))["n"]

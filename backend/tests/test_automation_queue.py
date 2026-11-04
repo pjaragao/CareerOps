@@ -146,6 +146,21 @@ def test_daily_limit(db, sql):
         sql("UPDATE public.automation_limits SET step2 = 10 WHERE kind = 'follow'")
 
 
+def test_a_write_that_stopped_before_the_final_click_does_not_use_the_limit(db, sql):
+    sql("UPDATE public.automation_limits SET step2 = 1 WHERE kind = 'follow'")
+    try:
+        queued_follow("a"), queued_follow("b")
+        Auto.escalate(claim()["action"]["id"], "selector_not_found", "sem botão")   # nothing was clicked
+        assert next(l for l in Auto.limits() if l["kind"] == "follow")["left"] == 1
+        got = claim()["action"]
+        assert next(l for l in Auto.limits() if l["kind"] == "follow")["left"] == 0   # running counts
+        Auto.complete(got["id"], "executed")
+        Auto.verify(got["id"], False)   # clicked, not seen yet: it may have gone out
+        assert next(l for l in Auto.limits() if l["kind"] == "follow")["left"] == 0
+    finally:
+        sql("UPDATE public.automation_limits SET step2 = 10 WHERE kind = 'follow'")
+
+
 def test_ramp_goes_by_steps(db, sql):
     sql("UPDATE public.automation_state SET ramp_step = 0")
     assert next(l for l in Auto.limits() if l["kind"] == "apply")["limit"] == 3
