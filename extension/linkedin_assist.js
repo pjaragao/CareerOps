@@ -999,9 +999,20 @@
 
     const dialogText = (list) => list.map((d) => clean(d.innerText || '')).filter(Boolean).join(' | ').slice(0, 600);
 
+    // Managed mode: LinkedIn ignores a click made by a script on some elements (late 2026: the "More → Connect" link and the
+    // invite dialog's buttons). The worker clicks those with the real mouse when asked through this attribute, and only the
+    // fixed targets it knows: this profile's Connect link, and "Send without a note" once the action may send.
+    async function workerClick(step, done, timeout = 20000) {
+        document.documentElement.setAttribute('data-careerops-click', step);
+        const ok = await waitFor(done, timeout);
+        document.documentElement.removeAttribute('data-careerops-click');
+        return ok;
+    }
+
     // Returns 'sent' | 'pending' | 'connected' | 'unavailable' | 'needs_user' | 'no_dialog'; connectNoNote.last says what was seen
-    // beforeSend (managed mode) runs right before the click that sends; false stops it there
-    async function connectNoNote(beforeSend) {
+    // beforeSend (managed mode) runs right before the click that sends; false stops it there. askWorker (managed mode):
+    // workerClick, for the clicks the page ignores from a script.
+    async function connectNoNote(beforeSend, askWorker) {
         connectNoNote.last = {};
         const card = profileTopCard();
         if (!card) return 'unavailable';
@@ -1016,10 +1027,17 @@
         // Only a dialog that opened with this click is the invite. One already on the page (the messaging overlay, a chat
         // with its own Send) is never looked into: clicking there would send something else.
         const opened = () => dialogs().filter((d) => !before.has(d));
-        const btn = await waitFor(() => sendButton(opened()), 5000);
+        let btn = await waitFor(() => sendButton(opened()), 5000);
         if (!btn) {
             // some profiles send at once, without a dialog: the button turns into "Pending"
             if (await waitFor(() => actions().some((l) => PENDING.test(l)), 1500)) return 'sent';
+            // the new menu link: the worker clicks it with the mouse
+            if (askWorker && link && /custom-invite/.test(link.getAttribute('href') || '') && !opened().length) {
+                connectNoNote.last.worker = 'connect';
+                btn = await askWorker('connect', () => sendButton(opened()));
+            }
+        }
+        if (!btn) {
             connectNoNote.last.dialog = dialogText(opened());
             // a dialog with no way to send: LinkedIn asks for the person's e-mail, that one is yours. No dialog at all: the
             // click did not open it (a new layout) — said as such, never as "it asked for an e-mail"
@@ -1028,7 +1046,13 @@
         if (beforeSend && !(await beforeSend())) return 'needs_user';
         btn.click();
         // the invite dialog closes once it went out; one still open (or a new one) says what LinkedIn wanted instead
-        await waitFor(() => !opened().length, 3000);
+        let gone = await waitFor(() => !opened().length, 3000);
+        // "Send without a note" still there: the click from the script was ignored, the worker clicks it (it looks for that
+        // very button, so a dialog asking for something else is never answered)
+        if (!gone && askWorker && sendButton(opened())) {
+            connectNoNote.last.worker = 'send';
+            gone = await askWorker('send', () => !opened().length);
+        }
         connectNoNote.last.after = dialogText(opened());
         return 'sent';
     }
@@ -1879,10 +1903,11 @@
             await managedDry({ found: 'connect' });
             return;
         }
-        const result = await connectNoNote(() => managedExecuted({ connect: 'sent' }));
+        const result = await connectNoNote(() => managedExecuted({ connect: 'sent' }), workerClick);
         if (document.body && INVITE_LIMIT.test(document.body.innerText)) { managedRun.closed = false; managedStuck('weekly_invite_limit', 'O LinkedIn avisou do limite semanal de convites'); return; }
         const seen = connectNoNote.last || {};
-        const said = (text) => [text, seen.dialog && `Janela: ${seen.dialog}`, seen.clicked && `Clique em: ${seen.clicked}`].filter(Boolean).join(' · ');
+        const said = (text) => [text, seen.dialog && `Janela: ${seen.dialog}`, seen.clicked && `Clique em: ${seen.clicked}`,
+            seen.worker && `o worker também clicou com o mouse (${seen.worker})`].filter(Boolean).join(' · ');
         const route = {
             sent: () => managedExecuted({ connect: 'sent' }),   // no dialog on this profile: it went out with the first click
             pending: () => managedStuck('already_pending', 'Convite já pendente'),

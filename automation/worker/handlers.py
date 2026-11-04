@@ -10,7 +10,7 @@ from typing import Dict, Optional
 
 from playwright.async_api import Error as PlaywrightError, Page
 
-from . import safety, verify
+from . import clicks, safety, verify
 from .api import Api
 from .browser import Browsers
 
@@ -165,6 +165,7 @@ class Runner:
         last_heartbeat = 0.0
         waiting_since = None
         form_since = time.monotonic()
+        clicked: set = set()   # the real clicks the extension asked for (clicks.py): each at most once
         while True:
             await asyncio.sleep(POLL_SECONDS)
             now = time.monotonic()
@@ -181,7 +182,7 @@ class Runner:
                 return
             status = info["status"]
             if status == "verifying":   # said right before the final click: give it time to land before looking
-                await asyncio.sleep(VERIFY_SETTLE_SECONDS)
+                await self.settle(page, action, clicked)
                 # the page as the click left it (a dialog still open, a warning): the check reloads it and that is lost
                 await self.artifact(page, action_id, "after-click")
                 await self.run_verify(page, action)
@@ -205,6 +206,7 @@ class Runner:
             if stop:
                 await self.report_stop(page, action, stop)
                 return
+            await clicks.serve(page, action, status, clicked)
             if not external.empty():   # "Apply" on the company site opened a window: its address goes to the queue
                 popup = await external.get()
                 try:
@@ -223,6 +225,15 @@ class Runner:
             if now - started > DEADLINES.get(action["kind"], 300):
                 await self.report_stop(page, action, "step_stuck", "A extensão não terminou a tempo")
                 return
+
+    async def settle(self, page: Page, action: dict, clicked: set) -> None:
+        """The wait after the final click. The extension may still ask for the real click that sends (clicks.py): done here,
+        and then the full wait again before the page is looked at."""
+        end = time.monotonic() + VERIFY_SETTLE_SECONDS
+        while time.monotonic() < end:
+            await asyncio.sleep(1)
+            if await clicks.serve(page, action, "verifying", clicked):
+                end = time.monotonic() + VERIFY_SETTLE_SECONDS
 
     async def release_kept(self) -> None:
         """Forms the Claude routine already handled, or that left the queue."""

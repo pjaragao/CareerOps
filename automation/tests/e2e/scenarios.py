@@ -174,9 +174,14 @@ def main():
     row = wait_status(menu, ("done", "needs_user", "escalated", "discarded"), 90)
     check("connect from the More menu link: invited, proof read", row["status"] == "done" and fake_state()["invited"].count("menu") == 1,
           f"{row['status']} {row['error_code']} {row['error_text']}")
+    real = propose("connect", "connect-real", "https://www.linkedin.com/in/realmenu", {"profile_url": "x", "name": "Real"})
+    call("POST", f"/automation/actions/{real}/approve", {})
+    row = wait_status(real, ("done", "needs_user", "escalated", "discarded"), 120)
+    check("connect where LinkedIn answers only real clicks: the worker clicks Connect and Send, invited once",
+          row["status"] == "done" and fake_state()["invited"].count("realmenu") == 1, f"{row['status']} {row['error_code']} {row['error_text']} {fake_state()['invited']}")
     dead = propose("connect", "connect-dead", "https://www.linkedin.com/in/deadmenu", {"profile_url": "x", "name": "Dead"})
     call("POST", f"/automation/actions/{dead}/approve", {})
-    row = wait_status(dead, ("done", "needs_user", "escalated", "discarded"), 90)
+    row = wait_status(dead, ("done", "needs_user", "escalated", "discarded"), 120)
     check("connect whose dialog never opens: a layout error for the Claude routine, not 'it asked for an e-mail'",
           row["status"] == "escalated" and row["error_code"] == "unexpected_layout" and "custom-invite" in (row["error_text"] or ""),
           f"{row['status']} {row['error_code']} {row['error_text']}")
