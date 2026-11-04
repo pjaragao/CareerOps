@@ -1,4 +1,5 @@
-"""One-off: the comments waiting for approval that were drafted before the versions existed get all of them.
+"""One-off: the comments waiting for approval that were drafted before the versions existed get all of them,
+and the whole post to read in the approval list (post_full; before, only its first 500 characters).
 
 One AI call per comment (the same call that drafts a new one). The text you see keeps the technical version;
 the others become the buttons in the approval list. Run inside the backend container:
@@ -13,6 +14,12 @@ from app.services.linkedin_copilot_service import LinkedInCopilotService as Copi
 
 
 async def main() -> None:
+    full = _rows("""UPDATE public.automation_actions a SET payload = a.payload || jsonb_build_object('post_full', left(e.post_text, 6000))
+                      FROM public.linkedin_engagement e
+                     WHERE a.kind = 'comment' AND a.status = 'proposed' AND a.target_type = 'engagement' AND e.id = a.target_id
+                       AND COALESCE(e.post_text, '') <> '' AND NOT a.payload ? 'post_full'
+                 RETURNING a.id""")
+    print(f"{len(full)} comentário(s) com o post inteiro para ler")
     todo = _rows("""SELECT e.*, a.id AS action_id, a.payload FROM public.automation_actions a
                       JOIN public.linkedin_engagement e ON a.target_type = 'engagement' AND e.id = a.target_id
                      WHERE a.status = 'proposed' AND a.kind = 'comment' AND e.comment_variants IS NULL AND e.post_url IS NOT NULL

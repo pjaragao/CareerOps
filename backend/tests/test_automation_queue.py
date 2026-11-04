@@ -613,7 +613,7 @@ def test_every_kind_of_comment_comes_from_one_call_and_switching_is_free(db, sql
     assert item["comment_draft"] == "Técnico v1" and set(item["comment_variants"]) == set(COMMENT_ANGLES)
     Auto.sync_proposals()
     a = _one("SELECT * FROM public.automation_actions WHERE kind = 'comment'")
-    assert a["payload"]["variants"]["elogio"] == "elogio v1"
+    assert a["payload"]["variants"]["elogio"] == "elogio v1" and a["payload"]["post_full"] == "Um post sobre modelos de dados"
     # another kind: already drafted, no new AI call
     out = asyncio.run(Auto.revise(a["id"], "", angle="elogio"))
     assert len(calls) == 1 and out["payload"]["text"] == "elogio v1"

@@ -146,3 +146,14 @@ test('the document preview counter goes, the line above it stays (real card)', (
 test('the text alone has nothing to strip', () => {
     assert.strictEqual(cardText(POST, WHO).body, LINES.join('\n'));
 });
+
+test('a form card under the post leaves only its title once (real card: RatedPower)', () => {
+    const body = 'Seus projetos de 2026 estão baseados em suposições?\n📥 Baixe o relatório e mantenha-se à frente.';
+    const card = 'PV + Armazenamento: Reality Check 2026. Baixe o relatório 📊';
+    assert.strictEqual(cardText(`${HEAD}${body}\n${card}\n${card}\n942 submits\nDownload\n12\n\u200b\n`, WHO).body, `${body}\n${card}`);
+});
+
+test('a video card leaves its title, not its domain (real card)', () => {
+    const body = 'Nosso novo armazenamento C&I.';
+    assert.strictEqual(cardText(`${HEAD}${body}\nHyperCube II: Optimize Energy\nyoutube.com\n12\n\u200b\n`, WHO).body, `${body}\nHyperCube II: Optimize Energy`);
+});

@@ -904,7 +904,8 @@ class AutomationService:
              ORDER BY e.relevance DESC NULLS LAST LIMIT %s""", (max(20 - open_count.get("comment", 0), 0),)):
             made += bool(AutomationService.create_action(
                 "comment", f"comment:{e['id']}", e.get("author_name") or "Post", e["post_url"],
-                {"post_url": e["post_url"], "post_head": (e.get("post_text") or "")[:500], "author": e.get("author_name"), "text": e["comment_draft"],
+                {"post_url": e["post_url"], "post_head": (e.get("post_text") or "")[:500], "post_full": (e.get("post_text") or "")[:6000],
+                 "author": e.get("author_name"), "text": e["comment_draft"],
                  "relevance": e.get("relevance"), "reason": e.get("reason"), "variants": e.get("comment_variants") or {}},
                 target_type="engagement", target_id=e["id"], rank=10 if e.get("market") != "br" else 11, sort_at=e.get("created_at")))
         # jobs you added by hand wait for approval too (what the searches find is proposed by the triage)

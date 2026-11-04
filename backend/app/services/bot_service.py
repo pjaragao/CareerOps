@@ -420,7 +420,8 @@ class BotService:
         text = (engagement.get("comment_draft") or "").strip()
         if not text:
             return {"ok": False, "detail": "A IA não devolveu um comentário. Tente de novo ou mande a sua ideia."}
-        payload = {"post_url": url, "post_head": "", "author": author or engagement.get("author_name"), "text": text,
+        # post_head stays empty: the server browser checks the page against it, and a pasted text may not match the page
+        payload = {"post_url": url, "post_head": "", "post_full": (post_text or "")[:6000], "author": author or engagement.get("author_name"), "text": text,
                    "relevance": engagement.get("relevance"), "reason": engagement.get("reason"), "source": "lolo",
                    "variants": engagement.get("comment_variants") or {}}
         if existing:

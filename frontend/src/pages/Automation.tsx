@@ -217,7 +217,7 @@ const ProposalDetail = ({ action, text, setText, onRevised }: { action: Action; 
       </>}
       {action.kind === 'comment' && <>
         {p.reason && <p style={muted}>{p.reason}</p>}
-        {p.post_head && <p style={{ ...muted, whiteSpace: 'pre-wrap', maxHeight: 130, overflow: 'auto' }}>{p.post_head}</p>}
+        {(p.post_full || p.post_head) && <p style={{ ...muted, whiteSpace: 'pre-wrap', maxHeight: 260, overflow: 'auto' }}>{p.post_full || p.post_head}</p>}
         <CommentEditor action={action} text={text} setText={setText} onRevised={onRevised} />
       </>}
       {(action.kind === 'connect' || action.kind === 'follow') && <>

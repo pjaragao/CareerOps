@@ -13,6 +13,8 @@
     // the action bar in the card's text: its counters, if any, then a line of zero-width characters. Below it, comments.
     const BAR = /\n([\d.,]+[ \t]*\n\s*)*[\u200b-\u200d\ufeff]+([ \t]*\n\s*[\u200b-\u200d\ufeff]+)*[ \t]*(?=\n|$)/;
     const LEFTOVER = /^([\d\s/.,]+|\d+\s*(pages?|páginas?)|unlock full document|want to view more\b.*)$/i;
+    // a link/form card under the post: its button, its counter, a bare domain
+    const CTA = /^(download|baixar|baixe agora|saiba mais|learn more|register|registre-se|inscreva-se|sign up|apply|candidatar-se|view|ver|visit|visitar|open|abrir|[\d.,]+\s*(submits?|envios?|downloads?|registrations?|inscri[cç][oõ]es|views?|visualiza[cç][oõ]es)|([a-z0-9-]+\.)+[a-z]{2,}(\/\S*)?)$/i;
 
     // A repost has a second header, the original author's (name, badge, headline, time), between the text of whoever
     // reposted and the post. The counters end the search: below them, the same lines are someone's comment.
@@ -58,8 +60,15 @@
             }
         }
         // carousel/counter leftovers at the end, then that credit (the card's title stays: it says what the post is about)
-        while (lines.length && LEFTOVER.test(lines[lines.length - 1])) {
-            if (/pages?|páginas?/i.test(lines.pop()) && lines.length) lines.pop();   // "Title / 8 pages": drop the title too
+        for (let again = true; again;) {
+            again = false;
+            while (lines.length && LEFTOVER.test(lines[lines.length - 1])) {
+                if (/pages?|páginas?/i.test(lines.pop()) && lines.length) lines.pop();   // "Title / 8 pages": drop the title too
+                again = true;
+            }
+            while (lines.length && CTA.test(lines[lines.length - 1])) { lines.pop(); again = true; }
+            // the card's title read twice (title and alt text): once is enough
+            while (lines.length > 1 && lines[lines.length - 1] === lines[lines.length - 2]) { lines.pop(); again = true; }
         }
         if (who && lines[lines.length - 1] === who.name) lines.pop();
         return { body: lines.join('\n'), tail };
