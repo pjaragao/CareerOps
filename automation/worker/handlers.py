@@ -182,6 +182,8 @@ class Runner:
             status = info["status"]
             if status == "verifying":   # said right before the final click: give it time to land before looking
                 await asyncio.sleep(VERIFY_SETTLE_SECONDS)
+                # the page as the click left it (a dialog still open, a warning): the check reloads it and that is lost
+                await self.artifact(page, action_id, "after-click")
                 await self.run_verify(page, action)
                 return
             # the form stays open for the Claude routine; also when the routine was quicker than this loop and already sent it

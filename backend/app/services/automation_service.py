@@ -623,7 +623,7 @@ class AutomationService:
                                   SET status = 'unknown_outcome', scheduled_for = NOW() + INTERVAL '5 minutes',
                                       result = result || '{"recheck": true}'::jsonb, updated_at = NOW()
                                 WHERE id = %s RETURNING *""", (action_id,))
-            return AutomationService._to_user(action_id, "verify_failed", "Foi enviado, mas não consegui confirmar na página: confira no LinkedIn")
+            return AutomationService._to_user(action_id, "verify_failed", "Cliquei para enviar, mas a página não mostra que foi feito: confira no LinkedIn antes de repetir")
         if action["attempts"] < 2:   # the crash came before the click: the page shows it did not go out
             return _one("""UPDATE public.automation_actions SET status = 'queued', scheduled_for = NOW() + INTERVAL '10 minutes', updated_at = NOW()
                             WHERE id = %s RETURNING *""", (action_id,))

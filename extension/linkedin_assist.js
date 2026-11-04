@@ -973,7 +973,14 @@
         return labels.every((l) => words[0] && l.toLowerCase().includes(words[0]) && l.toLowerCase().includes(words[words.length - 1]));
     }
     const CANDIDATES = 'button, a, [role="button"], [role="menuitem"], div[aria-label]';
-    const isConnect = (el) => el.offsetParent !== null && !el.closest('.careerops-card') && invitesThisPerson(el)
+    // late 2026: the menu item is a link, <a role="menuitem" href="/preload/custom-invite/?vanityName=<slug>">, which names
+    // the profile in its address too: it must be this one
+    const invitesThisSlug = (el) => {
+        const a = el.closest('a[href*="custom-invite"]');
+        const slug = a && new URL(a.href, location.href).searchParams.get('vanityName');
+        return !slug || decodeURIComponent(slug).toLowerCase() === profileSlug();
+    };
+    const isConnect = (el) => el.offsetParent !== null && !el.closest('.careerops-card') && invitesThisPerson(el) && invitesThisSlug(el)
         && (CONNECT.test(btnLabel(el)) || /^(convidar|invite) .*(conectar|connect)/i.test(el.getAttribute('aria-label') || ''));
 
     // "Connect" is either a button in the top card's action row (older layout, most 2nd-degree profiles) or an item of
@@ -990,28 +997,39 @@
         return el;
     }
 
-    // Returns 'sent' | 'pending' | 'connected' | 'unavailable' | 'needs_user'
+    const dialogText = (list) => list.map((d) => clean(d.innerText || '')).filter(Boolean).join(' | ').slice(0, 600);
+
+    // Returns 'sent' | 'pending' | 'connected' | 'unavailable' | 'needs_user' | 'no_dialog'; connectNoNote.last says what was seen
     // beforeSend (managed mode) runs right before the click that sends; false stops it there
     async function connectNoNote(beforeSend) {
+        connectNoNote.last = {};
         const card = profileTopCard();
         if (!card) return 'unavailable';
         const actions = () => [...card.querySelectorAll('button, a')].filter((b) => b.offsetParent !== null).map(btnLabel);
         if (actions().some((l) => PENDING.test(l))) return 'pending';
         const target = await findConnect(card);
         if (!target) return actions().some((l) => /^(mensagem|message)$/.test(l)) ? 'connected' : 'unavailable';
+        const link = target.closest('a[href]');
+        connectNoNote.last.clicked = `${target.tagName.toLowerCase()} "${btnLabel(target)}"${link ? ` ${link.getAttribute('href')}` : ''}`;
         const before = new Set(dialogs());
         target.click();
-        // The invite dialog is the one that opens now, not one already on the page (the messaging overlay is a
-        // dialog too): look for its send button in every dialog that is open, newest first
-        const btn = await waitFor(() => sendButton(dialogs().sort((x, y) => before.has(x) - before.has(y))), 5000);
+        // Only a dialog that opened with this click is the invite. One already on the page (the messaging overlay, a chat
+        // with its own Send) is never looked into: clicking there would send something else.
+        const opened = () => dialogs().filter((d) => !before.has(d));
+        const btn = await waitFor(() => sendButton(opened()), 5000);
         if (!btn) {
             // some profiles send at once, without a dialog: the button turns into "Pending"
             if (await waitFor(() => actions().some((l) => PENDING.test(l)), 1500)) return 'sent';
-            return 'needs_user';   // e.g. LinkedIn asks for the person's email: that one is yours
+            connectNoNote.last.dialog = dialogText(opened());
+            // a dialog with no way to send: LinkedIn asks for the person's e-mail, that one is yours. No dialog at all: the
+            // click did not open it (a new layout) — said as such, never as "it asked for an e-mail"
+            return opened().length ? 'needs_user' : 'no_dialog';
         }
         if (beforeSend && !(await beforeSend())) return 'needs_user';
         btn.click();
-        await wait(800);
+        // the invite dialog closes once it went out; one still open (or a new one) says what LinkedIn wanted instead
+        await waitFor(() => !opened().length, 3000);
+        connectNoNote.last.after = dialogText(opened());
         return 'sent';
     }
 
@@ -1036,6 +1054,7 @@
             connected: ['Vocês já estão conectados', true],
             unavailable: ['Não achei o botão Conectar neste perfil', false],
             needs_user: ['O LinkedIn pediu algo a mais (ex.: e-mail): termine o convite manualmente', false],
+            no_dialog: ['Cliquei em Conectar e a janela do convite não abriu: tente pelo próprio LinkedIn', false],
         }[result];
         if (prospectId && ['sent', 'pending'].includes(result)) await api('PATCH', `/prospects/${prospectId}`, { status: 'invited' });
         if (prospectId && result === 'connected') await api('PATCH', `/prospects/${prospectId}`, { status: 'accepted' });
@@ -1862,14 +1881,22 @@
         }
         const result = await connectNoNote(() => managedExecuted({ connect: 'sent' }));
         if (document.body && INVITE_LIMIT.test(document.body.innerText)) { managedRun.closed = false; managedStuck('weekly_invite_limit', 'O LinkedIn avisou do limite semanal de convites'); return; }
+        const seen = connectNoNote.last || {};
+        const said = (text) => [text, seen.dialog && `Janela: ${seen.dialog}`, seen.clicked && `Clique em: ${seen.clicked}`].filter(Boolean).join(' · ');
         const route = {
             sent: () => managedExecuted({ connect: 'sent' }),   // no dialog on this profile: it went out with the first click
             pending: () => managedStuck('already_pending', 'Convite já pendente'),
             connected: () => managedStuck('already_connected', 'Já conectados'),
             unavailable: () => managedStuck('selector_not_found', 'Botão Conectar não encontrado'),
-            needs_user: () => managedStuck('invite_needs_email', 'O LinkedIn pediu algo a mais (ex.: e-mail)'),
+            needs_user: () => managedStuck('invite_needs_email', said('O LinkedIn pediu algo a mais (ex.: e-mail)')),
+            // nothing was sent and nothing asked: a layout the extension does not drive yet. The Claude routine gets it
+            no_dialog: () => managedStuck('unexpected_layout', said('Cliquei em Conectar e a janela do convite não abriu')),
         }[result];
         await route();
+        // after Send: what was still on screen goes with the action, for the check that follows
+        if (result === 'sent' && seen.after) {
+            await managedApi('POST', `/automation/actions/${managedRun.id}/events`, { source: 'extension', event: 'invite_dialog_after_send', data: { text: seen.after, clicked: seen.clicked || '' } });
+        }
     }
 
     async function managedFollow() {
@@ -2238,7 +2265,7 @@
         if (state.step !== 'messaging' || !/^\/messaging/.test(location.pathname)) return;
         setCheckState(null);   // whatever happens next, the check ends on this page
         checkStatus('Lendo a lista de conversas…');
-        const first = await waitFor(() => document.querySelector(CONVO), 20000);
+        const first = await waitFor(() => document.querySelector(CONVO), 40000);   // on the server it has taken over 20 s
         if (first) await loadMore(() => document.querySelectorAll(CONVO).length, () => document.querySelector(CONVO), 3);
         if (first) await settle(() => document.querySelectorAll(CONVO).length);
         const conversations = first ? readConversations() : [];
@@ -2260,7 +2287,17 @@
             line(checkPanel, `Lidos: ${d.read.connections} conexões, ${d.read.sent}${state.sentTotal ? ` de ${state.sentTotal}` : ''} convites enviados, ${d.read.conversations} conversas.`, '#999');
             if (state.sentTotal && d.read.sent < state.sentTotal) line(checkPanel, `Faltaram ${state.sentTotal - d.read.sent} convites enviados (a lista não carregou toda)${state.hidden ? ': a aba ficou oculta — o Chrome não carrega listas em abas de fundo; deixe-a visível durante a verificação' : ''}.`, '#b7791f');
         }
-        try { chrome.runtime.sendMessage({ action: 'prospectCheckDone', ok: res.ok, result: res.data, summary, background: !!state.background, managedRun: state.managedRun || null }, () => { void chrome.runtime.lastError; }); } catch (e) { /* extension reloaded */ }
+        if (state.managedRun) {
+            // an action of the queue: closed from here, by the same road that just saved the result, and checked. Handing
+            // it to the background script (below) was lost on the server on 2026-11-04 and the action timed out.
+            const path = `/automation/actions/${state.managedRun}/${res.ok ? 'complete' : 'escalate'}`;
+            const body = res.ok ? { outcome: 'read', data: { summary } } : { code: 'unexpected_layout', text: summary || '' };
+            let closed = await backend('POST', path, body);
+            if (!closed.ok && !closed.status) closed = await backend('POST', path, body);   // no answer at all: once more
+            if (!closed.ok) line(checkPanel, `O sistema não registrou o fim da verificação: ${errText(closed)}`, '#d63031');
+            return;
+        }
+        try { chrome.runtime.sendMessage({ action: 'prospectCheckDone', ok: res.ok, result: res.data, summary, background: !!state.background, managedRun: null }, () => { void chrome.runtime.lastError; }); } catch (e) { /* extension reloaded */ }
     }
 
     function startProspectCheck() {

@@ -11,7 +11,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-STATE = {"submitted": [], "comments": {}, "following": [], "invited": [], "visits": [], "checkpoint": False, "ats_sent": [], "injected": []}
+STATE = {"submitted": [], "comments": {}, "following": [], "invited": [], "visits": [], "checkpoint": False, "ats_sent": [], "injected": [], "chat": []}
 BASE = """<!doctype html><html><head><meta charset="utf-8"><title>{title}</title></head><body><main>{body}</main><script>{script}</script></body></html>"""
 
 
@@ -96,6 +96,14 @@ def profile_page(slug):
         item = "Unfollow" if slug in STATE["following"] else "Follow"
         actions = (f'<button>Message</button><button id="more">More</button><div id="menu" role="menu" style="display:none">'
                    f'<div role="menuitem" id="mfol" tabindex="0" aria-label="{item} First Lima">{item}</div><div role="menuitem" tabindex="0">Remove connection</div></div>')
+    elif slug in ("menu", "deadmenu"):
+        # late 2026: Follow on top, Connect only in the More menu, as a link to /preload/custom-invite/. On "deadmenu" the
+        # click opens nothing, and a chat with its own Send is open on the page: that one must never be clicked
+        actions = (f'<button id="fol">Follow</button><button id="more">More</button><div id="menu" role="menu" style="display:none">'
+                   f'<a role="menuitem" id="mconn" href="/preload/custom-invite/?vanityName={slug}"><div aria-label="Invite {slug.title()} Lima to connect"><p>Connect</p></div></a>'
+                   f'<div role="menuitem" tabindex="0">Save to PDF</div></div>')
+        if slug == "deadmenu":
+            actions += f'<div role="dialog" id="chat"><p>Chat with someone</p><button id="chatsend">Send</button></div>'
     elif slug in STATE["following"]:
         actions = "<button>Following</button><button>More</button>"
     else:
@@ -107,6 +115,8 @@ def profile_page(slug):
     root.innerHTML='<div id="dlg" role="dialog" style="display:none"><p>Add a note? If you know their e-mail, add it.</p><input type="email"><button id="nonote">Send without a note</button></div>';
     const c=document.getElementById('conn');if(c)c.onclick=()=>{{root.getElementById('dlg').style.display='block'}};
     root.getElementById('nonote').onclick=()=>{{{post_js(f'/__invite/{slug}')}}};
+    const mc=document.getElementById('mconn');if(mc)mc.onclick=(e)=>{{e.preventDefault();document.getElementById('menu').style.display='none';if('{slug}'!=='deadmenu')root.getElementById('dlg').style.display='block'}};
+    const cs=document.getElementById('chatsend');if(cs)cs.onclick=()=>{{{post_js(f'/__chat/{slug}', '')}}};
     const f=document.getElementById('fol');if(f)f.onclick=()=>{{{post_js(f'/__follow/{slug}')}}};
     const mo=document.getElementById('more');if(mo&&document.getElementById('menu'))mo.onclick=()=>{{const m=document.getElementById('menu');m.style.display=m.style.display==='none'?'block':'none'}};
     document.addEventListener('keydown',(e)=>{{if(e.key==='Escape'&&document.getElementById('menu'))document.getElementById('menu').style.display='none'}});
@@ -117,6 +127,25 @@ def profile_page(slug):
 def company_page(slug):
     button = "<button>Following</button>" if slug in STATE["following"] else '<button id="fol">Follow</button>'
     return "Empresa", f"<section><h1>{slug}</h1>{button}</section>", f"const f=document.getElementById('fol');if(f)f.onclick=()=>{{{post_js(f'/__follow/{slug}')}}};"
+
+
+def connections_page():
+    links = "".join(f'<li><a href="https://www.linkedin.com/in/{s}/">{s.title()} Lima</a></li>' for s in ("bia", "caio"))
+    return "Conexões", f"<h2>Connections</h2><ul>{links}</ul>", ""
+
+
+def sent_invitations_page():
+    cards = "".join(f'<li><div><a href="https://www.linkedin.com/in/{s}/"></a><div>{s.title()} Lima</div><button>Withdraw</button></div></li>' for s in ("davi",))
+    return "Convites", f"<h2>People (1)</h2><ul>{cards}</ul>", ""
+
+
+def messaging_page(old):
+    """The list of conversations: with LinkedIn's old classes, or (late 2026) without any the extension knows."""
+    if old:
+        items = '<ul><li class="msg-conversation-listitem"><h3>Bia Lima</h3><p class="msg-conversation-card__message-snippet">Oi, tudo bem?</p></li></ul>'
+    else:
+        items = '<ul><li><div componentkey="conversation-1"><p>Bia Lima</p><p>Oi, tudo bem?</p></div></li></ul>'
+    return "Mensagens", f"<h2>Messaging</h2>{items}", ""
 
 
 def search_results_page():
@@ -213,12 +242,16 @@ class Handler(BaseHTTPRequestHandler):
             STATE["following"].append(key)
         elif kind == "__invite":
             STATE["invited"].append(key)
+        elif kind == "__chat":
+            STATE["chat"].append(key)
         elif kind == "__ats":
             STATE["ats_sent"].append(key)
         elif kind == "__checkpoint":
             STATE["checkpoint"] = body == "on"
+        elif kind == "__old_messaging":
+            STATE["old_messaging"] = body == "on"
         elif kind == "__reset":
-            STATE.update({"submitted": [], "comments": {}, "following": [], "invited": [], "visits": [], "checkpoint": False, "ats_sent": [], "injected": []})
+            STATE.update({"submitted": [], "comments": {}, "following": [], "invited": [], "visits": [], "checkpoint": False, "ats_sent": [], "injected": [], "chat": []})
         self.send(body="{}", kind="application/json")
 
     def do_GET(self):
@@ -258,6 +291,12 @@ class Handler(BaseHTTPRequestHandler):
         if path.startswith("/jobs/view/"):
             job_id = path.rstrip("/").split("/")[-1]
             return self.page(external_job_page(job_id) if job_id in ("400", "401") else job_page(job_id))
+        if path.startswith("/mynetwork/invite-connect/connections"):
+            return self.page(connections_page())
+        if path.startswith("/mynetwork/invitation-manager/sent"):
+            return self.page(sent_invitations_page())
+        if path.startswith("/messaging"):
+            return self.page(messaging_page(STATE.get("old_messaging", False)))
         if path.startswith("/in/"):
             return self.page(profile_page(path.strip("/").split("/")[1]))
         if path.startswith("/company/"):

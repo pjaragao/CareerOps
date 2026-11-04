@@ -168,6 +168,21 @@ def main():
     check("connect: one invitation", fake_state()["invited"].count("ana") == 1)
     check("connect: prospect marked", sql("SELECT status FROM public.linkedin_prospects WHERE id = %s", (prospect,))[0]["status"] == "invited")
 
+    # late 2026: Connect only in the More menu, as a link to /preload/custom-invite/
+    menu = propose("connect", "connect-menu", "https://www.linkedin.com/in/menu", {"profile_url": "x", "name": "Menu"})
+    call("POST", f"/automation/actions/{menu}/approve", {})
+    row = wait_status(menu, ("done", "needs_user", "escalated", "discarded"), 90)
+    check("connect from the More menu link: invited, proof read", row["status"] == "done" and fake_state()["invited"].count("menu") == 1,
+          f"{row['status']} {row['error_code']} {row['error_text']}")
+    dead = propose("connect", "connect-dead", "https://www.linkedin.com/in/deadmenu", {"profile_url": "x", "name": "Dead"})
+    call("POST", f"/automation/actions/{dead}/approve", {})
+    row = wait_status(dead, ("done", "needs_user", "escalated", "discarded"), 90)
+    check("connect whose dialog never opens: a layout error for the Claude routine, not 'it asked for an e-mail'",
+          row["status"] == "escalated" and row["error_code"] == "unexpected_layout" and "custom-invite" in (row["error_text"] or ""),
+          f"{row['status']} {row['error_code']} {row['error_text']}")
+    check("connect whose dialog never opens: the Send of a chat already open is never clicked", not fake_state()["chat"] and "deadmenu" not in fake_state()["invited"], str(fake_state()["chat"]))
+    call("POST", f"/automation/actions/{dead}/cancel")   # out of the Claude routine's queue used further on
+
     item = sql("""INSERT INTO public.linkedin_engagement (post_url, post_text, comment_draft) VALUES ('https://www.linkedin.com/feed/update/urn:li:activity:555/', 'Project finance is changing how infrastructure gets built. 555', 'Bom ponto') RETURNING id""")[0]["id"]
     text = "Concordo: o desenho da concessão pesa mais que a tarifa."
     comment = propose("comment", "comment-live", "https://www.linkedin.com/feed/update/urn:li:activity:555/", {"text": "x", "post_head": "Project finance is changing how infrastructure gets built. 555"}, "engagement", item)
@@ -284,6 +299,21 @@ def main():
     check("saved jobs: the old page is still read", row["status"] == "done" and len(found) == 2, f"{row['status']} {row['error_text']} {row['result']} {found}")
     # out of the way of what follows: as new jobs they would become proposals, scored by the AI while the next scenarios run
     sql("UPDATE public.job_listings SET status = 'archived' WHERE linkedin_job_id BETWEEN '321' AND '342' RETURNING id")
+
+    print("who accepted and replied")
+    sql("""INSERT INTO public.linkedin_prospects (profile_url, name, status) VALUES
+           ('https://www.linkedin.com/in/bia', 'Bia Lima', 'invited'), ('https://www.linkedin.com/in/davi', 'Davi Lima', 'to_contact')""")
+    for layout in ("new", "old"):
+        fake_post("/__old_messaging", "on" if layout == "old" else "off")
+        payload = {}
+        made = sql("""INSERT INTO public.automation_actions (kind, lane, status, target_url, title, rank, payload, payload_hash, idempotency_key)
+                      VALUES ('check', 'linkedin_read', 'queued', 'https://www.linkedin.com/mynetwork/invite-connect/connections/', 'Quem aceitou e respondeu', 41, %s, %s, %s) RETURNING id""",
+                   (json.dumps(payload), hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=False).encode()).hexdigest(), f"check-e2e-{layout}"))[0]["id"]
+        row = wait_status(made, ("done", "needs_user", "escalated", "failed"), 150)
+        check(f"check ({layout} messaging list): the three lists are read and the action ends", row["status"] == "done",
+              f"{row['status']} {row['error_code']} {row['error_text']} {row['result']}")
+    people = {r["name"]: r["status"] for r in sql("SELECT name, status FROM public.linkedin_prospects WHERE name IN ('Bia Lima', 'Davi Lima')")}
+    check("check: accepted, replied and invited are marked", people.get("Bia Lima") == "replied" and people.get("Davi Lima") == "invited", str(people))
 
     print("the stop button")
     slow = propose("follow", "stop-test", "https://www.linkedin.com/company/stopme", {"url": "x", "name": "Stop"})
