@@ -306,10 +306,13 @@ class AutomationService:
         if not post or not post.get("post_url"):
             raise ValueError("Post do comentário não encontrado")
         item = await Copilot.add_engagement(post.get("post_text") or "", post["post_url"], post.get("author_name"), post.get("author_headline"),
-                                            instruction=instruction or "Write the comment in the chosen angle.", regenerate=True, angle=angle)
+                                            instruction=instruction or (None if (post.get("comment_variants") or {}).get(angle)
+                                                                        else "Write the comment in the chosen angle."),
+                                            regenerate=bool(instruction), angle=angle)
         if not (item.get("comment_draft") or "").strip():
             raise ValueError("A IA não devolveu um comentário: tente outro pedido")
-        payload = {**(action["payload"] or {}), "text": item["comment_draft"], "relevance": item.get("relevance"), "reason": item.get("reason")}
+        payload = {**(action["payload"] or {}), "text": item["comment_draft"], "relevance": item.get("relevance"), "reason": item.get("reason"),
+                   "variants": item.get("comment_variants") or {}}
         updated = _one("""UPDATE public.automation_actions SET payload = %s, updated_at = NOW()
                            WHERE id = %s AND status = 'proposed' RETURNING *""", (Json(payload), action_id))
         if updated:
@@ -902,7 +905,7 @@ class AutomationService:
             made += bool(AutomationService.create_action(
                 "comment", f"comment:{e['id']}", e.get("author_name") or "Post", e["post_url"],
                 {"post_url": e["post_url"], "post_head": (e.get("post_text") or "")[:500], "author": e.get("author_name"), "text": e["comment_draft"],
-                 "relevance": e.get("relevance"), "reason": e.get("reason")},
+                 "relevance": e.get("relevance"), "reason": e.get("reason"), "variants": e.get("comment_variants") or {}},
                 target_type="engagement", target_id=e["id"], rank=10 if e.get("market") != "br" else 11, sort_at=e.get("created_at")))
         # jobs you added by hand wait for approval too (what the searches find is proposed by the triage)
         for j in _rows("""

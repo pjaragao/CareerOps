@@ -46,8 +46,11 @@ COMMENT (only if relevance ≥ 40):
 - Never self-promote, never link, never ask for a job. No hashtags. Only facts from the knowledge base; never numbers marked "(estimate)" or NDA client names.
 - Use the line of thought below for the professional's opinions and way of reasoning, not to retell their experience.
 
-ANGLE OF THIS COMMENT — {{ angle_label }}:
-{{ angle_rule }}
+VERSIONS — write ONE comment per kind below, all in the same call (the professional picks one). Each version is a
+complete, different comment, not a rewording of another; each follows the rules above{% if instruction %} and the professional's request{% endif %}.
+{% for key, label, rule in angles %}- "{{ key }}" ({{ label }}): {{ rule }}
+{% endfor %}
+"comment" is the "{{ angle }}" version.
 
 {{ writing_style("comment") }}
 
@@ -58,4 +61,4 @@ KNOWLEDGE BASE:
 
 {% include 'common/output_format.md' %}
 Return JSON:
-{"relevance": 0, "reason": "one sentence", "comment": "comment text or empty string if below 40", "topic": "the subject in 2–5 words, in the post's language", "stance": "the position the comment takes, one sentence in the post's language (empty if no comment)"}
+{"relevance": 0, "reason": "one sentence", "comment": "the {{ angle }} version, or empty string if below 40", "variants": {{ '{' }}{% for key, label, rule in angles %}"{{ key }}": "…"{% if not loop.last %}, {% endif %}{% endfor %}{{ '}' }} (empty object if below 40), "topic": "the subject in 2–5 words, in the post's language", "stance": "the position the comment takes, one sentence in the post's language (empty if no comment)"}

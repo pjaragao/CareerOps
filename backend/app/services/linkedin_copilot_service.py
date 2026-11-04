@@ -6,6 +6,7 @@ LinkedIn; a connection request (no note) is sent by the extension only on the us
 batch automation breaks LinkedIn's User Agreement and gets accounts restricted.
 """
 import asyncio
+from psycopg2.extras import Json
 import logging
 import re
 import unicodedata
@@ -386,26 +387,35 @@ class LinkedInCopilotService:
     async def add_engagement(post_text: str, post_url: Optional[str] = None, author_name: Optional[str] = None,
                              author_headline: Optional[str] = None, other_comments: Optional[str] = None,
                              instruction: Optional[str] = None, regenerate: bool = False, angle: Optional[str] = None) -> dict:
-        """Drafts a comment. A post already in the queue returns its draft, unless the user asks for a new one
-        (regenerate) or gives an instruction — then the same row gets the new draft."""
+        """Drafts a comment in every kind (COMMENT_ANGLES) with one AI call; comment_draft is the chosen kind.
+        A post already in the queue returns its draft; asking for another kind that is already drafted only switches
+        to it (no AI call). A new draft is written when you ask for one (regenerate) or give an instruction."""
+        angle = angle if angle in COMMENT_ANGLES else None
         existing = _one("SELECT * FROM public.linkedin_engagement WHERE post_url = %s", (post_url,)) if post_url else None
+        if existing and angle and not instruction and (existing.get("comment_variants") or {}).get(angle):
+            return _one("UPDATE public.linkedin_engagement SET comment_draft = %s WHERE id = %s RETURNING *",
+                        (existing["comment_variants"][angle], existing["id"]))
         if existing and not (regenerate or instruction or angle):
             return existing
         own_recent = [r["comment_draft"][:220] for r in _rows("""
             SELECT comment_draft FROM public.linkedin_engagement
              WHERE comment_draft IS NOT NULL AND status IN ('done', 'pending') ORDER BY created_at DESC LIMIT 8
         """)]
+        angle = angle or "tecnico"
         ai = await _skill("linkedin/engagement_comment.md", {
             "post_text": post_text[:6000], "post_url": post_url, "author_name": author_name, "author_headline": author_headline,
             "lang_name": detect_language(post_text), "other_comments": (other_comments or "")[:3000], "own_recent": own_recent,
             "instruction": (instruction or "")[:1000],
             "previous_draft": existing.get("comment_draft") if existing else None,
-            "angle": angle if angle in COMMENT_ANGLES else "tecnico",
-            "angle_label": COMMENT_ANGLES.get(angle, COMMENT_ANGLES["tecnico"])[0],
-            "angle_rule": COMMENT_ANGLES.get(angle, COMMENT_ANGLES["tecnico"])[1],
+            "angle": angle, "angles": [(k, label, rule) for k, (label, rule) in COMMENT_ANGLES.items()],
         })
         relevance = _score(ai.get("relevance"))
-        comment = (ai.get("comment") or "").strip() or None
+        variants = {k: v.strip() for k, v in (ai.get("variants") or {}).items()
+                    if k in COMMENT_ANGLES and isinstance(v, str) and v.strip()} if isinstance(ai.get("variants"), dict) else {}
+        comment = (ai.get("comment") or "").strip() or variants.get(angle) or next(iter(variants.values()), None)
+        if comment:
+            variants.setdefault(angle, comment)
+        variants = Json(variants) if variants else None
         topic, stance = ai.get("topic") or None, ai.get("stance") or None
         instruction = (instruction or "").strip()[:1000] or None
         if existing:
@@ -413,15 +423,15 @@ class LinkedInCopilotService:
             status = "pending" if (instruction or relevance >= MIN_SCORE) and comment else "skipped"
             return _one("""
                 UPDATE public.linkedin_engagement SET relevance = %s, reason = %s, comment_draft = %s, status = %s,
-                       topic = %s, stance = %s, instruction = COALESCE(%s, instruction)
+                       topic = %s, stance = %s, instruction = COALESCE(%s, instruction), comment_variants = %s
                  WHERE id = %s RETURNING *
-            """, (relevance, ai.get("reason"), comment, status, topic, stance, instruction, existing["id"]))
+            """, (relevance, ai.get("reason"), comment, status, topic, stance, instruction, variants, existing["id"]))
         return _one("""
             INSERT INTO public.linkedin_engagement (post_url, author_name, author_headline, post_text, relevance, reason, comment_draft, status,
-                                                    topic, stance, instruction)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING *
+                                                    topic, stance, instruction, comment_variants)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING *
         """, (post_url, author_name, author_headline, post_text, relevance, ai.get("reason"),
-              comment, "pending" if (instruction or relevance >= MIN_SCORE) and comment else "skipped", topic, stance, instruction))
+              comment, "pending" if (instruction or relevance >= MIN_SCORE) and comment else "skipped", topic, stance, instruction, variants))
 
     @staticmethod
     async def draft_reply(post_text: str, target_text: str, thread: Optional[str] = None, target_author: Optional[str] = None,

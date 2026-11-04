@@ -122,6 +122,11 @@ const what = (a: Action): { title: string; sub: string } => {
 };
 
 const chip: React.CSSProperties = { background: 'rgba(255,255,255,.06)', color: 'var(--text-muted)', border: 'none', cursor: 'pointer' };
+// The kinds of comment the AI drafts all at once (backend COMMENT_ANGLES): picking one only swaps the text, no new AI call
+const VERSIONS: [string, string][] = [
+  ['tecnico', 'Técnico'], ['elogio', 'Elogio + problema'], ['pergunta', 'Pergunta'],
+  ['contraponto', 'Contraponto'], ['complemento', 'Complemento'], ['experiencia', 'Minha experiência'],
+];
 // Like the extension's comment card: edit it yourself, or tell the AI what to change; either way it waits for your ✓
 const CommentEditor = ({ action, text, setText, onRevised }: { action: Action; text: string; setText: (t: string) => void; onRevised: () => void }) => {
   const [mode, setMode] = useState<'edit' | 'ai'>('edit');
@@ -140,11 +145,20 @@ const CommentEditor = ({ action, text, setText, onRevised }: { action: Action; t
   const tab = (id: 'edit' | 'ai', label: string) => (
     <button type="button" className={`jb-pill${mode === id ? ' active' : ''}`} style={mode === id ? { ...chip, background: `${GREEN}22`, color: GREEN } : chip} onClick={() => setMode(id)}>{label}</button>
   );
+  const variants: Record<string, string> = action.payload.variants || {};
+  const versions = VERSIONS.filter(([k]) => variants[k]);
   return <>
+    {versions.length > 1 && <div style={row}>
+      {versions.map(([k, label]) => {
+        const on = text === variants[k];
+        return <button key={k} type="button" className={`jb-pill${on ? ' active' : ''}`} title={variants[k]}
+          style={on ? { ...chip, background: `${GREEN}22`, color: GREEN } : chip} disabled={busy} onClick={() => setText(variants[k])}>{label}</button>;
+      })}
+    </div>}
     <div style={row}>{tab('edit', '✏️ Editar')}{tab('ai', '✨ Pedir à IA')}</div>
     <textarea style={{ ...input, minHeight: 90, opacity: busy ? 0.5 : 1 }} value={text} readOnly={busy} onChange={(e) => setText(e.target.value)} aria-label="Comentário" />
     {mode === 'edit'
-      ? <span style={muted}>Editou? Aprove por esta linha (✓ ou ⚡): a aprovação em lote usa o texto original.</span>
+      ? <span style={muted}>Escolheu outra versão ou editou? Aprove por esta linha (✓ ou ⚡): a aprovação em lote usa o texto original.</span>
       : <>
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
           <input style={{ ...input, flex: 1, minWidth: 0 }} value={ask} disabled={busy} placeholder="Ex.: mais curto, discorde com educação, cite a experiência com concessões"

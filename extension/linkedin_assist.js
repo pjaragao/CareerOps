@@ -393,7 +393,8 @@
         actions.appendChild(button('Já comentei', () => api('PATCH', `/engagement/${item.id}`, { status: 'done', comment_draft: ta.value }).then(() => { toast('Registrado'); box.remove(); saveCommented(post, ta.value); }), false));
         actions.appendChild(button('Pular', () => api('PATCH', `/engagement/${item.id}`, { status: 'skipped' }).then(() => box.remove()), false));
         box.appendChild(actions);
-        angleRow(box, opts.angle || 'tecnico', (a) => again(opts.instruction, a));
+        // the versions were drafted together: switching only picks another one (no new AI call)
+        angleRow(box, opts.angle || 'tecnico', (a) => draftComment(post, anchor, { angle: a }), item.comment_variants || {});
         likeToggle(box, 'Curtir o post ao comentar');
         promptRow(box, 'Refazer com um pedido (ex.: mais curto, discorde com educação)', again);
     }
@@ -403,12 +404,12 @@
         ['tecnico', 'Técnico'], ['elogio', 'Elogio + problema'], ['pergunta', 'Pergunta'],
         ['contraponto', 'Contraponto'], ['complemento', 'Complemento'], ['experiencia', 'Minha experiência'],
     ];
-    function angleRow(box, current, onPick) {
+    function angleRow(box, current, onPick, variants = {}) {
         const row = document.createElement('div');
         row.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px;margin-top:6px;font:12px system-ui,sans-serif';
         for (const [key, label] of COMMENT_ANGLES) {
             const b = button(label, () => onPick(key), key === current);
-            b.title = 'Gerar outro comentário neste estilo';
+            b.title = variants[key] || 'Gerar um comentário neste estilo';
             row.appendChild(b);
         }
         box.appendChild(row);

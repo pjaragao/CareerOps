@@ -421,7 +421,8 @@ class BotService:
         if not text:
             return {"ok": False, "detail": "A IA não devolveu um comentário. Tente de novo ou mande a sua ideia."}
         payload = {"post_url": url, "post_head": "", "author": author or engagement.get("author_name"), "text": text,
-                   "relevance": engagement.get("relevance"), "reason": engagement.get("reason"), "source": "lolo"}
+                   "relevance": engagement.get("relevance"), "reason": engagement.get("reason"), "source": "lolo",
+                   "variants": engagement.get("comment_variants") or {}}
         if existing:
             action = _one("""UPDATE public.automation_actions
                                 SET status = 'proposed', payload = %s, payload_hash = %s, notified_status = 'proposed', error_code = NULL,

@@ -596,6 +596,32 @@ def test_the_ai_rewrites_a_comment_from_your_edit_and_it_waits_again(db, sql, mo
     assert _one("SELECT comment_draft FROM public.linkedin_engagement WHERE id = %s", (eid,))["comment_draft"] == "Versão mais curta"
 
 
+def test_every_kind_of_comment_comes_from_one_call_and_switching_is_free(db, sql, monkeypatch):
+    import asyncio
+    from app.services.linkedin_copilot_service import LinkedInCopilotService as Copilot, COMMENT_ANGLES
+    calls = []
+
+    async def fake_skill(path, context, model_key="ai_model_writing"):
+        calls.append(context)
+        return {"relevance": 80, "reason": "Tema seu", "comment": "Técnico v1",
+                "variants": {k: f"{k} v{len(calls)}" for k in COMMENT_ANGLES} | {"tecnico": f"Técnico v{len(calls)}", "intruso": "x"}}
+
+    monkeypatch.setattr("app.services.linkedin_copilot_service._skill", fake_skill)
+    url = "https://www.linkedin.com/feed/update/urn:li:activity:7/"
+    item = asyncio.run(Copilot.add_engagement("Um post sobre modelos de dados", url))
+    assert len(calls) == 1 and [k for k, *_ in calls[0]["angles"]] == list(COMMENT_ANGLES)
+    assert item["comment_draft"] == "Técnico v1" and set(item["comment_variants"]) == set(COMMENT_ANGLES)
+    Auto.sync_proposals()
+    a = _one("SELECT * FROM public.automation_actions WHERE kind = 'comment'")
+    assert a["payload"]["variants"]["elogio"] == "elogio v1"
+    # another kind: already drafted, no new AI call
+    out = asyncio.run(Auto.revise(a["id"], "", angle="elogio"))
+    assert len(calls) == 1 and out["payload"]["text"] == "elogio v1"
+    # a request of yours: a new call, all the versions again
+    out = asyncio.run(Auto.revise(a["id"], "mais curto"))
+    assert len(calls) == 2 and out["payload"]["variants"]["pergunta"] == "pergunta v2"
+
+
 def test_only_a_comment_still_to_approve_can_be_revised(db):
     import asyncio
     a = comment(status="queued")

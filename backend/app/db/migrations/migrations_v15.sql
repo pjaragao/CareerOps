@@ -221,3 +221,6 @@ ALTER TABLE public.automation_state ADD COLUMN IF NOT EXISTS saved_import JSONB 
 ALTER TABLE public.automation_actions DROP CONSTRAINT IF EXISTS automation_actions_kind_check;
 ALTER TABLE public.automation_actions ADD CONSTRAINT automation_actions_kind_check
     CHECK (kind IN ('apply', 'comment', 'follow', 'connect', 'search', 'check', 'feed_scan', 'follow_scan', 'saved_import'));
+
+-- Every kind of comment drafted in one AI call ({"tecnico": "...", "elogio": "...", ...}): you pick one, no new call
+ALTER TABLE public.linkedin_engagement ADD COLUMN IF NOT EXISTS comment_variants JSONB;
