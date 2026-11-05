@@ -78,6 +78,21 @@ languages:
     - Power BI
     - Power Apps
     - Microsoft 365 / SharePoint
+    - Flask
+    - Pandas
+    - NumPy
+    - Tailwind CSS
+    - Expo / React Native
+    - Turborepo
+    - Typst
+    - LaTeX
+    - Gotenberg
+    - Nginx
+    - Google Workspace APIs
+    - Evolution API (WhatsApp)
+    - MetaTrader 5
+    - Firebase Genkit
+    - Vercel
     education:
     - year: 2013 – 2025
       degree: Pós-graduação Lato Sensu - MBA Executivo, Business/Commerce, General
@@ -94,26 +109,36 @@ languages:
       company: Independent
       period: Feb 2026 – Present
       description: '- Built and run 14 AI and data systems (11 in production) as sole
-        engineer: n8n prototyping, then Claude Code hardening into FastAPI, Next.js
-        and Python workers on PostgreSQL/Supabase, SQLite and Redis.
+        engineer: n8n prototyping, then Claude Code hardening into FastAPI, Flask,
+        Next.js and Python workers on PostgreSQL/Supabase, SQLite and Redis.
 
-        - CentralOps retail ERP: POS, e-commerce, Stone payments, NFC-e, double-entry
-        ledger; 10 PostgreSQL schemas, PGMQ queues, 2,000+ pgTAP tests; LLM agents
-        act through an MCP server with guardrails against the database.
+        - CentralOps omnichannel retail ERP: touch POS, e-commerce, TEF/Stone, NFC-e
+        to SEFAZ with offline contingency, CRM, multi-warehouse inventory with atomic
+        reservations, double-entry ledger; 10 PostgreSQL schemas, PGMQ queues, 2,000+
+        pgTAP tests. LLM agents act through an MCP server with database guardrails;
+        a Hermes operations agent audits stock, SEFAZ and queues.
 
-        - CareerOps: Playwright/Chromium automation that scores jobs with LLMs, tailors
-        CVs (Gotenberg PDFs) and acts on LinkedIn after human approval.
+        - CareerOps: FastAPI/React platform with a Playwright/Chromium worker that
+        scores jobs with LLMs, tailors CVs (Gotenberg, Typst, LaTeX) and acts on LinkedIn
+        after human approval.
 
         - WhatsApp agents (Hermes Agent, Evolution API): executive assistant with
-        94 commands and 58 skills, customer-service and store-operations agents with
-        persistent memory; 300+ tests.
+        94 commands, 58 skills, Google Workspace, flight tracking and a 7-type contract-drafting
+        engine (22,000+ scheduled runs); customer-service agent with persona, memory
+        and human hand-over; 300+ tests.
 
-        - Forecasting: Bayesian election-night model (2026), Bayesian MCMC and TimesFM
-        for sports analytics and a B3 trading copilot with backtests; PNCP public-tender
-        classifier with Gemini/Genkit.
+        - Forecasting and analytics: Bayesian election-night model (2026); Bayesian
+        MCMC and TimesFM for a fantasy-league editorial bot (41,000+ runs) and an
+        open-source Sleeper API engine with RAG over 99 docs; B3 trading copilot on
+        MetaTrader 5 history with risk metrics and backtests.
+
+        - PNCP public-tender search and scoring with Gemini 1.5 Pro on Firebase Genkit;
+        earlier, a sports-pool SaaS (Next.js 15, Expo/React Native, Turborepo, Mercado
+        Pago) and a World Cup 2026 iCal feed.
 
         - Self-hosted platform: 48 containers in 21 stacks on Coolify with GitOps
-        deploys and Tailscale zero-trust networking; 88,000+ agent and cron runs.'
+        deploys, Tailscale zero-trust with Nginx TLS 1.3 and no public ports, n8n
+        hub, daily backups to Google Drive; 88,000+ agent and cron runs.'
     - role: Independent Consultant — Infrastructure Project Finance & Modeling
       company: Independent
       period: Feb 2026 – Present
@@ -249,6 +274,21 @@ languages:
     - Power BI
     - Power Apps
     - Microsoft 365 / SharePoint
+    - Flask
+    - Pandas
+    - NumPy
+    - Tailwind CSS
+    - Expo / React Native
+    - Turborepo
+    - Typst
+    - LaTeX
+    - Gotenberg
+    - Nginx
+    - Google Workspace APIs
+    - Evolution API (WhatsApp)
+    - MetaTrader 5
+    - Firebase Genkit
+    - Vercel
     education:
     - year: 2013 – 2025
       degree: Pós-graduação Lato Sensu - MBA Executivo, Business/Commerce, General
@@ -265,26 +305,36 @@ languages:
       company: Autônomo
       period: fev de 2026 - atual
       description: '- 14 sistemas de IA e dados (11 em produção) como único engenheiro:
-        protótipo no n8n e consolidação com Claude Code em FastAPI, Next.js e workers
-        Python sobre PostgreSQL/Supabase, SQLite e Redis.
+        protótipo no n8n e consolidação com Claude Code em FastAPI, Flask, Next.js
+        e workers Python sobre PostgreSQL/Supabase, SQLite e Redis.
 
-        - CentralOps: ERP de varejo com PDV, e-commerce, Stone, NFC-e e contabilidade
-        de partidas dobradas; 10 schemas, filas PGMQ, mais de 2.000 testes; agentes
-        de IA via servidor MCP com guardrails.
+        - CentralOps: ERP de varejo omnichannel com PDV touch, e-commerce, TEF/Stone,
+        NFC-e na SEFAZ com contingência offline, CRM, estoque multicentro com reservas
+        atômicas e partidas dobradas; 10 schemas, filas PGMQ, mais de 2.000 testes.
+        Agentes de IA via servidor MCP com guardrails; agente Hermes de operações
+        audita estoque, SEFAZ e filas.
 
-        - CareerOps: automação com Playwright/Chromium que pontua vagas com LLM, adapta
-        currículos e age no LinkedIn após aprovação humana.
+        - CareerOps: plataforma FastAPI/React com worker Playwright/Chromium que pontua
+        vagas com LLM, adapta currículos (Gotenberg, Typst, LaTeX) e age no LinkedIn
+        após aprovação humana.
 
         - Agentes de WhatsApp (Hermes Agent, Evolution API): assistente executivo
-        com 94 comandos e 58 skills, agentes de atendimento e de operações com memória
-        persistente; mais de 300 testes.
+        com 94 comandos, 58 skills, Google Workspace, voos e motor de 7 tipos de contrato
+        (mais de 22 mil execuções); agente de atendimento com persona, memória e passagem
+        para humano; mais de 300 testes.
 
-        - Previsão: modelo bayesiano de apuração eleitoral (2026), MCMC e TimesFM
-        em análise esportiva e copiloto de trades na B3; classificador de licitações
-        do PNCP com Gemini/Genkit.
+        - Previsão e análise: modelo bayesiano de apuração eleitoral (2026); MCMC
+        e TimesFM em bot editorial de fantasy (mais de 41 mil execuções) e engine
+        open source da API Sleeper com RAG sobre 99 documentos; copiloto de trades
+        sobre o MetaTrader 5 com métricas de risco e backtest.
 
-        - Plataforma própria: 48 containers em 21 stacks no Coolify, deploy por GitOps
-        e rede zero-trust Tailscale; mais de 88 mil execuções.'
+        - Busca e pontuação de licitações do PNCP com Gemini 1.5 Pro no Firebase Genkit;
+        antes, SaaS de bolões (Next.js 15, Expo/React Native, Turborepo, Mercado Pago)
+        e feed iCal da Copa de 2026.
+
+        - Plataforma própria: 48 containers em 21 stacks no Coolify com GitOps, Tailscale
+        zero-trust com Nginx TLS 1.3 e sem portas públicas, hub n8n, backup diário
+        no Google Drive; mais de 88 mil execuções.'
     - role: Consultor Independente — Engenharia de Saneamento e Modelagem Técnico-Financeira
       company: Autônomo
       period: fev de 2026 - atual
@@ -401,6 +451,21 @@ skills:
   - Power BI
   - Power Apps
   - Microsoft 365 / SharePoint
+  - Flask
+  - Pandas
+  - NumPy
+  - Tailwind CSS
+  - Expo / React Native
+  - Turborepo
+  - Typst
+  - LaTeX
+  - Gotenberg
+  - Nginx
+  - Google Workspace APIs
+  - Evolution API (WhatsApp)
+  - MetaTrader 5
+  - Firebase Genkit
+  - Vercel
   soft:
   - Leadership
   - Stakeholder management

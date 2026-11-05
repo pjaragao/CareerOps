@@ -19,9 +19,9 @@ Engenheiro sanitarista e ambiental com quase 18 anos em projetos de saneamento e
 - **Modelagem e finanças:** viabilidade técnico-econômica (fluxo de caixa descontado), modelagem tarifária, análise de concessões, CAPEX/OPEX, orçamento e KPIs, contabilidade de custos, precificação de propostas (técnica e preço, menor preço)
 - **Gestão:** coordenação de projetos multidisciplinares, contratos com prefeituras, companhias estaduais e órgãos federais, ISO 9001, ERP
 - **Infraestrutura de TI:** Active Directory, administração do tenant Microsoft 365, SharePoint (local e Online), Power Apps (canvas e model-driven), file server (+30 TB), backup, VPN, redes multiescritório, alta disponibilidade (servidores redundantes, nobreak, links com failover)
-- **Dados e IA:** Python, SQL, PostgreSQL (Supabase, PL/pgSQL, filas PGMQ), SQLite, Redis, FastAPI, Next.js/React, Power BI, Excel avançado, previsão de séries temporais (TimesFM), modelos estatísticos bayesianos, automação de navegador (Playwright)
+- **Dados e IA:** Python, SQL, PostgreSQL (Supabase, PL/pgSQL, filas PGMQ), SQLite, Redis, FastAPI, Flask, Pandas/NumPy, Next.js/React/Tailwind, Expo/React Native, Turborepo, Typst e LaTeX, APIs do Google Workspace, Power BI, Excel avançado, previsão de séries temporais (TimesFM), modelos estatísticos bayesianos, automação de navegador (Playwright)
 - **Agentes de IA:** agentes autônomos e multiagentes, tool calling, servidores MCP, RAG, memória de agentes, guardrails e aprovação humana, prompt engineering, roteamento entre modelos (Claude, GPT-4o, Gemini), LangChain, Pydantic AI, Hermes Agent, n8n, desenvolvimento assistido por IA com Claude Code
-- **DevOps:** Docker e Docker Compose, Coolify (PaaS self-hosted, deploy por GitOps), Tailscale (zero-trust), Linux, rotinas agendadas e monitoramento
+- **DevOps:** Docker e Docker Compose, Coolify (PaaS self-hosted, deploy por GitOps), Tailscale (zero-trust), Nginx (TLS 1.3), Linux/WSL2, rotinas agendadas e monitoramento
 
 ---
 
@@ -74,14 +74,15 @@ Produtos próprios, como único engenheiro, em paralelo à consultoria: 14 siste
 
 Método: prototipagem de integrações, cadeias de prompts e tool calling no n8n para provar o fluxo e os casos de borda, e consolidação com o Claude Code em serviços de produção (FastAPI, Next.js, workers Python, PL/pgSQL) com testes automatizados e CI.
 
-- **CentralOps:** ERP de varejo com contabilidade de partidas dobradas, fluxo de caixa, DRE, estoque, folha e fiscal (PostgreSQL, mais de 2.000 testes automatizados) e agente de IA que só usa números calculados pelo banco; PDV, e-commerce, pagamentos Stone e NFC-e; 10 schemas PostgreSQL com filas PGMQ e servidor MCP usado por um segundo agente de operações.
+- **CentralOps:** ERP de varejo com contabilidade de partidas dobradas, fluxo de caixa, DRE, estoque, folha e fiscal (PostgreSQL, mais de 2.000 testes automatizados) e agente de IA que só usa números calculados pelo banco; PDV, e-commerce, pagamentos Stone e NFC-e; 10 schemas PostgreSQL com filas PGMQ; PDV touch, TEF/Stone, NFC-e direto na SEFAZ com contingência offline, CRM e estoque multicentro com reservas atômicas (Next.js 16, React 19). Servidor MCP usado pelo agente de operações (Hermes), que audita divergências de estoque, monitora a SEFAZ e as filas e responde sobre vendas e caixa, e por um agente de loja que sincroniza catálogo e fotos com o Google Drive.
 - **Modelo de projeção da apuração (Eleições 2026):** modelo estatístico bayesiano sobre os dados oficiais do TSE, calibrado com os 2º turnos de 2014, 2018 e 2022.
-- **Copiloto de Trades:** conciliação de notas de corretagem, cálculo de IR, backtest e previsão de séries temporais.
-- **CareerOps:** plataforma de automação de carreira (FastAPI, PostgreSQL, worker Playwright/Chromium): busca e pontua vagas com LLM, adapta currículos (PDF via Gotenberg) e age no LinkedIn só após aprovação humana.
-- **Agentes de WhatsApp:** plataforma multi-tenant (mais de 300 testes) com assistente executivo (94 comandos, 58 skills, memória de longo prazo), agente de atendimento com memória persistente e agente de operações de loja; Evolution API, SQLite e Redis.
-- **Análise esportiva:** previsão bayesiana (MCMC) e TimesFM sobre dados da NFL, bot editorial automático e engine open source da API Sleeper com RAG sobre a própria documentação.
-- **Inteligência em licitações:** classificador de licitações do PNCP com Gemini e Firebase Genkit.
-- **Plataforma própria:** tudo self-hosted em Docker/Coolify, 48 containers em 21 stacks com rede zero-trust Tailscale, deploy por GitOps e mais de 88 mil execuções de agentes e rotinas.
+- **Copiloto de Trades:** conciliação de notas de corretagem, cálculo de IR, backtest e previsão de séries temporais; cockpit de risco sobre o histórico do MetaTrader 5 (payoff, taxa de acerto, drawdown intradiário, regras de disciplina) com revisão do diário por LLM; Flask, Pandas, SQLite WAL.
+- **CareerOps:** plataforma de automação de carreira (FastAPI, PostgreSQL, worker Playwright/Chromium): busca e pontua vagas com LLM, adapta currículos (PDF via Gotenberg, Typst e LaTeX; protótipos no n8n com agentes de 18 e 26 nós) e age no LinkedIn só após aprovação humana.
+- **Agentes de WhatsApp:** plataforma multi-tenant (mais de 300 testes) com assistente executivo (94 comandos, 58 skills, 35 módulos Python; Google Agenda, Tasks e Gmail, voos ao vivo, motor de minutas para 7 tipos de contrato com consulta de CNPJ; mais de 22 mil execuções agendadas) e agente de atendimento com persona humanizada, memória persistente e passagem para atendimento humano; Evolution API, SQLite e Redis.
+- **Análise esportiva:** previsão bayesiana (MCMC) e TimesFM sobre dados da NFL, bot editorial automático com 13 publicações semanais (mais de 41 mil execuções, gráficos em Matplotlib/Seaborn) e engine open source da API Sleeper (TypeScript/Python) com RAG sobre uma base de 99 documentos que ela mesma gera.
+- **Inteligência em licitações:** busca, pontuação e resumo executivo de editais da API do PNCP, com extração de requisitos dos termos de referência pelo Gemini 1.5 Pro no Firebase Genkit; Flask e Node.js/TypeScript.
+- **Produtos anteriores:** SaaS de bolões esportivos (monorepo Turborepo, Next.js 15 e app Expo/React Native, Mercado Pago, duas APIs de futebol redundantes, Supabase nuvem e self-hosted) e feed iCalendar da Copa de 2026 (Next.js, RFC 5545).
+- **Plataforma própria:** tudo self-hosted em Docker/Coolify, 48 containers em 21 stacks com rede zero-trust Tailscale (sem portas públicas; Nginx TLS 1.3 em 16 serviços), deploy por GitOps, hub n8n como bancada de protótipos, cofre de senhas, backup diário espelhado no Google Drive e mais de 88 mil execuções de agentes e rotinas.
 
 ---
 
