@@ -809,7 +809,15 @@
         const root = host.shadowRoot || (chrome.dom && chrome.dom.openOrClosedShadowRoot ? chrome.dom.openOrClosedShadowRoot(host) : null);
         return root ? [root] : [];
     }
-    const deepAll = (selector) => [document, ...shadowRoots()].flatMap((r) => [...r.querySelectorAll(selector)]);
+    // plus any open shadow root nested in those (another layout may host its dialogs elsewhere)
+    function allRoots() {
+        const roots = [document, ...shadowRoots()];
+        for (let i = 0; i < roots.length && roots.length < 40; i++) {
+            for (const el of roots[i].querySelectorAll('*')) if (el.shadowRoot && !roots.includes(el.shadowRoot)) roots.push(el.shadowRoot);
+        }
+        return roots;
+    }
+    const deepAll = (selector) => allRoots().flatMap((r) => [...r.querySelectorAll(selector)]);
 
     // The post's action bar (Like · Comment · Repost · Send): the smallest element holding its Comment and Repost buttons
     function actionBar(post) {
@@ -923,17 +931,29 @@
     const CONNECT = /^\+?\s*(conectar|connect)$/i;
     const SEND_NO_NOTE = ['enviar sem nota', 'send without a note', 'send without note'];
     const SEND = ['enviar', 'send', 'enviar convite', 'send invitation'];
-    const dialogs = () => deepAll('div[role="dialog"], .artdeco-modal, [aria-modal="true"], dialog[open]')
+    const dialogs = () => deepAll('div[role="dialog"], [role="alertdialog"], .artdeco-modal, [aria-modal="true"], dialog[open], [data-test-modal], [data-testid="dialog"]')
         .filter((d) => (d.offsetParent !== null || d.getClientRects().length) && !own(d));
     const NO_NOTE = /^(send without( a)? note|enviar sem( uma)? nota)$/i;
+    // Layered, the old way first and the wide ones after: LinkedIn varies the wording, the tag and where the label sits.
+    const normText = (t) => clean(t || '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[.!…]+$/, '');
+    const NO_NOTE_WIDE = /^(send( the)?( invitation| invite)? without( a| an)?( personali[sz]ed)?( note| message)|enviar( o)?( convite)? sem( uma)?( nota| mensagem)|sem nota|enviar sin( una)?( nota| mensaje)|sin nota|inviare senza( una)? nota|senza nota|ohne( eine)? (nachricht|notiz) senden|envoyer sans( note| message))$/;
+    const ADD_NOTE_TEXT = /add a note|adicionar (uma )?nota|a[nñ]adir una nota|aggiungi una nota|send without|enviar sem|sem nota|invitation|convite/i;
+    const isShown = (el) => el.offsetParent !== null || el.getClientRects().length > 0;
+    const isDisabledEl = (el) => el.disabled || el.getAttribute('aria-disabled') === 'true';
+    const labelsOf = (b) => [b.innerText, b.textContent, b.getAttribute('aria-label'), b.getAttribute('title'), ...(b.innerText || '').split('\n')].map(plain).filter(Boolean);
+    const BTN_SEL = 'button, [role="button"], a[role="button"], a[href], input[type="button"], input[type="submit"]';
+    const isNoNoteBtn = (b) => labelsOf(b).some((l) => NO_NOTE.test(l) || NO_NOTE_WIDE.test(l));
+    // Any visible, enabled "Send without a note" in the page or in the shadow layers (a dialog with no role, say): the
+    // dialog that opened with the click is looked at first; this is the fallback when no dialog is recognised.
+    const noNoteButtons = () => deepAll(BTN_SEL).filter((b) => isShown(b) && !own(b) && isNoNoteBtn(b));
     // "Send without a note" anywhere in the open dialogs, else "Send". A note asking for the person's e-mail does not
     // stop the invite; when LinkedIn really needs the e-mail, it keeps Send disabled and nothing is found here.
     function sendButton(open) {
         for (const d of open) {
-            const btns = [...d.querySelectorAll('button')].filter((b) => (b.offsetParent !== null || b.getClientRects().length) && !b.disabled);
-            const noNote = btns.find((b) => NO_NOTE.test(btnLabel(b)) || NO_NOTE.test(clean(b.getAttribute('aria-label') || '')));
+            const btns = [...d.querySelectorAll(BTN_SEL)].filter((b) => isShown(b) && !isDisabledEl(b));
+            const noNote = btns.find((b) => NO_NOTE.test(btnLabel(b)) || NO_NOTE.test(clean(b.getAttribute('aria-label') || ''))) || btns.find(isNoNoteBtn);
             if (noNote) return noNote;
-            const send = btns.find((b) => SEND.includes(btnLabel(b)));
+            const send = btns.find((b) => SEND.includes(btnLabel(b)) || SEND.includes(normText(b.getAttribute('aria-label'))));
             if (send) return send;
         }
         return null;
@@ -1023,35 +1043,43 @@
         const link = target.closest('a[href]');
         connectNoNote.last.clicked = `${target.tagName.toLowerCase()} "${btnLabel(target)}"${link ? ` ${link.getAttribute('href')}` : ''}`;
         const before = new Set(dialogs());
+        const beforeBtns = new Set(noNoteButtons());   // a dialog with no role: its button is told apart by being new
         target.click();
         // Only a dialog that opened with this click is the invite. One already on the page (the messaging overlay, a chat
         // with its own Send) is never looked into: clicking there would send something else.
         const opened = () => dialogs().filter((d) => !before.has(d));
-        let btn = await waitFor(() => sendButton(opened()), 5000);
+        const newNoNote = () => noNoteButtons().find((b) => !beforeBtns.has(b) && !isDisabledEl(b)) || null;
+        const findSend = () => sendButton(opened()) || newNoNote();
+        let btn = await waitFor(findSend, 5000);
         if (!btn) {
             // some profiles send at once, without a dialog: the button turns into "Pending"
             if (await waitFor(() => actions().some((l) => PENDING.test(l)), 1500)) return 'sent';
             // the new menu link: the worker clicks it with the mouse
             if (askWorker && link && /custom-invite/.test(link.getAttribute('href') || '') && !opened().length) {
                 connectNoNote.last.worker = 'connect';
-                btn = await askWorker('connect', () => sendButton(opened()));
+                btn = await askWorker('connect', findSend);
             }
         }
         if (!btn) {
             connectNoNote.last.dialog = dialogText(opened());
             // a dialog with no way to send: LinkedIn asks for the person's e-mail, that one is yours. No dialog at all: the
             // click did not open it (a new layout) — said as such, never as "it asked for an e-mail"
-            return opened().length ? 'needs_user' : 'no_dialog';
+            // Only a dialog that really asks for an e-mail is the user's; a note prompt whose button was not found, or any
+            // other dialog, is a layout the extension does not drive: said as such, for the Claude routine
+            const text = connectNoNote.last.dialog;
+            if (!opened().length) return 'no_dialog';
+            const askMail = /e-?mail/i.test(text) || deepAll('input[type="email"]').some((i) => opened().some((d) => d.contains(i)));
+            return askMail && !ADD_NOTE_TEXT.test(text.replace(/e-?mail/gi, '')) ? 'needs_user' : 'unexpected_dialog';
         }
         if (beforeSend && !(await beforeSend())) return 'needs_user';
         btn.click();
         // the invite dialog closes once it went out; one still open (or a new one) says what LinkedIn wanted instead
-        let gone = await waitFor(() => !opened().length, 3000);
+        let gone = await waitFor(() => !opened().length && !(btn.isConnected && shown(btn)), 3000);
         // "Send without a note" still there: the click from the script was ignored, the worker clicks it (it looks for that
         // very button, so a dialog asking for something else is never answered)
-        if (!gone && askWorker && sendButton(opened())) {
+        if (!gone && askWorker && findSend()) {
             connectNoNote.last.worker = 'send';
-            gone = await askWorker('send', () => !opened().length);
+            gone = await askWorker('send', () => !opened().length && !findSend());
         }
         connectNoNote.last.after = dialogText(opened());
         return 'sent';
@@ -1079,6 +1107,7 @@
             unavailable: ['Não achei o botão Conectar neste perfil', false],
             needs_user: ['O LinkedIn pediu algo a mais (ex.: e-mail): termine o convite manualmente', false],
             no_dialog: ['Cliquei em Conectar e a janela do convite não abriu: tente pelo próprio LinkedIn', false],
+            unexpected_dialog: ['A janela do convite tem um layout que não reconheci: termine pelo próprio LinkedIn', false],
         }[result];
         if (prospectId && ['sent', 'pending'].includes(result)) await api('PATCH', `/prospects/${prospectId}`, { status: 'invited' });
         if (prospectId && result === 'connected') await api('PATCH', `/prospects/${prospectId}`, { status: 'accepted' });
@@ -1913,7 +1942,8 @@
             pending: () => managedStuck('already_pending', 'Convite já pendente'),
             connected: () => managedStuck('already_connected', 'Já conectados'),
             unavailable: () => managedStuck('selector_not_found', 'Botão Conectar não encontrado'),
-            needs_user: () => managedStuck('invite_needs_email', said('O LinkedIn pediu algo a mais (ex.: e-mail)')),
+            needs_user: () => managedStuck('invite_needs_email', said('O LinkedIn pediu o e-mail da pessoa')),
+            unexpected_dialog: () => managedStuck('unexpected_layout', said('A janela do convite não tem um botão que reconheço (Enviar sem nota)')),
             // nothing was sent and nothing asked: a layout the extension does not drive yet. The Claude routine gets it
             no_dialog: () => managedStuck('unexpected_layout', said('Cliquei em Conectar e a janela do convite não abriu')),
         }[result];

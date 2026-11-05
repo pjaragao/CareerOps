@@ -179,6 +179,13 @@ def main():
     row = wait_status(real, ("done", "needs_user", "escalated", "discarded"), 120)
     check("connect where LinkedIn answers only real clicks: the worker clicks Connect and Send, invited once",
           row["status"] == "done" and fake_state()["invited"].count("realmenu") == 1, f"{row['status']} {row['error_code']} {row['error_text']} {fake_state()['invited']}")
+    # the invite dialog as LinkedIn drew it on 2026-11-05 (no e-mail; "Send without a note" is a div[role=button]) and a Pending
+    # that exists only in an aria-label: both layers must still work next to the old layout above
+    nd = propose("connect", "connect-notedlg", "https://www.linkedin.com/in/notedlg", {"profile_url": "x", "name": "Notedlg"})
+    call("POST", f"/automation/actions/{nd}/approve", {})
+    row = wait_status(nd, ("done", "needs_user", "escalated", "discarded"), 90)
+    check("connect with the 'Add a note' dialog and an aria-only Pending: invited, proof read",
+          row["status"] == "done" and fake_state()["invited"].count("notedlg") == 1, f"{row['status']} {row['error_code']} {row['error_text']}")
     dead = propose("connect", "connect-dead", "https://www.linkedin.com/in/deadmenu", {"profile_url": "x", "name": "Dead"})
     call("POST", f"/automation/actions/{dead}/approve", {})
     row = wait_status(dead, ("done", "needs_user", "escalated", "discarded"), 120)

@@ -6,6 +6,7 @@ The page could write that attribute too, so the worker clicks only fixed targets
 Anything else asked is ignored."""
 import logging
 import re
+import unicodedata
 from typing import Optional
 from urllib.parse import parse_qs, unquote, urlparse
 
@@ -61,27 +62,49 @@ async def click_connect(page: Page, action: dict) -> bool:
     return False
 
 
-def _find_button(node: dict, labels) -> Optional[dict]:
-    """A <button> by its aria-label or text, also inside closed shadow roots (the invite dialog lives in one)."""
+NO_NOTE_WIDE = re.compile(r"^(send( the)?( invitation| invite)? without( a| an)?( personali[sz]ed)?( note| message)|enviar( o)?( convite)? sem( uma)?( nota| mensagem)|"
+                          r"sem nota|enviar sin( una)?( nota| mensaje)|sin nota|inviare senza( una)? nota|senza nota|ohne( eine)? (nachricht|notiz) senden|envoyer sans( note| message))$")
+
+
+def _norm(text: str) -> str:
+    plain = unicodedata.normalize("NFKD", text or "")
+    return re.sub(r"\s+", " ", "".join(c for c in plain if not unicodedata.combining(c))).strip().lower().rstrip(".!…")
+
+
+def _is_no_note(names) -> bool:
+    return any(n in SEND_NO_NOTE or NO_NOTE_WIDE.match(n) for n in names if n)
+
+
+def _find_button(node: dict, labels=None) -> Optional[dict]:
+    """The "Send without a note" control by its aria-label, title or text, also inside closed shadow roots (the invite dialog
+    lives in one). Layered: <button> first (the old way), then anything that acts as one (role=button, <a>, input)."""
     def text(n):
         return n.get("nodeValue", "") if n.get("nodeType") == 3 else " ".join(text(c) for c in n.get("children") or [])
-    if node.get("nodeName") == "BUTTON":
-        attrs = node.get("attributes") or []
-        names = {(dict(zip(attrs[::2], attrs[1::2])).get("aria-label") or "").strip().lower(), " ".join(text(node).split()).lower()}
-        if names & set(labels):
-            return node
-    for child in (node.get("children") or []) + (node.get("shadowRoots") or []):
-        found = _find_button(child, labels)
-        if found:
-            return found
-    return None
+
+    def names(n):
+        attrs = dict(zip((n.get("attributes") or [])[::2], (n.get("attributes") or [])[1::2]))
+        return {_norm(attrs.get("aria-label")), _norm(attrs.get("title")), _norm(text(n))}, attrs
+
+    def walk(n, only_button):
+        if n.get("nodeType") == 1:
+            tag = n.get("nodeName")
+            found, attrs = names(n)
+            acts = tag == "BUTTON" if only_button else (tag in ("A", "INPUT") or attrs.get("role") == "button")
+            if acts and attrs.get("disabled") is None and attrs.get("aria-disabled") != "true" and _is_no_note(found):
+                return n
+        for child in (n.get("children") or []) + (n.get("shadowRoots") or []):
+            hit = walk(child, only_button)
+            if hit:
+                return hit
+        return None
+    return walk(node, True) or walk(node, False)
 
 
 async def click_send(page: Page) -> bool:
     session = await page.context.new_cdp_session(page)
     try:
         root = (await session.send("DOM.getDocument", {"depth": -1, "pierce": True}))["root"]
-        button = _find_button(root, SEND_NO_NOTE)
+        button = _find_button(root)
         if not button:
             return False
         quad = (await session.send("DOM.getBoxModel", {"backendNodeId": button["backendNodeId"]}))["model"]["content"]

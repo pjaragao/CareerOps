@@ -88,7 +88,9 @@ def post_page(activity):
 
 def profile_page(slug):
     title = f"{slug.title()} Lima | LinkedIn"
-    if slug in STATE["invited"]:
+    if slug in STATE["invited"] and slug == "notedlg":   # the state only in an aria-label, on a button with no text
+        actions = f'<button aria-label="Pending, click to withdraw invitation sent to {slug.title()} Lima"><svg width="8" height="8"></svg></button><button>More</button>'
+    elif slug in STATE["invited"]:
         actions = "<button>Pending</button><button>More</button>"
     elif slug == "broken":   # no element the extension recognizes as Follow: only the Claude routine gets past it
         actions = '<span role="link" tabindex="0" id="odd" onclick="fetch(\'/__follow/broken\',{method:\'POST\'}).then(()=>location.reload())">Acompanhar novidades</span>' if slug not in STATE["following"] else "<button>Following</button>"
@@ -113,7 +115,10 @@ def profile_page(slug):
     body = f"""<section><div><h1>{slug.title()} Lima</h1><div class="text-body-medium">CFO</div><div class="row">{actions}</div></div></section>
       <div id="interop-outlet" data-testid="interop-shadowdom"></div>"""
     script = f"""const root=document.getElementById('interop-outlet').attachShadow({{mode:'closed'}});
-    root.innerHTML='<div id="dlg" role="dialog" style="display:none"><p>Add a note? If you know their e-mail, add it.</p><input type="email"><button id="nonote">Send without a note</button></div>';
+    // "notedlg": the dialog as LinkedIn drew it on 2026-11-05: no e-mail anywhere, "Add a note" next to a "Send without a note" that is no <button>
+    root.innerHTML='{slug}'==='notedlg'
+      ? '<div id="dlg" role="dialog" style="display:none"><p>Dialog content start. Add a note to your invitation? Personalize your invitation by adding a note.</p><button>Add a note</button><div id="nonote" role="button" tabindex="0" aria-label="Send without a note"><span>Send without a note</span></div></div>'
+      : '<div id="dlg" role="dialog" style="display:none"><p>Add a note? If you know their e-mail, add it.</p><input type="email"><button id="nonote">Send without a note</button></div>';
     const c=document.getElementById('conn');if(c)c.onclick=()=>{{root.getElementById('dlg').style.display='block'}};
     const real='{slug}'==='realmenu';
     root.getElementById('nonote').onclick=(e)=>{{if(real&&!e.isTrusted)return;{post_js(f'/__invite/{slug}')}}};
