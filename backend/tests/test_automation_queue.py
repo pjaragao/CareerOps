@@ -691,3 +691,13 @@ def test_what_you_approve_or_retry_ignores_the_window_and_the_limit(db, sql, mon
         assert claim()["action"]["id"] == mine_follow["id"]   # retried: past the window and the spent follow limit
     finally:
         sql("UPDATE public.automation_limits SET step2 = 10 WHERE kind = 'follow'")
+
+
+def test_de_novo_after_a_failed_check_sends_again_instead_of_checking_forever(db, sql):
+    got = (queued_follow("vf"), claim()["action"])[1]
+    # as invite 35 on 2026-11-05: clicked by the old flow, looked at twice, nothing on the page
+    sql(f"""UPDATE public.automation_actions SET status = 'needs_user', error_code = 'verify_failed', lease_owner = NULL,
+              result = '{{"executed": true, "recheck": true}}' WHERE id = {got['id']}""")
+    again = Auto.retry(got["id"])
+    assert again["status"] == "queued" and not again["result"].get("executed") and again["result"]["previous"]["executed"]
+    assert claim()["action"]["id"] == got["id"]   # a real send, not only a look

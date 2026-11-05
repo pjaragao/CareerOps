@@ -436,6 +436,12 @@ class AutomationService:
         if action["kind"] == "apply" and action["error_code"] in ("documents_failed", "cv_review_failed"):
             _rows("UPDATE public.job_listings SET resume_markdown = NULL, cover_letter = NULL WHERE id = %s", (action["target_id"],))
             status = "approved"
+        elif action["error_code"] == "verify_failed":
+            # the page was looked at twice and showed nothing, and you were told to check before repeating: "de novo" sends it
+            # again for real; re-checking once more would only bring the same message back (2026-11-05: invites marked as
+            # sent by the old flow that never left looped this way)
+            status = "queued"
+            _rows("""UPDATE public.automation_actions SET result = jsonb_build_object('previous', result) WHERE id = %s""", (action_id,))
         else:
             status = "unknown_outcome" if (action["result"] or {}).get("executed") else "queued"
         # you asked for it again: it does not wait for the time window, which only holds back the automations
