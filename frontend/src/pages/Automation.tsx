@@ -435,16 +435,23 @@ const AnswerForm = ({ action, onDone, setError }: { action: Action; onDone: () =
   );
 };
 
-const NeedsYouCard = ({ action, onDone, novnc }: { action: Action; onDone: () => void; novnc?: string }) => {
-  const [error, setError] = useState('');
+// What the person has to do: a row's situation drives the filter chips and the quick action
+type Need = 'docs' | 'confirm' | 'solve';
+const NEEDS: { id: Need; plural: string; color: string }[] = [
+  { id: 'docs', plural: 'Revisar CV', color: '#8b85ff' }, { id: 'confirm', plural: 'Confirmar envio', color: GREEN }, { id: 'solve', plural: 'Resolver', color: YELLOW },
+];
+const needOf = (a: Action): Need => (a.status === 'review_docs' ? 'docs' : a.status === 'awaiting_confirm' ? 'confirm' : 'solve');
+const needsWhat = (a: Action): { title: string; sub: string } => {
+  const w = what(a);
+  const reason = a.status === 'needs_user' ? (CODE_LABEL[a.error_code || ''] || a.error_code || '') : STATUS_LABEL[a.status] || '';
+  return { title: a.title || w.title, sub: [reason, w.sub].filter(Boolean).join(' · ') };
+};
+
+const NeedsYouDetail = ({ action, onDone, novnc, setError }: { action: Action; onDone: () => void; novnc?: string; setError: (e: string) => void }) => {
   const act = (call: Promise<unknown>) => call.then(onDone).catch((e) => setError(errorText(e)));
   const url = action.status === 'needs_user' && action.error_code === 'external_manual' ? action.error_text?.match(/https?:\/\/\S+/)?.[0] : action.target_url;
   return (
-    <div className="panel" style={stack}>
-      <div style={{ ...row, justifyContent: 'space-between' }}>
-        <strong>{action.title}</strong>
-        <span style={badge(YELLOW)}>{KIND_LABEL[action.kind]}</span>
-      </div>
+    <div style={{ ...stack, gap: '0.5rem' }}>
       {action.status === 'review_docs' && <>
         <p style={muted}>Leia o CV gerado para esta vaga antes de ele ir ao recrutador.</p>
         <div style={row}>
@@ -476,20 +483,134 @@ const NeedsYouCard = ({ action, onDone, novnc }: { action: Action; onDone: () =>
               <button className="btn btn-secondary" onClick={() => act(auto.cancel(action.id))}>Desistir desta</button>
             </div>}
       </>}
-      <Failure text={error} />
     </div>
+  );
+};
+
+const NeedsYouRow = ({ action, picked, onPick, onDone, novnc, setError }: { action: Action; picked: boolean; onPick: (on: boolean) => void; onDone: () => void; novnc?: string; setError: (e: string) => void }) => {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const decide = (call: Promise<unknown>) => { setBusy(true); call.then(onDone).catch((e) => setError(errorText(e))).finally(() => setBusy(false)); };
+  const need = needOf(action);
+  const w = needsWhat(action);
+  const quick = need === 'docs'
+    ? { title: 'Pode enviar', run: () => auto.approveDocs(action.id) }
+    : need === 'confirm' ? { title: 'Enviar candidatura', run: () => auto.confirmSubmit(action.id) }
+    : action.questions?.length ? null : { title: 'Resolvi, tentar de novo', run: () => auto.retry(action.id) };
+  return (
+    <>
+      <tr className="jb-row" onClick={() => setOpen(!open)}>
+        <td className="jb-td jb-hide-sm" style={{ width: 1, paddingRight: 0 }} onClick={(e) => e.stopPropagation()}>
+          <input type="checkbox" style={checkbox} checked={picked} onChange={(e) => onPick(e.target.checked)} aria-label="Selecionar" />
+        </td>
+        <td className="jb-td jb-hide-sm" style={{ width: 1, paddingRight: 0 }}><KindPill kind={action.kind} /></td>
+        <td className="jb-td" style={{ maxWidth: 0, width: '100%' }}>
+          <div style={{ fontWeight: 700, color: '#fff', fontSize: '0.88rem', ...ellipsis }}>{w.title}</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+            <KindPill kind={action.kind} className="ap-sm" />
+            <span style={{ fontSize: '0.76rem', color: 'var(--text-muted)', ...ellipsis }}>{w.sub}</span>
+          </div>
+        </td>
+        <td className="jb-td" style={{ textAlign: 'center' }}><FitBadge fit={action.fit} /></td>
+        <td className="jb-td jb-hide-sm" style={{ fontSize: '0.76rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{ago(action.sort_at || action.created_at)}</td>
+        <td className="jb-td" style={{ textAlign: 'right', paddingLeft: 0, whiteSpace: 'nowrap' }} onClick={(e) => e.stopPropagation()}>
+          <div style={{ display: 'inline-flex', flexWrap: 'nowrap', gap: 6 }}>
+            {quick && <button className="jb-icon primary" title={quick.title} disabled={busy} onClick={() => decide(quick.run())}><Check size={15} /></button>}
+            <button className="jb-icon danger" title="Desistir desta" disabled={busy} onClick={() => decide(auto.cancel(action.id))}><X size={15} /></button>
+            {action.target_url && <a className="jb-icon jb-hide-sm" title="Abrir no LinkedIn" href={action.target_url} target="_blank" rel="noreferrer"><ExternalLink size={15} /></a>}
+          </div>
+        </td>
+      </tr>
+      {open && (
+        <tr style={{ borderBottom: '1px solid var(--border)', background: 'rgba(255,255,255,.015)' }}>
+          <td colSpan={6} className="jb-td"><NeedsYouDetail action={action} onDone={onDone} novnc={novnc} setError={setError} /></td>
+        </tr>
+      )}
+    </>
   );
 };
 
 const NeedsYouTab = () => {
   const { data: items, error, refresh } = useLive<Action[]>(auto.needsUser, 15000);
   const { data: status } = useLive<AutomationStatus>(auto.status, 60000);
+  const [params, setParams] = useSearchParams();
+  const need = (NEEDS.some((n) => n.id === params.get('situacao')) ? params.get('situacao') : 'all') as Need | 'all';
+  const [kind, setKind] = useState<'all' | string>('all');
+  const [sort, setSort] = useState<'recent' | 'fit'>('recent');
+  const [picked, setPicked] = useState<Set<number>>(new Set());
+  const [actionError, setActionError] = useState('');
   if (!items) return error ? <Failure text={error} /> : <p style={muted}>Carregando…</p>;
+  const setNeed = (n: Need | 'all') => {
+    const next = new URLSearchParams(params);
+    if (n === 'all') next.delete('situacao'); else next.set('situacao', n);
+    setParams(next, { replace: true });
+    setPicked(new Set());
+  };
+  const filtered = items.filter((a) => (need === 'all' || needOf(a) === need) && (kind === 'all' || a.kind === kind));
+  const shown = sort === 'fit' ? [...filtered].sort((a, b) => (b.fit ?? -1) - (a.fit ?? -1)) : filtered;
+  const selected = shown.filter((a) => picked.has(a.id));
+  const kindsHere = Array.from(new Set(items.map((a) => a.kind)));
+  const pick = (id: number, on: boolean) => setPicked((prev) => { const next = new Set(prev); if (on) next.add(id); else next.delete(id); return next; });
+  const done = () => { setPicked(new Set()); refresh(); };
+  const docs = (selected.length ? selected : shown).filter((a) => needOf(a) === 'docs');
+  const sendDocs = () => {
+    if (!selected.length && docs.length > 1 && !confirm(`Liberar o envio das ${docs.length} da lista?`)) return;
+    Promise.all(docs.map((a) => auto.approveDocs(a.id))).then(done).catch((e) => setActionError(errorText(e)));
+  };
+  const cancelMany = (list: Action[]) => {
+    if (!confirm(`Desistir de ${list.length} ${list.length === 1 ? 'ação' : 'ações'}?`)) return;
+    Promise.all(list.map((a) => auto.cancel(a.id))).then(done).catch((e) => setActionError(errorText(e)));
+  };
   return (
     <div style={stack}>
-      <Failure text={error} />
-      {items.length === 0 && <div className="panel"><p style={muted}>Nada esperando por você.</p></div>}
-      {items.map((a) => <NeedsYouCard key={a.id} action={a} onDone={refresh} novnc={status?.novnc_url} />)}
+      <style>{listCss + approveCss}</style>
+      <Failure text={actionError || error} />
+      <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 2 }}>
+        {[{ id: 'all' as const, plural: 'Todas', color: '' }, ...NEEDS].map((n) => (
+          <button key={n.id} className={`jb-chip${need === n.id ? ' on' : ''}`} onClick={() => setNeed(n.id)}>
+            {n.color && <span className="jb-dot" style={{ background: n.color }} />}
+            {n.plural} <span className="n">{n.id === 'all' ? items.length : items.filter((a) => needOf(a) === n.id).length}</span>
+          </button>
+        ))}
+      </div>
+      <div style={{ ...row, justifyContent: 'space-between' }}>
+        <span style={muted}>{selected.length ? `${selected.length} selecionada(s)` : `${shown.length} esperando por você · toque na linha para ver detalhes`}</span>
+        <div style={row}>
+          {kindsHere.length > 1 && <select className="jb-select" value={kind} onChange={(e) => { setKind(e.target.value); setPicked(new Set()); }} title="Filtrar por tipo">
+            <option value="all">Todos os tipos</option>
+            {kindsHere.map((k) => <option key={k} value={k}>{KIND_LABEL[k] || k}</option>)}
+          </select>}
+          <select className="jb-select" value={sort} onChange={(e) => setSort(e.target.value as 'recent' | 'fit')} title="Ordenar">
+            <option value="recent">Mais recentes</option>
+            <option value="fit">Maior fit</option>
+          </select>
+          {selected.length > 0 && <button className="btn btn-secondary" onClick={() => cancelMany(selected)}><X size={15} /> Desistir</button>}
+          {docs.length > 0 && <button className="btn btn-secondary" onClick={sendDocs}><Check size={15} /> {selected.length ? 'Pode enviar selecionadas' : 'Pode enviar todas'}</button>}
+        </div>
+      </div>
+      <div className="panel" style={{ padding: 0, marginBottom: 0, overflow: 'hidden' }}>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr style={{ background: '#14141f', borderBottom: '1px solid var(--border)' }}>
+                <th className="jb-th jb-hide-sm" style={{ paddingRight: 0 }}>
+                  <input type="checkbox" style={checkbox} aria-label="Selecionar todas" checked={shown.length > 0 && selected.length === shown.length}
+                    onChange={(e) => setPicked(e.target.checked ? new Set(shown.map((a) => a.id)) : new Set())} />
+                </th>
+                <th className="jb-th jb-hide-sm" style={{ paddingRight: 0 }}>TIPO</th>
+                <th className="jb-th">O QUÊ</th>
+                <th className="jb-th" style={{ textAlign: 'center' }} title="Fit com o seu perfil (0–100)">FIT</th>
+                <th className="jb-th jb-hide-sm">QUANDO</th>
+                <th className="jb-th" style={{ textAlign: 'right', paddingLeft: 0 }}>AÇÕES</th>
+              </tr>
+            </thead>
+            <tbody>
+              {shown.map((a) => <NeedsYouRow key={a.id} action={a} picked={picked.has(a.id)} onPick={(on) => pick(a.id, on)} onDone={refresh} novnc={status?.novnc_url} setError={setActionError} />)}
+            </tbody>
+          </table>
+          {!shown.length && <p style={{ padding: '2rem', textAlign: 'center', ...muted }}>Nada esperando por você{need === 'all' && kind === 'all' ? ' agora' : ' neste filtro'}.</p>}
+        </div>
+      </div>
     </div>
   );
 };
