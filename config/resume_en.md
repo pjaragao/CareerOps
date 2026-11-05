@@ -18,7 +18,7 @@ Former CFO and engineer with 15+ years in infrastructure finance, now building d
 - **Modeling & analytics:** financial modeling, DCF and feasibility studies, concession and tariff modeling, valuation, forecasting (Bayesian hierarchical models, TimesFM), backtesting, budgeting and variance analysis, KPI design, cost accounting, pricing
 - **Data & software:** Python, SQL, PostgreSQL (PL/pgSQL, pgTAP), data pipelines, Power BI, Excel, REST APIs, Docker, GitHub Actions CI/CD, TypeScript/Next.js
 - **AI:** LLM applications and agents, tool calling and MCP, guardrails and human-in-the-loop, prompt engineering, multi-provider model routing
-- **IT infrastructure:** Active Directory, Microsoft 365, SharePoint (on-premises and Online), file server (30+ TB), backup, VPN, multi-office networking, high availability (redundant servers, UPS, failover internet links)
+- **IT infrastructure:** Active Directory, Microsoft 365 tenant administration, SharePoint (on-premises and Online), Power Apps (canvas and model-driven), file server (30+ TB), backup, VPN, multi-office networking, high availability (redundant servers, UPS, failover internet links)
 - **Domain:** infrastructure and utilities (water, wastewater, drainage), project finance, public procurement (QCBS/LCS), ERP, BIM
 
 ---
@@ -66,9 +66,10 @@ Project types: feasibility and tariff modeling, concession analysis, tender pric
 
 **IT Infrastructure Lead**
 Project types: multi-office on-premises infrastructure, high availability, cloud migration.
-- Owned the firm's IT infrastructure, with several offices joined to the local network over VPN: Active Directory, Microsoft 365 administration and the on-premises file server (30+ TB).
+- Owned the firm's IT infrastructure, with several offices joined to the local network over VPN: Active Directory, Microsoft 365 tenant administration and the on-premises file server (30+ TB).
 - Built for high availability and continuous operation: 2 redundant servers running in parallel, on-site UPS installed and maintained, local-server backup routines and 3 internet links, 1 of them dedicated with failover.
 - Deployed on-premises SharePoint in 2012, then migrated it to SharePoint Online (cloud).
+- Built Power Apps, both canvas and model-driven.
 
 **Engineering Intern** | May 2008 – Aug 2011
 

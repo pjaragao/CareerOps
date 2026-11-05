@@ -18,7 +18,7 @@ Engenheiro sanitarista e ambiental com quase 18 anos em projetos de saneamento e
 - **Engenharia:** abastecimento de água, esgotamento sanitário, drenagem urbana, planos municipais de saneamento e planos diretores de drenagem, gestão e licenciamento ambiental, BIM
 - **Modelagem e finanças:** viabilidade técnico-econômica (fluxo de caixa descontado), modelagem tarifária, análise de concessões, CAPEX/OPEX, orçamento e KPIs, contabilidade de custos, precificação de propostas (técnica e preço, menor preço)
 - **Gestão:** coordenação de projetos multidisciplinares, contratos com prefeituras, companhias estaduais e órgãos federais, ISO 9001, ERP
-- **Infraestrutura de TI:** Active Directory, Microsoft 365, SharePoint (local e Online), file server (+30 TB), backup, VPN, redes multiescritório, alta disponibilidade (servidores redundantes, nobreak, links com failover)
+- **Infraestrutura de TI:** Active Directory, administração do tenant Microsoft 365, SharePoint (local e Online), Power Apps (canvas e model-driven), file server (+30 TB), backup, VPN, redes multiescritório, alta disponibilidade (servidores redundantes, nobreak, links com failover)
 - **Dados e IA:** Python, SQL, PostgreSQL, Power BI, Excel avançado, previsão de séries temporais, modelos estatísticos, automações e agentes de IA
 
 ---
@@ -57,9 +57,10 @@ Tipos de projeto: projetos de saneamento, programa financiado pelo Banco Mundial
 
 **Liderança da Infraestrutura de TI**
 Tipos de projeto: infraestrutura local multiescritório, alta disponibilidade, migração para a nuvem.
-- Responsável pela infraestrutura de TI da empresa, com diversos escritórios interligados à rede local por VPN: Active Directory, gestão do Microsoft 365 e file server local com mais de 30 TB.
+- Responsável pela infraestrutura de TI da empresa, com diversos escritórios interligados à rede local por VPN: Active Directory, administração do tenant Microsoft 365 e file server local com mais de 30 TB.
 - Alta disponibilidade e continuidade da operação: 2 servidores redundantes em paralelo, nobreak local implantado e mantido, rotinas de backup do servidor local e 3 links de internet, sendo 1 dedicado com failover.
 - Implantação do SharePoint local em 2012 e, depois, migração para o SharePoint Online (nuvem).
+- Desenvolvimento de aplicativos Power Apps, canvas e model-driven.
 
 **Estagiário de Engenharia** | mai 2008 – ago 2011
 - Propostas financeiras, projetos de esgoto e de tratamento de esgoto, análise de alternativas, orçamentos e relatórios técnicos.
