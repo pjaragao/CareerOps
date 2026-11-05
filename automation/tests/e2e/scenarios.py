@@ -179,6 +179,21 @@ def main():
     row = wait_status(real, ("done", "needs_user", "escalated", "discarded"), 120)
     check("connect where LinkedIn answers only real clicks: the worker clicks Connect and Send, invited once",
           row["status"] == "done" and fake_state()["invited"].count("realmenu") == 1, f"{row['status']} {row['error_code']} {row['error_text']} {fake_state()['invited']}")
+    # Thiago Reis, 2026-11-05: the script's click opens the dialog, the script's Send closes it and sends nothing. The worker's
+    # real mouse presses Send first now
+    ss = propose("connect", "connect-scriptsend", "https://www.linkedin.com/in/scriptsend", {"profile_url": "x", "name": "Scriptsend"})
+    call("POST", f"/automation/actions/{ss}/approve", {})
+    row = wait_status(ss, ("done", "needs_user", "escalated", "discarded"), 120)
+    check("connect whose dialog drops a script's Send: the worker's mouse sends it, invited once",
+          row["status"] == "done" and fake_state()["invited"].count("scriptsend") == 1, f"{row['status']} {row['error_code']} {row['error_text']} {fake_state()['invited']}")
+    # the first Send is lost however it is clicked: the check finds Connect still there, and the worker's own engine sends it
+    ls = propose("connect", "connect-lostsend", "https://www.linkedin.com/in/lostsend", {"profile_url": "x", "name": "Lostsend"})
+    call("POST", f"/automation/actions/{ls}/approve", {})
+    row = wait_status(ls, ("done", "needs_user", "escalated", "discarded"), 150)
+    engine = sql("SELECT data FROM public.automation_events WHERE action_id = %s AND event = 'connect_engine'", (ls,))
+    check("connect whose first Send is lost: the worker's engine sends it again, invited once, proof read",
+          row["status"] == "done" and fake_state()["invited"].count("lostsend") == 1 and engine and engine[0]["data"]["said"].startswith("sent"),
+          f"{row['status']} {row['error_code']} {row['error_text']} {fake_state()['invited']} {engine}")
     # the invite dialog as LinkedIn drew it on 2026-11-05 (no e-mail; "Send without a note" is a div[role=button]) and a Pending
     # that exists only in an aria-label: both layers must still work next to the old layout above
     nd = propose("connect", "connect-notedlg", "https://www.linkedin.com/in/notedlg", {"profile_url": "x", "name": "Notedlg"})

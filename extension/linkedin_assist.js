@@ -1072,14 +1072,19 @@
             return askMail && !ADD_NOTE_TEXT.test(text.replace(/e-?mail/gi, '')) ? 'needs_user' : 'unexpected_dialog';
         }
         if (beforeSend && !(await beforeSend())) return 'needs_user';
-        btn.click();
-        // the invite dialog closes once it went out; one still open (or a new one) says what LinkedIn wanted instead
-        let gone = await waitFor(() => !opened().length && !(btn.isConnected && shown(btn)), 3000);
-        // "Send without a note" still there: the click from the script was ignored, the worker clicks it (it looks for that
-        // very button, so a dialog asking for something else is never answered)
-        if (!gone && askWorker && findSend()) {
+        const closed = () => !opened().length && !(btn.isConnected && shown(btn));
+        let gone = null;
+        if (askWorker) {
+            // the worker's real mouse first: a dialog opened by a script click took the script's "Send" too, closed, and sent
+            // nothing (2026-11-05, Thiago Reis: the check found Connect still there). A moment first for the dialog to settle.
+            await sleep(800);
             connectNoNote.last.worker = 'send';
-            gone = await askWorker('send', () => !opened().length && !findSend());
+            gone = await askWorker('send', () => closed() && !findSend());
+        }
+        if (!gone) {   // the old way, kept: no worker (your own click from the panel), or the worker found nothing to click
+            if (shown(btn) && !isDisabledEl(btn)) btn.click();
+            // the invite dialog closes once it went out; one still open (or a new one) says what LinkedIn wanted instead
+            gone = await waitFor(closed, 3000);
         }
         connectNoNote.last.after = dialogText(opened());
         return 'sent';

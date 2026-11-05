@@ -98,10 +98,13 @@ def profile_page(slug):
         item = "Unfollow" if slug in STATE["following"] else "Follow"
         actions = (f'<button>Message</button><button id="more">More</button><div id="menu" role="menu" style="display:none">'
                    f'<div role="menuitem" id="mfol" tabindex="0" aria-label="{item} First Lima">{item}</div><div role="menuitem" tabindex="0">Remove connection</div></div>')
-    elif slug in ("menu", "deadmenu", "realmenu"):
+    elif slug in ("menu", "deadmenu", "realmenu", "scriptsend", "lostsend"):
         # late 2026: Follow on top, Connect only in the More menu, as a link to /preload/custom-invite/. On "deadmenu" the
         # click opens nothing, and a chat with its own Send is open on the page: that one must never be clicked. On
-        # "realmenu" the link and the dialog's button answer only a real click (event.isTrusted), as on LinkedIn (2026-11-04)
+        # "realmenu" the link and the dialog's button answer only a real click (event.isTrusted), as on LinkedIn (2026-11-04).
+        # "scriptsend" (Thiago Reis, 2026-11-05): a script click opens the dialog, and a script click on its Send closes it and
+        # sends nothing. "lostsend": the first Send is lost however it is clicked (the dialog closes): only the worker's own
+        # engine, which opens it again, gets the invite out
         actions = (f'<button id="fol">Follow</button><button id="more">More</button><div id="menu" role="menu" style="display:none">'
                    f'<a role="menuitem" id="mconn" href="/preload/custom-invite/?vanityName={slug}"><div aria-label="Invite {slug.title()} Lima to connect"><p>Connect</p></div></a>'
                    f'<div role="menuitem" tabindex="0">Save to PDF</div></div>')
@@ -121,7 +124,11 @@ def profile_page(slug):
       : '<div id="dlg" role="dialog" style="display:none"><p>Add a note? If you know their e-mail, add it.</p><input type="email"><button id="nonote">Send without a note</button></div>';
     const c=document.getElementById('conn');if(c)c.onclick=()=>{{root.getElementById('dlg').style.display='block'}};
     const real='{slug}'==='realmenu';
-    root.getElementById('nonote').onclick=(e)=>{{if(real&&!e.isTrusted)return;{post_js(f'/__invite/{slug}')}}};
+    const hide=()=>{{root.getElementById('dlg').style.display='none'}};
+    root.getElementById('nonote').onclick=(e)=>{{if(real&&!e.isTrusted)return;
+      if('{slug}'==='scriptsend'&&!e.isTrusted){{hide();return}}
+      if('{slug}'==='lostsend'&&!localStorage.getItem('lost')){{localStorage.setItem('lost','1');hide();return}}
+      {post_js(f'/__invite/{slug}')}}};
     const mc=document.getElementById('mconn');if(mc)mc.onclick=(e)=>{{e.preventDefault();if(real&&!e.isTrusted)return;document.getElementById('menu').style.display='none';if('{slug}'!=='deadmenu')root.getElementById('dlg').style.display='block'}};
     const cs=document.getElementById('chatsend');if(cs)cs.onclick=()=>{{{post_js(f'/__chat/{slug}', '')}}};
     const f=document.getElementById('fol');if(f)f.onclick=()=>{{{post_js(f'/__follow/{slug}')}}};

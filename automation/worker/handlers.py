@@ -10,7 +10,7 @@ from typing import Dict, Optional
 
 from playwright.async_api import Error as PlaywrightError, Page
 
-from . import clicks, safety, verify
+from . import clicks, connect_engine, safety, verify
 from .api import Api
 from .browser import Browsers
 
@@ -87,8 +87,17 @@ class Runner:
         shot = await self.artifact(page, action["id"], code)
         await self.api.post(f"/automation/actions/{action['id']}/escalate", {"code": code, "text": text, "source": "worker", "screenshot": shot})
 
-    async def run_verify(self, page: Page, action: dict) -> None:
+    async def run_verify(self, page: Page, action: dict, engine: bool = False) -> None:
         proof, evidence = await verify.prove(page, action)
+        # the extension's flow reached the final click and nothing shows: when the profile still offers Connect, nothing went
+        # out, and the worker sends it itself (connect_engine: Playwright and the mouse). Only right after that click, once
+        if not proof and engine and action["kind"] == "connect" and action["lane"] != "ats" and not await self.stop_sign(page):
+            said = await connect_engine.fallback(page, action)
+            await self.api.post(f"/automation/actions/{action['id']}/events", {"source": "worker", "event": "connect_engine", "data": {"said": said}})
+            if said.startswith("sent"):
+                await page.wait_for_timeout(VERIFY_SETTLE_SECONDS * 1000)
+                proof, evidence = await verify.prove(page, action)
+                evidence = {**evidence, "engine": "connect_engine"}
         stop = await self.stop_sign(page)
         if stop and action["lane"] != "ats":
             await self.report_stop(page, action, stop, "Página de verificação do LinkedIn")
@@ -185,7 +194,7 @@ class Runner:
                 await self.settle(page, action, clicked)
                 # the page as the click left it (a dialog still open, a warning): the check reloads it and that is lost
                 await self.artifact(page, action_id, "after-click")
-                await self.run_verify(page, action)
+                await self.run_verify(page, action, engine=True)
                 return
             # the form stays open for the Claude routine; also when the routine was quicker than this loop and already sent it
             # (unknown_outcome): the page that proves it is this one, and the check that follows picks it up from self.kept
