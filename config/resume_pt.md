@@ -9,7 +9,7 @@ CREA-SC 108928-7
 
 ## RESUMO PROFISSIONAL
 
-Engenheiro sanitarista e ambiental com quase 18 anos em projetos de saneamento e infraestrutura, de estagiário a diretor financeiro de uma consultoria de engenharia. Coordenador geral e responsável técnico do Programa Lagoas do Norte (Teresina, financiado pelo Banco Mundial) e responsável técnico em 46 ARTs de abastecimento de água, esgotamento sanitário, drenagem e gestão ambiental. Une a engenharia à modelagem técnico-financeira — viabilidade (fluxo de caixa descontado) e modelagem tarifária de concessões, propostas das ~90 licitações por ano da empresa, orçamento, KPIs e BI como diretor financeiro — e a dados e IA, com sistemas próprios em Python, SQL e PostgreSQL.
+Engenheiro sanitarista e ambiental com quase 18 anos em projetos de saneamento e infraestrutura, de estagiário a diretor financeiro de uma consultoria de engenharia. Coordenador geral e responsável técnico do Programa Lagoas do Norte (Teresina, financiado pelo Banco Mundial) e responsável técnico em 46 ARTs de abastecimento de água, esgotamento sanitário, drenagem e gestão ambiental. Une a engenharia à modelagem técnico-financeira — viabilidade (fluxo de caixa descontado) e modelagem tarifária de concessões, propostas das ~90 licitações por ano da empresa, orçamento, KPIs e BI como diretor financeiro — e a dados e IA, com sistemas próprios em Python, SQL e PostgreSQL. Também liderei a infraestrutura de TI da empresa, com servidores redundantes, links de internet com failover, backup e VPN entre escritórios, o que me dá uma base de operação contínua e resiliente para rodar sistemas e automações de IA em produção.
 
 ---
 
@@ -18,6 +18,7 @@ Engenheiro sanitarista e ambiental com quase 18 anos em projetos de saneamento e
 - **Engenharia:** abastecimento de água, esgotamento sanitário, drenagem urbana, planos municipais de saneamento e planos diretores de drenagem, gestão e licenciamento ambiental, BIM
 - **Modelagem e finanças:** viabilidade técnico-econômica (fluxo de caixa descontado), modelagem tarifária, análise de concessões, CAPEX/OPEX, orçamento e KPIs, contabilidade de custos, precificação de propostas (técnica e preço, menor preço)
 - **Gestão:** coordenação de projetos multidisciplinares, contratos com prefeituras, companhias estaduais e órgãos federais, ISO 9001, ERP
+- **Infraestrutura de TI:** Active Directory, administração do tenant Microsoft 365, SharePoint (local e Online), Power Apps (canvas e model-driven), file server (+30 TB), backup, VPN, redes multiescritório, alta disponibilidade (servidores redundantes, nobreak, links com failover)
 - **Dados e IA:** Python, SQL, PostgreSQL, Power BI, Excel avançado, previsão de séries temporais, modelos estatísticos, automações e agentes de IA
 
 ---
@@ -53,6 +54,13 @@ Tipos de projeto: projetos de saneamento, programa financiado pelo Banco Mundial
 - Gestão de 5 a 7 contratos simultâneos (~R$ 20 milhões/ano), de R$ 1 a 2 milhões cada, para empreendimentos de R$ 100 a 800 milhões.
 - Propostas financeiras das ~90 licitações por ano da empresa (técnica e preço e menor preço) e metodologia de precificação por métricas objetivas que reduziu muito o tempo de elaboração.
 - Implantação do ERP, migração para o SharePoint Online com equipe interna, ISO 9001 e implantação do BIM.
+
+**Liderança da Infraestrutura de TI**
+Tipos de projeto: infraestrutura local multiescritório, alta disponibilidade, migração para a nuvem.
+- Responsável pela infraestrutura de TI da empresa, com diversos escritórios interligados à rede local por VPN: Active Directory, administração do tenant Microsoft 365 e file server local com mais de 30 TB.
+- Alta disponibilidade e continuidade da operação: 2 servidores redundantes em paralelo, nobreak local implantado e mantido, rotinas de backup do servidor local e 3 links de internet, sendo 1 dedicado com failover.
+- Implantação do SharePoint local em 2012 e, depois, migração para o SharePoint Online (nuvem).
+- Desenvolvimento de aplicativos Power Apps, canvas e model-driven.
 
 **Estagiário de Engenharia** | mai 2008 – ago 2011
 - Propostas financeiras, projetos de esgoto e de tratamento de esgoto, análise de alternativas, orçamentos e relatórios técnicos.

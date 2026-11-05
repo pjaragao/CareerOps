@@ -9,7 +9,7 @@ pjaragaojr@gmail.com | +55 00 00000-0000 | linkedin.com/in/paulojrarj | github.c
 
 ## PROFESSIONAL SUMMARY
 
-Former CFO and engineer with 15+ years in infrastructure finance, now building data, modeling and AI systems end to end. I build the models people decide with — DCF feasibility and tariff models for utility concessions, pricing for ~90 tenders a year, budgets, KPIs and BI — and the software around them: statistical forecasting (a Bayesian election-night projection model calibrated on three past elections), financial systems with double-entry ledgers and 2,000+ automated tests, and LLM agents where every number comes from the database. Python, SQL and PostgreSQL every day. A background as a sanitary and environmental engineer — including general coordination of a World Bank–financed urban program — gives me real domain depth in infrastructure, utilities and project finance.
+Former CFO and engineer with 15+ years in infrastructure finance, now building data, modeling and AI systems end to end. I build the models people decide with — DCF feasibility and tariff models for utility concessions, pricing for ~90 tenders a year, budgets, KPIs and BI — and the software around them: statistical forecasting (a Bayesian election-night projection model calibrated on three past elections), financial systems with double-entry ledgers and 2,000+ automated tests, and LLM agents where every number comes from the database. Python, SQL and PostgreSQL every day. A background as a sanitary and environmental engineer — including general coordination of a World Bank–financed urban program — gives me real domain depth in infrastructure, utilities and project finance. I also led the company's IT infrastructure — redundant servers, failover internet links, backups and multi-office VPN — so I know how to keep systems, and the AI automations on top of them, running reliably and continuously in production.
 
 ---
 
@@ -18,6 +18,7 @@ Former CFO and engineer with 15+ years in infrastructure finance, now building d
 - **Modeling & analytics:** financial modeling, DCF and feasibility studies, concession and tariff modeling, valuation, forecasting (Bayesian hierarchical models, TimesFM), backtesting, budgeting and variance analysis, KPI design, cost accounting, pricing
 - **Data & software:** Python, SQL, PostgreSQL (PL/pgSQL, pgTAP), data pipelines, Power BI, Excel, REST APIs, Docker, GitHub Actions CI/CD, TypeScript/Next.js
 - **AI:** LLM applications and agents, tool calling and MCP, guardrails and human-in-the-loop, prompt engineering, multi-provider model routing
+- **IT infrastructure:** Active Directory, Microsoft 365 tenant administration, SharePoint (on-premises and Online), Power Apps (canvas and model-driven), file server (30+ TB), backup, VPN, multi-office networking, high availability (redundant servers, UPS, failover internet links)
 - **Domain:** infrastructure and utilities (water, wastewater, drainage), project finance, public procurement (QCBS/LCS), ERP, BIM
 
 ---
@@ -62,6 +63,13 @@ Project types: feasibility and tariff modeling, concession analysis, tender pric
 - General coordinator and engineer of record for the **World Bank–financed Lagoas do Norte Program** in Teresina (Feb 2014 – Jul 2019): proposal and integrated design of sewerage for 312,000 residents, 28 km of drainage, water, roads, a 1 MW biogas plant and BIM-modeled urban design across ~1,300 ha.
 - Engineer of record on 46 registered engagements, including the Mearim river-basin plan (99,000 km², 2.1M people), water systems for state utilities (up to 1,250 L/s) and environmental management of highway programs (BR-470 for DNIT; Arteris concession, 357 km).
 - Led the firm's ERP, SharePoint Online and BIM transformations with in-house staff.
+
+**IT Infrastructure Lead**
+Project types: multi-office on-premises infrastructure, high availability, cloud migration.
+- Owned the firm's IT infrastructure, with several offices joined to the local network over VPN: Active Directory, Microsoft 365 tenant administration and the on-premises file server (30+ TB).
+- Built for high availability and continuous operation: 2 redundant servers running in parallel, on-site UPS installed and maintained, local-server backup routines and 3 internet links, 1 of them dedicated with failover.
+- Deployed on-premises SharePoint in 2012, then migrated it to SharePoint Online (cloud).
+- Built Power Apps, both canvas and model-driven.
 
 **Engineering Intern** | May 2008 – Aug 2011
 
