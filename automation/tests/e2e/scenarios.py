@@ -194,6 +194,20 @@ def main():
     check("connect whose first Send is lost: the worker's engine sends it again, invited once, proof read",
           row["status"] == "done" and fake_state()["invited"].count("lostsend") == 1 and engine and engine[0]["data"]["said"].startswith("sent"),
           f"{row['status']} {row['error_code']} {row['error_text']} {fake_state()['invited']} {engine}")
+    # Gavin Nicholls, 2026-11-05: Connect is a link on top of the card (no menu), the name an <h2>, real clicks only
+    ti = propose("connect", "connect-topinvite", "https://www.linkedin.com/in/topinvite", {"profile_url": "x", "name": "Topinvite"})
+    call("POST", f"/automation/actions/{ti}/approve", {})
+    row = wait_status(ti, ("done", "needs_user", "escalated", "discarded"), 150)
+    check("connect from a link on top of the card that answers only real clicks: invited once, proof read",
+          row["status"] == "done" and fake_state()["invited"].count("topinvite") == 1, f"{row['status']} {row['error_code']} {row['error_text']} {fake_state()['invited']}")
+    # Send never gets it out: the page proves nothing went out, so it goes to the Claude routine, never "check before repeating" to you
+    ns = propose("connect", "connect-neversend", "https://www.linkedin.com/in/neversend", {"profile_url": "x", "name": "Neversend"})
+    call("POST", f"/automation/actions/{ns}/approve", {})
+    row = wait_status(ns, ("done", "needs_user", "escalated", "discarded"), 180)
+    check("connect that never goes out: to the Claude routine as not sent, not 'check on LinkedIn' to you",
+          row["status"] == "escalated" and row["error_code"] == "unexpected_layout" and "neversend" not in fake_state()["invited"]
+          and not (action(ns)["result"] or {}).get("executed"), f"{row['status']} {row['error_code']} {row['error_text']}")
+    call("POST", f"/automation/actions/{ns}/cancel")   # out of the Claude routine's queue used further on
     # the invite dialog as LinkedIn drew it on 2026-11-05 (no e-mail; "Send without a note" is a div[role=button]) and a Pending
     # that exists only in an aria-label: both layers must still work next to the old layout above
     nd = propose("connect", "connect-notedlg", "https://www.linkedin.com/in/notedlg", {"profile_url": "x", "name": "Notedlg"})

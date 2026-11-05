@@ -552,6 +552,12 @@ async def bot_ack(req: AckIn):
     return {"acked": BotService.ack(req.ids)}
 
 
+@router.get("/bot/summary", dependencies=[Depends(require_decider)])
+async def bot_summary():
+    """The short summary for the good morning and when you ask: what waits for you, and the link."""
+    return {"text": BotService.summary_text()}
+
+
 @router.get("/bot/overview", dependencies=[Depends(require_decider)])
 async def bot_overview():
     return {"text": BotService.overview_text()}

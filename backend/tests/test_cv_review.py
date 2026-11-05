@@ -127,8 +127,8 @@ def test_still_wrong_after_the_rounds_it_waits_for_you_with_the_reasons(approved
     assert action["status"] == "review_docs" and action["error_code"] == "cv_review_failed"
     assert "certificação AWS inventada" in action["error_text"]
     BotService.collect()
-    told = sql("SELECT text FROM public.bot_notifications WHERE kind = 'action_review_docs'")[0]["text"]
-    assert "O revisor não aprovou" in told and "certificação AWS inventada" in told
+    told = sql("SELECT text FROM public.bot_notifications WHERE kind = 'summary'")[0]["text"]
+    assert "1 CV para revisar" in told   # the reasons are on the site, behind the link
 
 
 def test_only_the_document_with_a_problem_is_redone(db, add_job, reviewer):

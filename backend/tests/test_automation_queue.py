@@ -701,3 +701,15 @@ def test_de_novo_after_a_failed_check_sends_again_instead_of_checking_forever(db
     again = Auto.retry(got["id"])
     assert again["status"] == "queued" and not again["result"].get("executed") and again["result"]["previous"]["executed"]
     assert claim()["action"]["id"] == got["id"]   # a real send, not only a look
+
+
+def test_an_invite_the_page_proves_not_sent_goes_to_claude_not_to_you(db):
+    """2026-11-05 (Gavin Nicholls): reloaded, sent list read, Connect still offered: nothing went out."""
+    got = Auto.create_action("connect", "ns", "Pessoa", "https://www.linkedin.com/in/ns", {"name": "Pessoa"}, status="queued")
+    claimed = claim()["action"]
+    assert claimed["id"] == got["id"]
+    _one("UPDATE public.automation_actions SET status = 'verifying', result = '{\"executed\": true}' WHERE id = %s RETURNING id", (got["id"],))
+    Auto.verify(got["id"], False, {"not_sent": True})
+    row = _one("SELECT status, error_code, result FROM public.automation_actions WHERE id = %s", (got["id"],))
+    assert row["error_code"] == "unexpected_layout" and not row["result"].get("executed") and row["result"]["previous"]["executed"]
+    assert row["status"] in ("escalated", "needs_user")   # Claude when its lane is on, else you, told it did not go out

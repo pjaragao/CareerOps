@@ -95,8 +95,7 @@ def test_lolo_is_told_what_came_in_only_when_he_asked(db, sql, monkeypatch):
         sql("UPDATE public.automation_actions SET status = 'done', result = %s, finished_at = NOW() WHERE id = %s",
             (automation_service.Json(result), a["id"]))
     BotService.collect()
-    texts = [r["text"] for r in sql("SELECT text FROM public.bot_notifications")]
-    assert texts == ["📥 *Vagas salvas*: 3 nova(s) no CareerOps, a caminho da lista para aprovar; 12 já estava(m) lá."]
+    assert sql("SELECT text FROM public.bot_notifications") == []   # no message of its own: the jobs come in the summary
 
 
 def test_settings_and_run_through_the_api(db, client):

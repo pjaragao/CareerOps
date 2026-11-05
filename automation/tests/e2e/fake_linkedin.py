@@ -98,6 +98,11 @@ def profile_page(slug):
         item = "Unfollow" if slug in STATE["following"] else "Follow"
         actions = (f'<button>Message</button><button id="more">More</button><div id="menu" role="menu" style="display:none">'
                    f'<div role="menuitem" id="mfol" tabindex="0" aria-label="{item} First Lima">{item}</div><div role="menuitem" tabindex="0">Remove connection</div></div>')
+    elif slug in ("topinvite", "neversend"):
+        # 2026-11-05 (Gavin Nicholls): Connect is a link to /preload/custom-invite/ on top of the card, the name an <h2>, and
+        # both the link and the dialog's Send answer only a real click. "neversend": Send never gets the invite out
+        actions = (f'<a id="mconn" href="/preload/custom-invite/?vanityName={slug}" aria-label="Invite {slug.title()} Lima to connect">'
+                   f'<span>Connect</span></a><button id="fol">Following</button><button id="more">More</button>')
     elif slug in ("menu", "deadmenu", "realmenu", "scriptsend", "lostsend"):
         # late 2026: Follow on top, Connect only in the More menu, as a link to /preload/custom-invite/. On "deadmenu" the
         # click opens nothing, and a chat with its own Send is open on the page: that one must never be clicked. On
@@ -114,8 +119,9 @@ def profile_page(slug):
         actions = "<button>Following</button><button>More</button>"
     else:
         actions = f"""<button id="conn" aria-label="Invite {slug.title()} Lima to connect">Connect</button><button id="fol">Follow</button><button>More</button>"""
+    heading = "h2" if slug in ("topinvite", "neversend") else "h1"
     # late 2026: the invite dialog lives in the closed shadow root of #interop-outlet, with a note about the e-mail
-    body = f"""<section><div><h1>{slug.title()} Lima</h1><div class="text-body-medium">CFO</div><div class="row">{actions}</div></div></section>
+    body = f"""<section><div><{heading}>{slug.title()} Lima</{heading}><div class="text-body-medium">CFO</div><div class="row">{actions}</div></div></section>
       <div id="interop-outlet" data-testid="interop-shadowdom"></div>"""
     script = f"""const root=document.getElementById('interop-outlet').attachShadow({{mode:'closed'}});
     // "notedlg": the dialog as LinkedIn drew it on 2026-11-05: no e-mail anywhere, "Add a note" next to a "Send without a note" that is no <button>
@@ -123,13 +129,14 @@ def profile_page(slug):
       ? '<div id="dlg" role="dialog" style="display:none"><p>Dialog content start. Add a note to your invitation? Personalize your invitation by adding a note.</p><button>Add a note</button><div id="nonote" role="button" tabindex="0" aria-label="Send without a note"><span>Send without a note</span></div></div>'
       : '<div id="dlg" role="dialog" style="display:none"><p>Add a note? If you know their e-mail, add it.</p><input type="email"><button id="nonote">Send without a note</button></div>';
     const c=document.getElementById('conn');if(c)c.onclick=()=>{{root.getElementById('dlg').style.display='block'}};
-    const real='{slug}'==='realmenu';
+    const real=['realmenu','topinvite','neversend'].includes('{slug}');
     const hide=()=>{{root.getElementById('dlg').style.display='none'}};
     root.getElementById('nonote').onclick=(e)=>{{if(real&&!e.isTrusted)return;
       if('{slug}'==='scriptsend'&&!e.isTrusted){{hide();return}}
+      if('{slug}'==='neversend'){{hide();return}}
       if('{slug}'==='lostsend'&&!localStorage.getItem('lost')){{localStorage.setItem('lost','1');hide();return}}
       {post_js(f'/__invite/{slug}')}}};
-    const mc=document.getElementById('mconn');if(mc)mc.onclick=(e)=>{{e.preventDefault();if(real&&!e.isTrusted)return;document.getElementById('menu').style.display='none';if('{slug}'!=='deadmenu')root.getElementById('dlg').style.display='block'}};
+    const mc=document.getElementById('mconn');if(mc)mc.onclick=(e)=>{{e.preventDefault();if(real&&!e.isTrusted)return;const mn=document.getElementById('menu');if(mn)mn.style.display='none';if('{slug}'!=='deadmenu')root.getElementById('dlg').style.display='block'}};
     const cs=document.getElementById('chatsend');if(cs)cs.onclick=()=>{{{post_js(f'/__chat/{slug}', '')}}};
     const f=document.getElementById('fol');if(f)f.onclick=()=>{{{post_js(f'/__follow/{slug}')}}};
     const mo=document.getElementById('more');if(mo&&document.getElementById('menu'))mo.onclick=()=>{{const m=document.getElementById('menu');m.style.display=m.style.display==='none'?'block':'none'}};

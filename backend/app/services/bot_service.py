@@ -20,6 +20,18 @@ from app.services.automation_service import AutomationService, _local, _one, _ro
 log = logging.getLogger("bot")
 
 KIND_LABEL = {"apply": "Vagas", "comment": "Comentários", "connect": "Conexões", "follow": "Seguir"}
+# the summary (2026-11-05): "5 vagas, 3 comentários e 1 conexão", one message, at most every digest_minutes
+KIND_COUNT = {"apply": ("vaga", "vagas"), "comment": ("comentário", "comentários"), "connect": ("conexão", "conexões"),
+              "follow": ("perfil para seguir", "perfis para seguir")}
+YOURS = {"needs_user": ("precisa de você", "precisam de você"), "review_docs": ("CV para revisar", "CVs para revisar"),
+         "awaiting_confirm": ("pronta para o clique final", "prontas para o clique final")}
+WAITING = ("proposed",) + tuple(YOURS)
+SENT_KINDS = ("summary", "halt")   # all else is counted in the summary, never sent on its own
+
+
+def _and(parts: List[str]) -> str:
+    parts = [p for p in parts if p]
+    return ", ".join(parts[:-1]) + f" e {parts[-1]}" if len(parts) > 1 else (parts[0] if parts else "")
 STATUS_LABEL = {"applied": "candidatura enviada", "interviewing": "em entrevista", "offer": "proposta", "rejected": "recusada",
                 "done": "encerrada", "new": "nova", "discovered": "descoberta", "archived": "arquivada"}
 POST_PATH = re.compile(r"^/(posts/[^/]+|feed/update/urn:li:(activity|share|ugcPost|groupPost):[\d-]+)/?$")
@@ -131,10 +143,12 @@ class BotService:
 
     @staticmethod
     def pending(limit: int = 20) -> List[dict]:
-        """What is still to be sent, oldest first. At night only what is urgent; the rest waits for the morning."""
+        """What is still to be sent, oldest first: only the summary and a stop of the automation (2026-11-05: one short
+        message, not one per item). Everything else is counted in the next summary. At night only what is urgent."""
         urgent_only = BotService.quiet()
         return _rows(f"""SELECT id, kind, urgent, text, data, created_at FROM public.bot_notifications
-                          WHERE delivered_at IS NULL {"AND urgent" if urgent_only else ""} ORDER BY id LIMIT %s""", (limit,))
+                          WHERE delivered_at IS NULL AND kind = ANY(%s) {"AND urgent" if urgent_only else ""} ORDER BY id LIMIT %s""",
+                     (list(SENT_KINDS), limit))
 
     @staticmethod
     def ack(ids: List[int]) -> int:
@@ -144,9 +158,74 @@ class BotService:
     @staticmethod
     def collect() -> int:
         made = BotService._halt_notice()
-        made += BotService._status_notices()
-        made += BotService._proposals_digest()
+        made += BotService._summary_tick()
         return made
+
+    # ── The summary: the one message about what is waiting for you on the site ──
+    @staticmethod
+    def _waiting() -> Dict[str, Dict[str, int]]:
+        """{status: {kind: n}} of what waits for you."""
+        out: Dict[str, Dict[str, int]] = {}
+        for r in _rows("""SELECT status, kind, COUNT(*) AS n FROM public.automation_actions WHERE status = ANY(%s) GROUP BY status, kind""",
+                       (list(WAITING),)):
+            out.setdefault(r["status"], {})[r["kind"]] = r["n"]
+        return out
+
+    @staticmethod
+    def _kinds_text(by_kind: Dict[str, int]) -> str:
+        parts = [f"{n} {KIND_COUNT[k][0 if n == 1 else 1]}" for k in KIND_COUNT if (n := by_kind.get(k))]
+        parts += [f"{n} outra(s)" for k, n in by_kind.items() if k not in KIND_COUNT and n]
+        return _and(parts)
+
+    @staticmethod
+    def _yours_text(waiting: Dict[str, Dict[str, int]]) -> str:
+        parts = [f"{n} {label[0 if n == 1 else 1]}" for status, label in YOURS.items() if (n := sum((waiting.get(status) or {}).values()))]
+        return _and(parts)
+
+    @staticmethod
+    def summary_text(news: Optional[Dict[str, Dict[str, int]]] = None, emails: int = 0) -> str:
+        """Short: what is new (when given), what is waiting now, and the link. Also for the good morning and on request."""
+        waiting = BotService._waiting()
+        approve, yours = BotService._kinds_text(waiting.get("proposed") or {}), BotService._yours_text(waiting)
+        lines = ["🗂️ *CareerOps*"]
+        if news:
+            new = _and([t for t in (BotService._kinds_text(news.get("proposed") or {}), BotService._yours_text(news)) if t])
+            if new:
+                lines[0] += f" · novas: {new}"
+        if approve or yours:
+            lines.append("Agora: " + "; ".join(t for t in (approve and f"{approve} para aprovar", yours) if t) + ".")
+        else:
+            lines.append("Nada esperando por você.")
+        if emails:
+            lines.append(f"📬 {emails} e-mail(s) novo(s) sobre candidaturas.")
+        lines.append(BotService.approval_link())
+        return "\n".join(lines)
+
+    @staticmethod
+    def _summary_tick() -> int:
+        """At most one summary per digest_minutes, and only when something new came in. Not at night: the morning one says it."""
+        if BotService.quiet():
+            return 0
+        minutes = int(_cfg().get("digest_minutes", 30))
+        if _one("SELECT 1 AS y FROM public.bot_notifications WHERE kind = 'summary' AND created_at > NOW() - make_interval(mins => %s)", (minutes,)):
+            return 0
+        # it left the status you were told about: coming back to it is news again
+        _rows("""UPDATE public.automation_actions SET notified_status = NULL
+                  WHERE notified_status = ANY(%s) AND status <> notified_status""", (list(WAITING),))
+        fresh = _rows("""SELECT id, kind, status FROM public.automation_actions
+                          WHERE status = ANY(%s) AND notified_status IS DISTINCT FROM status""", (list(WAITING),))
+        folded = _rows("""SELECT id, kind FROM public.bot_notifications WHERE delivered_at IS NULL AND NOT (kind = ANY(%s))""", (list(SENT_KINDS),))
+        emails = sum(1 for n in folded if n["kind"].startswith("email_") and n["kind"] != "email_summary")
+        if folded:   # counted here, never sent one by one
+            _rows("UPDATE public.bot_notifications SET delivered_at = NOW() WHERE id = ANY(%s)", ([n["id"] for n in folded],))
+        if not fresh and not emails:
+            return 0
+        news: Dict[str, Dict[str, int]] = {}
+        for a in fresh:
+            news.setdefault(a["status"], {})
+            news[a["status"]][a["kind"]] = news[a["status"]].get(a["kind"], 0) + 1
+        _rows("UPDATE public.automation_actions SET notified_status = status WHERE id = ANY(%s)", ([a["id"] for a in fresh],))
+        return bool(BotService.notify("summary", BotService.summary_text(news, emails), {"news": news, "emails": emails}))
 
     @staticmethod
     def _halt_notice() -> int:
@@ -159,103 +238,6 @@ class BotService:
             "Nada mais roda no LinkedIn até você religar. Se foi um aviso do LinkedIn, abra o navegador do servidor antes: "
             f"{settings.CAREEROPS_NOVNC_URL}\nPara religar, me diga “religar automação”."),
             {"halted_at": str(state["halted_at"])}, urgent=True, key=f"halt:{state['halted_at'].isoformat()}"))
-
-    @staticmethod
-    def _mark(action_id: int, status: str) -> bool:
-        """Whether this status is news: it is recorded now, so it is told once."""
-        return bool(_one("""UPDATE public.automation_actions SET notified_status = %s
-                             WHERE id = %s AND notified_status IS DISTINCT FROM %s RETURNING id""", (status, action_id, status)))
-
-    @staticmethod
-    def _status_notices() -> int:
-        made = 0
-        # it left the status you were told about: coming back to it is news again
-        _rows("""UPDATE public.automation_actions SET notified_status = NULL
-                  WHERE notified_status IN ('needs_user', 'review_docs', 'awaiting_confirm') AND status <> notified_status""")
-        done_kinds = list(_cfg().get("done_kinds") or ["apply", "comment"])
-        for a in _rows("""
-            SELECT a.*, j.company, j.job_title FROM public.automation_actions a
-              LEFT JOIN public.job_listings j ON a.target_type = 'job' AND j.id = a.target_id
-             WHERE a.notified_status IS DISTINCT FROM a.status
-               AND (a.status IN ('needs_user', 'review_docs', 'awaiting_confirm')
-                    OR (a.status = 'done' AND a.kind = ANY(%s) AND a.finished_at > NOW() - INTERVAL '1 day')
-                    OR (a.status = 'done' AND a.kind = 'saved_import' AND a.run_now AND a.finished_at > NOW() - INTERVAL '1 day'))
-             ORDER BY a.id LIMIT 30""", (done_kinds,)):
-            if not BotService._mark(a["id"], a["status"]):
-                continue
-            BotService.notify(f"action_{a['status']}", *BotService._status_text(a))
-            made += 1
-        return made
-
-    @staticmethod
-    def _status_text(a: dict):
-        title = a.get("title") or ""
-        if a["status"] == "needs_user":
-            questions = [q for q in (a.get("questions") or []) if isinstance(q, dict)]
-            lines = [f"🙋 *Precisa de você* · {title}", a.get("error_text") or a.get("error_code") or ""]
-            if questions:
-                lines.append("Perguntas do formulário:")
-                lines += [f"• {q.get('label') or q.get('question') or '(pergunta sem texto na página)'}" + (f" (opções: {', '.join(str(o) for o in q['options'][:6])})" if q.get("options") else "")
-                          for q in questions[:8]]
-                lines.append("Responda a esta mensagem (ex.: “aviso prévio = 30 dias”); a resposta fica salva para as próximas.")
-            elif a.get("error_code") in ("captcha", "account_required", "email_verification", "session_expired", "checkpoint"):
-                lines.append(f"Isso se resolve no navegador do servidor: {settings.CAREEROPS_NOVNC_URL}")
-                lines.append("Depois responda a esta mensagem com “de novo”.")
-            elif a.get("error_code") == "confirm_timeout":   # your OK still counts: it is filled again and sent without another wait
-                lines.append("Responda a esta mensagem com “ok” (preenche de novo e envia, sem esperar outra vez) ou “não” (desiste).")
-            else:
-                lines.append("Responda a esta mensagem com “de novo” ou “não” (desiste).")
-            return "\n".join(l for l in lines if l), {"action_id": a["id"], "questions": questions, "reply": "needs_user",
-                                                         "error_code": a.get("error_code")}, False
-        if a["status"] == "review_docs":
-            job = a.get("target_id")
-            files = [{"name": "CV", "path": f"/api/jobs/{job}/document.pdf?kind=resume"},
-                     {"name": "Carta", "path": f"/api/jobs/{job}/document.pdf?kind=cover"}]
-            if a.get("error_code") == "cv_review_failed":   # the reviewer agent sent it back and the redo still failed
-                return (f"📄 *O revisor não aprovou o CV* · {a.get('job_title') or title} · {a.get('company') or ''}\n"
-                        f"{a.get('error_text') or ''}\n"
-                        "Mando o CV e a carta. Responda a esta mensagem com “ok” para enviar assim mesmo, ou “não” para desistir da vaga."), \
-                    {"action_id": a["id"], "files": files, "reply": "review_docs"}, False
-            return (f"📄 *CV para revisar* · {a.get('job_title') or title} · {a.get('company') or ''}\n"
-                    "Mando o CV e a carta em seguida. Responda a esta mensagem com “ok” se estiver bom, ou “não” para desistir."), \
-                {"action_id": a["id"], "files": files, "reply": "review_docs"}, False
-        if a["status"] == "awaiting_confirm":
-            return (f"🟢 *Pronto para enviar* · {title}\nO formulário está preenchido e parado no botão Enviar. "
-                    "Responda a esta mensagem com “ok” para o clique final, ou “não” para desistir. "
-                    "Ele espera 30 minutos; depois disso, o “ok” ainda vale: preenche de novo e envia."), {"action_id": a["id"], "reply": "awaiting_confirm"}, True
-        if a["kind"] == "saved_import":   # only the one you asked for: the hourly ones are quiet
-            r = a.get("result") or {}
-            new = (r.get("added") or 0) + (r.get("promoted") or 0)
-            seen = max((r.get("known") or 0) - (r.get("promoted") or 0), 0)
-            return ("📥 *Vagas salvas*: " + (f"{new} nova(s) no CareerOps, a caminho da lista para aprovar" if new else "nenhuma nova")
-                    + (f"; {seen} já estava(m) lá" if seen else "")
-                    + (f"; {r['no_text']} sem texto do anúncio, tento na próxima" if r.get("no_text") else "") + "."), {"action_id": a["id"]}, False
-        if a["kind"] == "comment":
-            return f"💬 Comentário publicado no post de {(a.get('payload') or {}).get('author') or title}.", {"action_id": a["id"]}, False
-        return f"✅ *Candidatura enviada* · {a.get('job_title') or title} · {a.get('company') or ''}", {"action_id": a["id"]}, False
-
-    @staticmethod
-    def _proposals_digest() -> int:
-        fresh = _rows("SELECT id FROM public.automation_actions WHERE status = 'proposed' AND notified_status IS DISTINCT FROM 'proposed' LIMIT 1")
-        if not fresh:
-            return 0
-        minutes = int(_cfg().get("digest_minutes", 30))
-        if _one("SELECT 1 AS y FROM public.bot_notifications WHERE kind = 'proposals' AND created_at > NOW() - make_interval(mins => %s)", (minutes,)):
-            return 0
-        items = _rows("""UPDATE public.automation_actions SET notified_status = 'proposed'
-                          WHERE status = 'proposed' AND notified_status IS DISTINCT FROM 'proposed' RETURNING id, kind""")
-        ids = [i["id"] for i in items]
-        kinds = [k for k in KIND_LABEL if any(i["kind"] == k for i in items)]
-        # a long list reads better one subject at a time: one message per kind, each with the list filtered to it
-        if len(ids) <= int(_cfg().get("split_over", 8)) or len(kinds) < 2:
-            text, shown = BotService.inbox(ids, header=f"🗂️ *Para aprovar* ({len(ids)} nova(s))")
-            return bool(BotService.notify("proposals", text, {"ids": shown, "reply": "list"}))
-        made = 0
-        for kind in kinds:
-            group = [i["id"] for i in items if i["kind"] == kind]
-            text, shown = BotService.inbox(group, header=f"🗂️ *Para aprovar · {KIND_LABEL[kind]}* ({len(group)} nova(s))", kind=kind)
-            made += bool(BotService.notify("proposals", text, {"ids": shown, "kind": kind, "reply": "list"}))
-        return made
 
     # ── Texts for the bot's answers ──────────────────────────────────────
     @staticmethod

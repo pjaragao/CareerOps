@@ -92,12 +92,17 @@ class Runner:
         # the extension's flow reached the final click and nothing shows: when the profile still offers Connect, nothing went
         # out, and the worker sends it itself (connect_engine: Playwright and the mouse). Only right after that click, once
         if not proof and engine and action["kind"] == "connect" and action["lane"] != "ats" and not await self.stop_sign(page):
-            said = await connect_engine.fallback(page, action)
+            said, offered = await connect_engine.fallback(page, action)
             await self.api.post(f"/automation/actions/{action['id']}/events", {"source": "worker", "event": "connect_engine", "data": {"said": said}})
-            if said.startswith("sent"):
-                await page.wait_for_timeout(VERIFY_SETTLE_SECONDS * 1000)
+            if said.startswith("sent") or offered:
+                if said.startswith("sent"):
+                    await page.wait_for_timeout(VERIFY_SETTLE_SECONDS * 1000)
                 proof, evidence = await verify.prove(page, action)
-                evidence = {**evidence, "engine": "connect_engine"}
+                evidence = {**evidence, "engine": said[:300]}
+                # the profile was reloaded, the sent list read, and Connect is still offered: nothing went out, also after
+                # the engine's own click. Said so, and the backend sends it to the Claude routine instead of asking you to look
+                if not proof and (await connect_engine.offers_connect(page, clicks.profile_slug(action["target_url"])))[0]:
+                    evidence = {**evidence, "not_sent": True}
         stop = await self.stop_sign(page)
         if stop and action["lane"] != "ats":
             await self.report_stop(page, action, stop, "Página de verificação do LinkedIn")

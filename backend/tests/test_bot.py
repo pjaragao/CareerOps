@@ -39,44 +39,76 @@ def test_only_the_bot_takes_its_notifications(db, client):
     assert client.get("/api/automation/bot/notifications", headers=BOT).status_code == 200
 
 
-# ── What it is told ──────────────────────────────────────────────────────
-def test_new_proposals_come_together_once(db, sql, awake):
-    a, b = proposed_comment("c1"), proposed_comment("c2", "Outro ponto")
-    BotService.collect()
-    BotService.collect()
-    digest = notes(sql, "proposals")
-    assert len(digest) == 1
-    # numbered lines, no ids: Lolo keeps which id each line is, and a reply "ok 1 3" is about those lines
-    assert "*1.*" in digest[0]["text"] and "*2.*" in digest[0]["text"] and "Outro ponto" in digest[0]["text"]
-    assert f"#{a['id']}" not in digest[0]["text"] and sorted(digest[0]["data"]["ids"]) == sorted([a["id"], b["id"]])
-    assert digest[0]["data"]["reply"] == "list"
+# ── What it is told: one short summary, at most every 30 minutes (2026-11-05) ──
+def summaries(sql):
+    return notes(sql, "summary")
 
 
-def test_the_digest_links_to_the_approval_list(db, sql, awake):
-    proposed_comment("c1")
-    BotService.collect()
-    assert "/automacao?tab=aprovar" in notes(sql, "proposals")[0]["text"]
-
-
-def test_a_long_digest_comes_one_message_per_kind(db, sql, add_job, awake):
-    comments = [proposed_comment(f"c{i}", f"Ponto {i}") for i in range(6)]
-    jobs = [Auto.propose_job(add_job(job_id=str(200 + i), status="new")) for i in range(4)]
-    sql("UPDATE public.job_listings SET triage_score = 88, eligibility_status = 'blocked', "
-        "eligibility_issues = '[{\"type\": \"residency\", \"quote\": \"US only\"}]'::jsonb")
-    BotService.collect()
-    digest = notes(sql, "proposals")
-    assert [d["data"]["kind"] for d in digest] == ["apply", "comment"]
-    vagas, posts = digest[0]["text"], digest[1]["text"]
-    assert "Vagas" in vagas and "&tipo=apply" in vagas and "*4.*" in vagas and sorted(digest[0]["data"]["ids"]) == sorted(j["id"] for j in jobs)
-    assert "fit 88" in vagas and "🔴 residência" in vagas
-    assert "&tipo=comment" in posts and "*6.*" in posts and sorted(digest[1]["data"]["ids"]) == sorted(c["id"] for c in comments)
-
-
-def test_a_short_digest_stays_one_message(db, sql, add_job, awake):
-    proposed_comment("c1")
+def test_new_items_come_as_one_short_summary_with_counts_and_the_link(db, sql, add_job, awake):
+    proposed_comment("c1"), proposed_comment("c2", "Outro ponto")
     Auto.propose_job(add_job(status="new"))
+    Auto.create_action("connect", "p1", "Bia", "https://www.linkedin.com/in/bia", {"name": "Bia"}, target_type="url", rank=20)
     BotService.collect()
-    assert len(notes(sql, "proposals")) == 1
+    BotService.collect()
+    told = summaries(sql)
+    assert len(told) == 1 and len(notes(sql)) == 1
+    text = told[0]["text"]
+    assert "novas: 1 vaga, 2 comentários e 1 conexão" in text and "Agora: 1 vaga, 2 comentários e 1 conexão para aprovar." in text
+    assert "/automacao?tab=aprovar" in text and "Outro ponto" not in text and len(text.splitlines()) <= 4
+
+
+def test_a_new_summary_waits_for_the_interval_and_says_what_is_new(db, sql, awake):
+    proposed_comment("c1")
+    BotService.collect()
+    proposed_comment("c2"), proposed_comment("c3")
+    BotService.collect()
+    assert len(summaries(sql)) == 1
+    sql("UPDATE public.bot_notifications SET created_at = NOW() - INTERVAL '31 minutes'")
+    BotService.collect()
+    told = summaries(sql)
+    assert len(told) == 2 and "novas: 2 comentários" in told[1]["text"] and "Agora: 3 comentários para aprovar." in told[1]["text"]
+    sql("UPDATE public.bot_notifications SET created_at = NOW() - INTERVAL '31 minutes'")
+    BotService.collect()
+    assert len(summaries(sql)) == 2   # nothing new: nothing said
+
+
+def test_what_needs_you_is_counted_in_the_summary_not_sent_on_its_own(db, sql, add_job, awake):
+    action = proposed_comment()
+    Auto._to_user(action["id"], "unknown_required_question", "Pergunta nova", [{"label": "Notice period?"}])
+    job = Auto.propose_job(add_job(status="new"))
+    sql("UPDATE public.automation_actions SET status = 'review_docs' WHERE id = %s", (job["id"],))
+    BotService.collect()
+    assert [n["kind"] for n in notes(sql)] == ["summary"]
+    text = summaries(sql)[0]["text"]
+    assert "1 precisa de você e 1 CV para revisar" in text and "Notice period?" not in text
+
+
+def test_other_notices_are_counted_never_delivered(db, sql, awake):
+    BotService.notify("email_reply", "Resposta da Acme")
+    BotService.notify("action_done", "Comentário publicado")
+    assert BotService.pending() == []
+    BotService.collect()
+    told = summaries(sql)
+    assert len(told) == 1 and "📬 1 e-mail(s) novo(s)" in told[0]["text"]
+    assert [n["kind"] for n in BotService.pending()] == ["summary"]
+
+
+def test_the_summary_on_request_says_what_waits(db, client, awake):
+    proposed_comment("c1")
+    text = client.get("/api/automation/bot/summary", headers=APPROVER).json()["text"]
+    assert "Agora: 1 comentário para aprovar." in text and "novas" not in text
+    assert client.get("/api/automation/bot/summary", headers=BOT).status_code == 200   # Lolo asks for it
+
+
+def test_nothing_waiting_says_so(db):
+    assert "Nada esperando por você." in BotService.summary_text()
+
+
+def test_no_summary_at_night(db, sql, monkeypatch):
+    monkeypatch.setattr(BotService, "quiet", staticmethod(lambda: True))
+    proposed_comment("c1")
+    BotService.collect()
+    assert summaries(sql) == []
 
 
 def test_the_inbox_is_one_list_with_a_fit_for_every_kind(db, add_job):
@@ -85,40 +117,6 @@ def test_the_inbox_is_one_list_with_a_fit_for_every_kind(db, add_job):
     box = Auto.inbox()
     fits = {i["id"]: i["fit"] for i in box["items"]}
     assert fits == {comment["id"]: 77, person["id"]: 90}
-
-
-def test_a_new_digest_waits_for_the_interval(db, sql, awake):
-    proposed_comment("c1")
-    BotService.collect()
-    proposed_comment("c2")
-    BotService.collect()
-    assert len(notes(sql, "proposals")) == 1
-    sql("UPDATE public.bot_notifications SET created_at = NOW() - INTERVAL '2 hours'")
-    BotService.collect()
-    assert len(notes(sql, "proposals")) == 2
-
-
-def test_needs_you_is_told_once_per_time_it_happens(db, sql, awake):
-    action = proposed_comment()
-    Auto._to_user(action["id"], "unknown_required_question", "Pergunta nova", [{"label": "Notice period?", "options": ["30", "60"]}])
-    BotService.collect()
-    BotService.collect()
-    told = notes(sql, "action_needs_user")
-    assert len(told) == 1 and "Notice period?" in told[0]["text"] and "30, 60" in told[0]["text"]
-    sql("UPDATE public.automation_actions SET status = 'queued' WHERE id = %s", (action["id"],))
-    BotService.collect()
-    Auto._to_user(action["id"], "unknown_required_question", "De novo")
-    BotService.collect()
-    assert len(notes(sql, "action_needs_user")) == 2
-
-
-def test_a_cv_to_review_comes_with_its_files(db, sql, add_job, awake):
-    job = add_job(status="new")
-    action = Auto.propose_job(job)
-    sql("UPDATE public.automation_actions SET status = 'review_docs' WHERE id = %s", (action["id"],))
-    BotService.collect()
-    note = notes(sql, "action_review_docs")[0]
-    assert [f["path"] for f in note["data"]["files"]] == [f"/api/jobs/{job['id']}/document.pdf?kind=resume", f"/api/jobs/{job['id']}/document.pdf?kind=cover"]
 
 
 def test_a_stop_is_urgent_and_told_once(db, sql):
@@ -130,7 +128,7 @@ def test_a_stop_is_urgent_and_told_once(db, sql):
 
 
 def test_at_night_only_what_is_urgent_goes(db, monkeypatch):
-    BotService.notify("proposals", "para aprovar")
+    BotService.notify("summary", "para aprovar")
     BotService.notify("halt", "parou", urgent=True)
     monkeypatch.setattr(BotService, "quiet", staticmethod(lambda: True))
     assert [n["text"] for n in BotService.pending()] == ["parou"]
@@ -283,7 +281,7 @@ def test_a_link_with_your_idea_becomes_a_comment_to_approve(db, sql, client, dra
     action = _one("SELECT * FROM public.automation_actions WHERE id = %s", (body["action_id"],))
     assert action["status"] == "proposed" and action["target_url"] == URL and action["payload"]["post_head"] == ""
     BotService.collect()
-    assert notes(sql, "proposals") == []   # you already saw the draft in the answer
+    assert "novas" not in "".join(n["text"] for n in notes(sql, "summary"))   # you already saw the draft in the answer
     assert client.post(f"/api/automation/actions/{body['action_id']}/approve", json={}, headers=BOT).json()["status"] == "queued"
 
 

@@ -1,7 +1,8 @@
 """Clicks with the real mouse that the extension asks for. LinkedIn ignores a click made by a script on some elements (late
 2026: the "More → Connect" link and the invite dialog's buttons), so the extension asks through an attribute on <html>.
 The page could write that attribute too, so the worker clicks only fixed targets, each at most once per action:
-  connect  the approved profile's own Connect link in its More menu (/preload/custom-invite/?vanityName=<that profile>)
+  connect  the approved profile's own Connect link (/preload/custom-invite/?vanityName=<that profile>), on top of its card
+           or in its More menu
   send     "Send without a note" in the invite dialog, only once the backend let the action send (status verifying)
 Anything else asked is ignored."""
 import logging
@@ -47,6 +48,13 @@ async def click_connect(page: Page, action: dict) -> bool:
     def ours(href: str) -> bool:
         return unquote((parse_qs(urlparse(href or "").query).get("vanityName") or [""])[0]).lower() == slug
 
+    # this profile's own link on top of its card (2026-11-05, Gavin Nicholls: Connect is an <a> to custom-invite, no menu)
+    top = page.locator('main a[href*="custom-invite"]:not([role="menuitem"])')
+    for i in range(await top.count()):
+        link = top.nth(i)
+        if await link.is_visible() and ours(await link.get_attribute("href")):
+            await link.click(timeout=5000)
+            return True
     links = page.locator('a[role="menuitem"][href*="custom-invite"]')
     for _ in range(2):   # the menu may be open already (the extension's own click); otherwise More opens it
         for i in range(await links.count()):

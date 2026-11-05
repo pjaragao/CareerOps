@@ -633,6 +633,12 @@ class AutomationService:
         if proof:
             return AutomationService._finish(action, {"proof": evidence or True}, "worker")
         result = action["result"] or {}
+        if action["kind"] == "connect" and (evidence or {}).get("not_sent"):
+            # the worker reloaded the profile, read the sent list, and Connect is still offered: nothing went out (2026-11-05:
+            # Gavin Nicholls, Gottfried Schmidtke). Not a "check before repeating" for you: the Claude routine sends it
+            _rows("UPDATE public.automation_actions SET result = jsonb_build_object('previous', result) WHERE id = %s", (action_id,))
+            return AutomationService.escalate(action_id, "unexpected_layout", "O convite não saiu (o perfil ainda oferece Conectar)", source="worker",
+                                              screenshot=(evidence or {}).get("screenshot"))
         if result.get("executed"):
             if not result.get("recheck"):   # LinkedIn may take a moment: one more look before asking you
                 return _one("""UPDATE public.automation_actions
