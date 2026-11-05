@@ -479,7 +479,7 @@ const NeedsYouDetail = ({ action, onDone, novnc, setError }: { action: Action; o
           : <div style={row}>
               {url && <a className="btn btn-secondary" href={url} target="_blank" rel="noreferrer"><ExternalLink size={15} /> Abrir</a>}
               {novnc && <a className="btn btn-secondary" href={novnc} target="_blank" rel="noreferrer"><Monitor size={15} /> Ver navegador</a>}
-              <button className="btn btn-primary" onClick={() => act(auto.retry(action.id))}><RefreshCw size={15} /> Resolvi, tentar de novo</button>
+              <button className="btn btn-primary" onClick={() => act(auto.retry(action.id))}><RefreshCw size={15} /> Já resolvi: tentar de novo</button>
               <button className="btn btn-secondary" onClick={() => act(auto.cancel(action.id))}>Desistir desta</button>
             </div>}
       </>}
@@ -496,7 +496,7 @@ const NeedsYouRow = ({ action, picked, onPick, onDone, novnc, setError }: { acti
   const quick = need === 'docs'
     ? { title: 'Pode enviar', run: () => auto.approveDocs(action.id) }
     : need === 'confirm' ? { title: 'Enviar candidatura', run: () => auto.confirmSubmit(action.id) }
-    : action.questions?.length ? null : { title: 'Resolvi, tentar de novo', run: () => auto.retry(action.id) };
+    : action.questions?.length ? null : { title: 'Tentar de novo: o sistema repete esta ação agora. Use depois de resolver o problema.', run: () => auto.retry(action.id), icon: <RefreshCw size={15} /> };
   return (
     <>
       <tr className="jb-row" onClick={() => setOpen(!open)}>
@@ -515,7 +515,7 @@ const NeedsYouRow = ({ action, picked, onPick, onDone, novnc, setError }: { acti
         <td className="jb-td jb-hide-sm" style={{ fontSize: '0.76rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{ago(action.sort_at || action.created_at)}</td>
         <td className="jb-td" style={{ textAlign: 'right', paddingLeft: 0, whiteSpace: 'nowrap' }} onClick={(e) => e.stopPropagation()}>
           <div style={{ display: 'inline-flex', flexWrap: 'nowrap', gap: 6 }}>
-            {quick && <button className="jb-icon primary" title={quick.title} disabled={busy} onClick={() => decide(quick.run())}><Check size={15} /></button>}
+            {quick && <button className="jb-icon primary" title={quick.title} aria-label={quick.title} disabled={busy} onClick={() => decide(quick.run())}>{'icon' in quick ? quick.icon : <Check size={15} />}</button>}
             <button className="jb-icon danger" title="Desistir desta" disabled={busy} onClick={() => decide(auto.cancel(action.id))}><X size={15} /></button>
             {action.target_url && <a className="jb-icon jb-hide-sm" title="Abrir no LinkedIn" href={action.target_url} target="_blank" rel="noreferrer"><ExternalLink size={15} /></a>}
           </div>
