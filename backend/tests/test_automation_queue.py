@@ -643,12 +643,11 @@ def test_only_a_comment_still_to_approve_can_be_revised(db):
     assert asyncio.run(Auto.revise(a["id"], "mais curto")) is None
 
 
-def test_executar_agora_goes_outside_the_window_and_the_rest_waits(db, monkeypatch):
+def test_outside_the_window_what_you_approved_goes_and_executar_agora_goes_first(db, monkeypatch):
     cfg = {**db, "automation": {**db["automation"], "window": {"start_hour": 3, "end_hour": 3}}}
     monkeypatch.setattr(automation_service, "config", lambda: cfg)
     later, now_ = comment("later"), comment("now")
     Auto.approve(later["id"])
-    assert claim()["reason"] == "outside_window"
     Auto.approve(now_["id"], run_now=True)
     got = claim()["action"]
     assert got["id"] == now_["id"]
@@ -669,3 +668,26 @@ def test_batch_approval_can_run_now(db, client):
     r = client.post("/api/automation/approve-batch", json={"ids": [a["id"], b["id"]], "run_now": True}, headers=APPROVER)
     assert r.json()["approved"] == [a["id"], b["id"]]
     assert _one("SELECT COUNT(*) AS n FROM public.automation_actions WHERE run_now")["n"] == 2
+
+
+def test_what_you_approve_or_retry_ignores_the_window_and_the_limit(db, sql, monkeypatch):
+    """The window and the limits hold back only the automations (2026-11-04)."""
+    sql("UPDATE public.automation_limits SET step2 = 1 WHERE kind = 'follow'")
+    try:
+        Auto.complete((queued_follow("auto1"), claim()["action"])[1]["id"], "dry_run")   # the automation used the limit
+        queued_follow("auto2")
+        mine = comment("mine", status="proposed")
+        cfg = {**db, "automation": {**db["automation"], "window": {"start_hour": 3, "end_hour": 3}}}
+        monkeypatch.setattr(automation_service, "config", lambda: cfg)
+        Auto.approve(mine["id"])
+        got = claim()["action"]
+        assert got["id"] == mine["id"]
+        Auto.complete(got["id"], "dry_run")
+        assert next(l for l in Auto.limits() if l["kind"] == "comment")["used"] == 0
+        assert claim()["reason"] == "outside_window"   # the automation still waits
+        mine_follow = queued_follow("mine2")
+        sql(f"UPDATE public.automation_actions SET status = 'needs_user', error_code = 'selector_not_found' WHERE id = {mine_follow['id']}")
+        Auto.retry(mine_follow["id"])
+        assert claim()["action"]["id"] == mine_follow["id"]   # retried: past the window and the spent follow limit
+    finally:
+        sql("UPDATE public.automation_limits SET step2 = 10 WHERE kind = 'follow'")

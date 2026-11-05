@@ -188,7 +188,8 @@ class AutomationService:
     # ── Limits ───────────────────────────────────────────────────────────
     @staticmethod
     def limits(state: Optional[dict] = None) -> List[dict]:
-        """Each kind: the limit at the current step of the ramp and how much of it is used."""
+        """Each kind: the limit at the current step of the ramp and how much of it is used. Only the automations count:
+        what you approved, retried or sent with "executar agora" neither uses the limit nor waits for it."""
         state = state or AutomationService.state()
         step = min(max(state.get("ramp_step", 0), 0), 2)
         out = []
@@ -200,11 +201,12 @@ class AutomationService:
                 # what went out or may have (done, clicked, running now): a try that stopped before the final click sent
                 # nothing to LinkedIn and is not counted (2026-11-04: invites that never left had filled the week's 20)
                 used = _one("""SELECT COUNT(*) AS n FROM public.automation_actions
-                                WHERE kind = %s AND started_at >= %s
+                                WHERE kind = %s AND started_at >= %s AND NOT (run_now OR approved_at IS NOT NULL)
                                   AND (status = 'done' OR status = ANY(%s) OR result ? 'executed')""", (row["kind"], start, list(RUNNING)))["n"]
             else:
                 used = _one("""SELECT COUNT(*) AS n FROM public.automation_actions
-                                WHERE kind = %s AND started_at >= %s AND status NOT IN ('discarded', 'cancelled')""", (row["kind"], start))["n"]
+                                WHERE kind = %s AND started_at >= %s AND status NOT IN ('discarded', 'cancelled')
+                                  AND NOT (run_now OR approved_at IS NOT NULL)""", (row["kind"], start))["n"]
             out.append({**row, "limit": row[f"step{step}"], "used": used, "left": max(row[f"step{step}"] - used, 0)})
         return out
 
@@ -436,8 +438,9 @@ class AutomationService:
             status = "approved"
         else:
             status = "unknown_outcome" if (action["result"] or {}).get("executed") else "queued"
-        return _one("""UPDATE public.automation_actions SET status = %s, error_code = NULL, error_text = NULL, questions = '[]', updated_at = NOW()
-                        WHERE id = %s RETURNING *""", (status, action_id))
+        # you asked for it again: it does not wait for the time window, which only holds back the automations
+        return _one("""UPDATE public.automation_actions SET status = %s, error_code = NULL, error_text = NULL, questions = '[]', run_now = TRUE,
+                        updated_at = NOW() WHERE id = %s RETURNING *""", (status, action_id))
 
     @staticmethod
     def cancel(action_id: int) -> Optional[dict]:
@@ -479,10 +482,10 @@ class AutomationService:
                 state = dict(cur.fetchone())
                 cur.execute("UPDATE public.automation_state SET worker_seen_at = NOW() WHERE id = 1")
                 refusal = AutomationService._refusal(state, lane, cur)
-                # outside the window only what you approved with "executar agora" goes
+                # outside the window only what you asked for goes: approved, retried or "executar agora"; the automations wait
                 only_now = not AutomationService.in_window()
                 if not refusal and only_now:
-                    cur.execute("""SELECT 1 FROM public.automation_actions WHERE lane = %s AND (run_now OR kind = ANY(%s))
+                    cur.execute("""SELECT 1 FROM public.automation_actions WHERE lane = %s AND (run_now OR approved_at IS NOT NULL OR kind = ANY(%s))
                                      AND status IN ('queued', 'unknown_outcome') LIMIT 1""", (lane, list(ANYTIME_KINDS)))
                     if not cur.fetchone():
                         refusal = "outside_window"
@@ -490,13 +493,12 @@ class AutomationService:
                     conn.commit()
                     return {"action": None, "reason": refusal}
                 limits = AutomationService.limits(state)
-                exhausted = [l["kind"] for l in limits if l["left"] <= 0]
-                if state["invites_paused_until"] and state["invites_paused_until"] > now():
-                    exhausted.append("connect")
+                exhausted = [l["kind"] for l in limits if l["left"] <= 0]   # holds back only the automations
+                paused = ["connect"] if state["invites_paused_until"] and state["invites_paused_until"] > now() else []   # holds back all
                 # what may already have gone out is looked at first: it does not count as a new action
                 cur.execute("""
                     SELECT * FROM public.automation_actions
-                     WHERE lane = %s AND status = 'unknown_outcome' AND (scheduled_for IS NULL OR scheduled_for <= NOW()) AND (run_now OR NOT %s)
+                     WHERE lane = %s AND status = 'unknown_outcome' AND (scheduled_for IS NULL OR scheduled_for <= NOW()) AND (run_now OR approved_at IS NOT NULL OR NOT %s)
                      ORDER BY updated_at LIMIT 1 FOR UPDATE SKIP LOCKED""", (lane, only_now))
                 row = cur.fetchone()
                 verify_only = bool(row)
@@ -504,9 +506,10 @@ class AutomationService:
                     cur.execute("""
                         SELECT * FROM public.automation_actions
                          WHERE lane = %s AND status = 'queued' AND NOT (kind = ANY(%s))
+                           AND (run_now OR approved_at IS NOT NULL OR NOT (kind = ANY(%s)))
                            AND (scheduled_for IS NULL OR scheduled_for <= NOW()) AND (expires_at IS NULL OR expires_at > NOW())
-                           AND (run_now OR kind = ANY(%s) OR NOT %s)
-                         ORDER BY run_now DESC, rank, sort_at DESC LIMIT 1 FOR UPDATE SKIP LOCKED""", (lane, exhausted, list(ANYTIME_KINDS), only_now))
+                           AND (run_now OR approved_at IS NOT NULL OR kind = ANY(%s) OR NOT %s)
+                         ORDER BY run_now DESC, rank, sort_at DESC LIMIT 1 FOR UPDATE SKIP LOCKED""", (lane, paused, exhausted, list(ANYTIME_KINDS), only_now))
                     row = cur.fetchone()
                 if not row:
                     conn.commit()
@@ -745,10 +748,10 @@ class AutomationService:
                 if cur.fetchone()["n"] >= cfg.get("per_day", 15):
                     conn.commit()
                     return {"action": None, "reason": "daily_cap"}
-                only_now = not AutomationService.in_window()   # outside the window, only "executar agora"
+                only_now = not AutomationService.in_window()   # outside the window, only what you approved or asked for
                 halted = state["halted_lanes"] or []
                 lanes = [l for l in (cfg.get("lanes") or []) if "all" not in halted and l not in halted]
-                cur.execute("""SELECT * FROM public.automation_actions WHERE status = 'escalated' AND lane = ANY(%s) AND (run_now OR NOT %s)
+                cur.execute("""SELECT * FROM public.automation_actions WHERE status = 'escalated' AND lane = ANY(%s) AND (run_now OR approved_at IS NOT NULL OR NOT %s)
                                 ORDER BY rank, sort_at DESC LIMIT 1 FOR UPDATE SKIP LOCKED""", (lanes, only_now))
                 row = cur.fetchone()
                 if not row:
