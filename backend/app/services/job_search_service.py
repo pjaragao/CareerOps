@@ -216,11 +216,13 @@ class JobSearchService:
     async def _read(job: dict) -> dict:
         """The fit of the job to your profile (0-100), why, the employer's market and a pay below your floor."""
         from app.services.linkedin_copilot_service import LinkedInCopilotService as Copilot
+        from app.services.profile_service import ProfileService
         pay = Copilot._facts().get("salary_expectation") or {}
         floors = {"USD": pay.get("abroad_usd_monthly"), "EUR": pay.get("abroad_eur_monthly"), "BRL": pay.get("brazil_brl_monthly")}
         triage = await SkillService.run_skill("jobs/triage.md", {
             "job_title": job.get("job_title") or "", "company": job.get("company") or "", "location": job.get("location") or "",
-            "job_description": (job.get("description") or "")[:8000], "floors": floors})
+            "job_description": (job.get("description") or "")[:8000], "floors": floors,
+            "candidate": ProfileService.get_resume_base("en")[:12000]})
         if not isinstance(triage, dict) or triage.get("error") or "score" not in triage:
             raise ValueError(f"no triage answer: {triage}")
         triage["score"] = max(0, min(100, int(triage.get("score") or 0)))

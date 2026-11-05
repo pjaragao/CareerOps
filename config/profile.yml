@@ -5,10 +5,10 @@ legal:
 personal:
   name: Paulo José Aragão Júnior
   email: pjaragaojr@gmail.com
-  phone: ''
-  github: ''
-  linkedin: ''
-  location: ''
+  phone: +55 00 00000-0000
+  github: github.com/pjaragao
+  linkedin: linkedin.com/in/paulojrarj
+  location: Florianópolis, Brazil
 languages:
   en:
     about: 'Strategic Engineer and MBA with a proven track record of delivering complex,
@@ -23,12 +23,61 @@ languages:
       infrastructure and modern technology by developing AI-driven solutions that
       transform legacy workflows into agile, results-oriented architectures. I am
       passionate about utilizing artificial intelligence to solve complex challenges
-      and optimize business performance through cutting-edge application development.'
+      and optimize business performance through cutting-edge application development.
+
+      Today I build and run AI systems end to end as sole engineer: 14 systems, 11
+      in production on my own self-hosted Docker/Coolify platform (48 containers,
+      88,000+ agent and scheduled runs). I prototype integrations, prompt chains and
+      agent tool calls in n8n, then harden them with Claude Code into FastAPI, Next.js
+      and Python services on PostgreSQL — LLM agents with MCP tools, guardrails and
+      human approval, a retail ERP with 2,000+ tests, Bayesian and TimesFM forecasting,
+      and browser automation.'
     skills:
     - SQL
     - Artificial Intelligence (AI)
     - API Development
     - Python (Programming Language)
+    - Python
+    - PostgreSQL
+    - Supabase
+    - PL/pgSQL
+    - PGMQ
+    - SQLite
+    - Redis
+    - FastAPI
+    - Next.js
+    - React
+    - TypeScript
+    - Playwright
+    - Docker
+    - Docker Compose
+    - Coolify
+    - Tailscale
+    - GitHub Actions CI/CD
+    - REST APIs & webhooks
+    - LLM applications
+    - AI agents
+    - Multi-agent systems
+    - Tool calling
+    - Model Context Protocol (MCP)
+    - RAG
+    - Prompt engineering
+    - LangChain
+    - Pydantic AI
+    - Hermes Agent
+    - Claude Code
+    - OpenAI GPT-4o
+    - Google Gemini
+    - n8n
+    - Workflow automation
+    - Bayesian modeling (MCMC)
+    - Time-series forecasting (TimesFM)
+    - Financial modeling
+    - DCF & feasibility
+    - FP&A
+    - Power BI
+    - Power Apps
+    - Microsoft 365 / SharePoint
     education:
     - year: 2013 – 2025
       degree: Pós-graduação Lato Sensu - MBA Executivo, Business/Commerce, General
@@ -41,9 +90,39 @@ languages:
         3D, PLANEJAMENTO 4D E ORÇAMENTO 5D / 6D / 7D
       institution: Universidade Paulista
     experience:
-    - company: MPB Engineering
-      role: Chief Financial Officer & AI Strategy Lead
+    - role: Data & AI Engineer (Self-employed)
+      company: Independent
+      period: Feb 2026 – Present
+      description: '- Built and run 14 AI and data systems (11 in production) as sole
+        engineer: n8n prototyping, then Claude Code hardening into FastAPI, Next.js
+        and Python workers on PostgreSQL/Supabase, SQLite and Redis.
+
+        - CentralOps retail ERP: POS, e-commerce, Stone payments, NFC-e, double-entry
+        ledger; 10 PostgreSQL schemas, PGMQ queues, 2,000+ pgTAP tests; LLM agents
+        act through an MCP server with guardrails against the database.
+
+        - CareerOps: Playwright/Chromium automation that scores jobs with LLMs, tailors
+        CVs (Gotenberg PDFs) and acts on LinkedIn after human approval.
+
+        - WhatsApp agents (Hermes Agent, Evolution API): executive assistant with
+        94 commands and 58 skills, customer-service and store-operations agents with
+        persistent memory; 300+ tests.
+
+        - Forecasting: Bayesian election-night model (2026), Bayesian MCMC and TimesFM
+        for sports analytics and a B3 trading copilot with backtests; PNCP public-tender
+        classifier with Gemini/Genkit.
+
+        - Self-hosted platform: 48 containers in 21 stacks on Coolify with GitOps
+        deploys and Tailscale zero-trust networking; 88,000+ agent and cron runs.'
+    - role: Independent Consultant — Infrastructure Project Finance & Modeling
+      company: Independent
+      period: Feb 2026 – Present
+      description: '- Advise large Brazilian corporate groups (under NDA) on infrastructure
+        projects: engineering-financial models (CAPEX/OPEX, cash flow, feasibility)
+        and coordination of sanitation engineering projects.'
+    - role: Chief Financial Officer & AI Strategy Lead
       period: Feb 2023 – Jan 2026
+      company: MPB Engineering
       description: '- Architected data-driven financial applications leveraging AI
         and machine learning, reducing budget forecasting and data processing time
         by 45%.
@@ -53,9 +132,9 @@ languages:
 
         - Built automated data pipelines utilizing n8n and PowerApps, saving 120+
         manual hours per month in financial reporting.'
-    - company: MPB Engineering
-      role: Senior Manager - Commercial Strategy & Digital Transformation
+    - role: Senior Manager - Commercial Strategy & Digital Transformation
       period: Jan 2015 – Jan 2023
+      company: MPB Engineering
       description: '- Designed and implemented a proprietary, data-driven pricing
         methodology, increasing bid win rates by 18% across 90 annual financial proposals.
 
@@ -68,9 +147,9 @@ languages:
 
         - Ensured 100% compliance with ISO9001 standards while overseeing technology
         solutions that supported $10M+ in project financial proposals.'
-    - company: MPB Engineering
-      role: Project Engineer & Data Analyst
+    - role: Project Engineer & Data Analyst
       period: Aug 2011 – Dec 2014
+      company: MPB Engineering
       description: '- Engineered automated data analytics pipelines using VBA, accelerating
         economic feasibility studies (DCF) and proposal generation by 40%.
 
@@ -79,17 +158,17 @@ languages:
 
         - Supported the commercial team in securing public infrastructure contracts
         through rigorous cost estimation and data analysis.'
-    - company: MPB Engineering
-      role: Business & Technical Analyst (Intern)
+    - role: Business & Technical Analyst (Intern)
       period: May 2008 – Aug 2011
+      company: MPB Engineering
       description: '- Streamlined proposal development by automating technical report
         templates, significantly reducing manual documentation efforts.
 
         - Assisted senior commercial teams in project cost estimations and feasibility
         assessments for municipal concessions.'
-    - company: International Business Operations (J-1 Program)
-      role: Operations Assistant
+    - role: Operations Assistant
       period: Dec 2008 – Mar 2009
+      company: International Business Operations (J-1 Program)
       description: '- Executed high-volume operational tasks in a fast-paced international
         business environment.
 
@@ -107,7 +186,15 @@ languages:
       que elevam a eficiência operacional. Sou movido pelo desafio de transformar
       operações tradicionais em fluxos de trabalho ágeis e orientados a resultados,
       unindo o rigor da engenharia à agilidade das novas tecnologias para otimizar
-      negócios e infraestruturas.'
+      negócios e infraestruturas.
+
+      Hoje construo e opero sistemas de IA de ponta a ponta como único engenheiro:
+      14 sistemas, 11 em produção na minha plataforma self-hosted em Docker/Coolify
+      (48 containers, mais de 88 mil execuções de agentes e rotinas). Prototipo integrações,
+      cadeias de prompts e tool calling no n8n e consolido com o Claude Code em serviços
+      FastAPI, Next.js e Python sobre PostgreSQL — agentes de IA com ferramentas MCP,
+      guardrails e aprovação humana, um ERP de varejo com mais de 2.000 testes, previsão
+      bayesiana e TimesFM e automação de navegador.'
     skills:
     - SQL
     - Habilidades analíticas
@@ -121,6 +208,47 @@ languages:
     - Inteligência de negócios (BI)
     - Dashboards
     - Analítica de dados
+    - Python
+    - PostgreSQL
+    - Supabase
+    - PL/pgSQL
+    - PGMQ
+    - SQLite
+    - Redis
+    - FastAPI
+    - Next.js
+    - React
+    - TypeScript
+    - Playwright
+    - Docker
+    - Docker Compose
+    - Coolify
+    - Tailscale
+    - GitHub Actions CI/CD
+    - REST APIs & webhooks
+    - LLM applications
+    - AI agents
+    - Multi-agent systems
+    - Tool calling
+    - Model Context Protocol (MCP)
+    - RAG
+    - Prompt engineering
+    - LangChain
+    - Pydantic AI
+    - Hermes Agent
+    - Claude Code
+    - OpenAI GPT-4o
+    - Google Gemini
+    - n8n
+    - Workflow automation
+    - Bayesian modeling (MCMC)
+    - Time-series forecasting (TimesFM)
+    - Financial modeling
+    - DCF & feasibility
+    - FP&A
+    - Power BI
+    - Power Apps
+    - Microsoft 365 / SharePoint
     education:
     - year: 2013 – 2025
       degree: Pós-graduação Lato Sensu - MBA Executivo, Business/Commerce, General
@@ -133,6 +261,36 @@ languages:
         3D, PLANEJAMENTO 4D E ORÇAMENTO 5D / 6D / 7D
       institution: Universidade Paulista
     experience:
+    - role: Engenheiro de Dados e IA (Autônomo)
+      company: Autônomo
+      period: fev de 2026 - atual
+      description: '- 14 sistemas de IA e dados (11 em produção) como único engenheiro:
+        protótipo no n8n e consolidação com Claude Code em FastAPI, Next.js e workers
+        Python sobre PostgreSQL/Supabase, SQLite e Redis.
+
+        - CentralOps: ERP de varejo com PDV, e-commerce, Stone, NFC-e e contabilidade
+        de partidas dobradas; 10 schemas, filas PGMQ, mais de 2.000 testes; agentes
+        de IA via servidor MCP com guardrails.
+
+        - CareerOps: automação com Playwright/Chromium que pontua vagas com LLM, adapta
+        currículos e age no LinkedIn após aprovação humana.
+
+        - Agentes de WhatsApp (Hermes Agent, Evolution API): assistente executivo
+        com 94 comandos e 58 skills, agentes de atendimento e de operações com memória
+        persistente; mais de 300 testes.
+
+        - Previsão: modelo bayesiano de apuração eleitoral (2026), MCMC e TimesFM
+        em análise esportiva e copiloto de trades na B3; classificador de licitações
+        do PNCP com Gemini/Genkit.
+
+        - Plataforma própria: 48 containers em 21 stacks no Coolify, deploy por GitOps
+        e rede zero-trust Tailscale; mais de 88 mil execuções.'
+    - role: Consultor Independente — Engenharia de Saneamento e Modelagem Técnico-Financeira
+      company: Autônomo
+      period: fev de 2026 - atual
+      description: '- Consultoria a grandes grupos empresariais brasileiros (sob NDA)
+        em projetos de infraestrutura: modelagem técnico-financeira (CAPEX/OPEX, fluxo
+        de caixa, viabilidade) e coordenação de projetos de saneamento.'
     - role: Diretor financeiro
       period: fev de 2023 - jan de 2026
       company: MPB Engenharia
@@ -199,3 +357,70 @@ base_resume_md: "# PAULO JOSÉ ARAGÃO JR\n\n**Business Development Analyst | Da
   \ utilizing real-time API integrations and predictive modeling.\n\n## LANGUAGES\n\
   *   **Portuguese:** Native\n*   **English:** Fluent (C1) - Lived and worked in the\
   \ USA\n*   **Spanish:** Professional Working Proficiency (B2)"
+skills:
+  technical:
+  - Python
+  - SQL
+  - PostgreSQL
+  - Supabase
+  - PL/pgSQL
+  - PGMQ
+  - SQLite
+  - Redis
+  - FastAPI
+  - Next.js
+  - React
+  - TypeScript
+  - Playwright
+  - Docker
+  - Docker Compose
+  - Coolify
+  - Tailscale
+  - GitHub Actions CI/CD
+  - REST APIs & webhooks
+  - LLM applications
+  - AI agents
+  - Multi-agent systems
+  - Tool calling
+  - Model Context Protocol (MCP)
+  - RAG
+  - Prompt engineering
+  - LangChain
+  - Pydantic AI
+  - Hermes Agent
+  - Claude Code
+  - OpenAI GPT-4o
+  - Google Gemini
+  - n8n
+  - Workflow automation
+  - Bayesian modeling (MCMC)
+  - Time-series forecasting (TimesFM)
+  - Financial modeling
+  - DCF & feasibility
+  - FP&A
+  - Power BI
+  - Power Apps
+  - Microsoft 365 / SharePoint
+  soft:
+  - Leadership
+  - Stakeholder management
+  - Communication
+  - Analytical thinking
+  - Ownership end to end
+target_roles:
+- AI Engineer
+- LLM / Agentic AI Engineer
+- AI Automation Engineer
+- Applied AI Engineer
+- Data Engineer
+- Python Backend Engineer
+- Solutions Architect (AI)
+- Financial Modeling Analyst
+- FP&A / Finance Manager
+- Infrastructure Project Finance
+work_preferences:
+  remote_only: false
+  languages:
+  - Portuguese
+  - English
+  - Spanish

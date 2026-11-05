@@ -2,7 +2,12 @@ Read this job ad and say how well it fits the candidate, so they only have to lo
 
 {% include 'common/output_format.md' %}
 
-The candidate has about 18 years of experience: sanitary and environmental engineer, then CFO of an engineering consultancy. Strongest fields: financial modeling, project and infrastructure finance, FP&A, feasibility and tariff models, water and sanitation infrastructure, data and forecasting, applied AI. Lives in Brazil and looks for work with foreign companies, remote or with relocation.
+{% if candidate %}The candidate's master CV (the whole of their experience; score against all of it, not only the most recent role):
+{{ candidate }}
+
+They fit two families of roles, and both count as the core of the profile: (1) finance and modeling — financial modeling, project and infrastructure finance, FP&A, feasibility and tariff models, water and sanitation infrastructure; (2) building software with AI — AI/LLM engineering, agents and tool calling (MCP), automation (n8n), data engineering, Python/SQL/PostgreSQL backends, self-hosted DevOps (Docker, Coolify). Their AI and software work is independent and in production, not a hobby: weigh it as real experience, and use their ~18 years of total career for seniority. Lives in Brazil and looks for work with foreign companies, remote or with relocation.
+{% else %}The candidate has about 18 years of experience: sanitary and environmental engineer, then CFO of an engineering consultancy. Strongest fields: financial modeling, project and infrastructure finance, FP&A, feasibility and tariff models, water and sanitation infrastructure, data and forecasting, applied AI. Lives in Brazil and looks for work with foreign companies, remote or with relocation.
+{% endif %}
 
 CANDIDATE'S SALARY FLOORS (monthly, gross): {{ floors }}
 

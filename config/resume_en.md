@@ -9,15 +9,16 @@ pjaragaojr@gmail.com | +55 00 00000-0000 | linkedin.com/in/paulojrarj | github.c
 
 ## PROFESSIONAL SUMMARY
 
-Former CFO and engineer with 15+ years in infrastructure finance, now building data, modeling and AI systems end to end. I build the models people decide with — DCF feasibility and tariff models for utility concessions, pricing for ~90 tenders a year, budgets, KPIs and BI — and the software around them: statistical forecasting (a Bayesian election-night projection model calibrated on three past elections), financial systems with double-entry ledgers and 2,000+ automated tests, and LLM agents where every number comes from the database. Python, SQL and PostgreSQL every day. A background as a sanitary and environmental engineer — including general coordination of a World Bank–financed urban program — gives me real domain depth in infrastructure, utilities and project finance. I also led the company's IT infrastructure — redundant servers, failover internet links, backups and multi-office VPN — so I know how to keep systems, and the AI automations on top of them, running reliably and continuously in production.
+Former CFO and engineer with 15+ years in infrastructure finance, now building data, modeling and AI systems end to end. I build the models people decide with — DCF feasibility and tariff models for utility concessions, pricing for ~90 tenders a year, budgets, KPIs and BI — and the software around them: statistical forecasting (a Bayesian election-night projection model calibrated on three past elections), financial systems with double-entry ledgers and 2,000+ automated tests, and LLM agents where every number comes from the database. Python, SQL and PostgreSQL every day, and 11 AI and data systems of my own running in production on a self-hosted Docker platform (48 containers, 88,000+ agent and scheduled runs). A background as a sanitary and environmental engineer — including general coordination of a World Bank–financed urban program — gives me real domain depth in infrastructure, utilities and project finance. I also led the company's IT infrastructure — redundant servers, failover internet links, backups and multi-office VPN — so I know how to keep systems, and the AI automations on top of them, running reliably and continuously in production.
 
 ---
 
 ## SKILLS
 
 - **Modeling & analytics:** financial modeling, DCF and feasibility studies, concession and tariff modeling, valuation, forecasting (Bayesian hierarchical models, TimesFM), backtesting, budgeting and variance analysis, KPI design, cost accounting, pricing
-- **Data & software:** Python, SQL, PostgreSQL (PL/pgSQL, pgTAP), data pipelines, Power BI, Excel, REST APIs, Docker, GitHub Actions CI/CD, TypeScript/Next.js
-- **AI:** LLM applications and agents, tool calling and MCP, guardrails and human-in-the-loop, prompt engineering, multi-provider model routing
+- **Data & software:** Python, SQL, PostgreSQL (PL/pgSQL, pgTAP, Supabase, PGMQ queues), SQLite, Redis, FastAPI, async workers, data pipelines, Playwright browser automation, Power BI, Excel, REST APIs and webhooks, TypeScript/Next.js/React, GitHub Actions CI/CD
+- **AI:** LLM applications and autonomous agents, tool calling, MCP servers, multi-agent systems and inter-agent calls, RAG, agent memory, guardrails and human-in-the-loop, prompt engineering and prompt chaining, multi-provider model routing (Claude, GPT-4o, Gemini, open models), LangChain, Pydantic AI, Hermes Agent, n8n AI workflows, AI-assisted development with Claude Code
+- **DevOps & platform:** Docker and Docker Compose, Coolify (self-hosted PaaS, GitOps deploys), Tailscale zero-trust networking, Linux, scheduled jobs and monitoring
 - **IT infrastructure:** Active Directory, Microsoft 365 tenant administration, SharePoint (on-premises and Online), Power Apps (canvas and model-driven), file server (30+ TB), backup, VPN, multi-office networking, high availability (redundant servers, UPS, failover internet links)
 - **Domain:** infrastructure and utilities (water, wastewater, drainage), project finance, public procurement (QCBS/LCS), ERP, BIM
 
@@ -30,12 +31,16 @@ Former CFO and engineer with 15+ years in infrastructure finance, now building d
 
 Independent product work, team of one. Project types: platform builds, product launches, forecasting models, LLM agents.
 
-Build and operate data, modeling and AI products end to end as sole engineer, using AI-assisted development (Claude Code) with automated tests and CI as the quality gate.
+Build and operate data, modeling and AI products end to end as sole engineer: 14 systems, 11 in production. Method: prototype integrations, prompt chains and agent tool calls in n8n to prove the flow and its edge cases, then harden them with Claude Code into production services (FastAPI, Next.js, Python workers, PL/pgSQL), with automated tests and CI as the quality gate.
 
 - **Election-night projection model (Brazil 2026):** Bayesian hierarchical model of municipal deviations from a first-round + vote-transfer baseline on official electoral data (national → regional → state shrinkage); uncertainty calibrated by replaying the 2014, 2018 and 2022 runoffs in real vote-arrival order; 56 tests.
-- **CentralOps — retail ERP with an AI agent.** ~95k-line system (PostgreSQL/Supabase, Python workers, Next.js/TypeScript): double-entry ledger, cash flow and P&L, inventory, payroll, Brazilian tax and e-invoicing; 133 migrations, 2,000+ pgTAP tests, CI/CD. The customer-facing LLM agent acts only through database functions, and a guardrail checks every price and stock level against the database before a reply goes out.
+- **CentralOps — retail ERP with an AI agent.** ~95k-line system (PostgreSQL/Supabase, Python workers, Next.js/TypeScript): double-entry ledger, cash flow and P&L, inventory, payroll, Brazilian tax and e-invoicing; 133 migrations, 2,000+ pgTAP tests, CI/CD. Point of sale, e-commerce, Stone payments and NFC-e e-invoicing; 10 PostgreSQL schemas with PGMQ queues. The customer-facing LLM agent acts only through database functions exposed by an MCP server, and a guardrail checks every price and stock level against the database before a reply goes out; a second operations agent works the ERP through the same MCP server.
 - **Trading Copilot (B3):** tracks analyst signals, reconciles broker statements for real costs and slippage, computes capital-gains tax and backtests strategies with TimesFM forecasts; 100+ tests.
-- Also built a multi-tenant WhatsApp AI agent (300+ tests), a career-automation platform and a public-tender classifier; all self-hosted on Docker/Coolify.
+- **CareerOps — career automation platform:** FastAPI, PostgreSQL and a Playwright/Chromium worker that finds and scores jobs with LLMs against this CV, tailors CVs (PDF via Gotenberg), and applies, connects and comments on LinkedIn only after human approval, with layered fallbacks when the site changes.
+- **WhatsApp AI agents:** multi-tenant agent platform (300+ tests) running an executive assistant (94 commands, 58 skills, long-term memory; approves CareerOps actions from chat), a customer-service agent with persistent memory and an operations agent for an online store; Evolution API, SQLite and Redis.
+- **Sports analytics:** Bayesian (MCMC) and TimesFM forecasting on NFL data for a fantasy league, with an automated editorial bot; open-source Sleeper API engine with an event-driven game watcher and RAG over its own documentation.
+- **Public-tender intelligence:** classifier of Brazilian public tenders (PNCP) with Gemini and Firebase Genkit.
+- **Platform:** all of it self-hosted on my own Docker/Coolify platform — 48 containers in 21 stacks behind Tailscale zero-trust networking, GitOps deploys, 88,000+ agent and scheduled runs.
 
 ### Independent Consultant — Infrastructure Project Finance & Modeling
 **Florianópolis, Brazil** | Feb 2026 – Present
