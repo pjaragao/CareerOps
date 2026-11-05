@@ -109,6 +109,14 @@ class CvReviewService:
         for n in range(rounds + 1):
             verdict = await CvReviewService.review(job_id, asked)
             history.append({k: verdict[k] for k in ("approved", "issues", "pages", "summary")})
+            if not verdict["approved"] and n == rounds and only_too_long(verdict):
+                # the writer could not get it to fit: the reviewer cuts it itself, then reads it once more
+                fitted = fit_pages(_job(job_id).get("resume_markdown") or "")
+                if fitted:
+                    _one("UPDATE public.job_listings SET resume_markdown = %s WHERE id = %s RETURNING id", (fitted, job_id))
+                    verdict = await CvReviewService.review(job_id, asked)
+                    verdict["trimmed"] = True
+                    history.append({k: verdict[k] for k in ("approved", "issues", "pages", "summary")})
             if verdict["approved"] or n == rounds:
                 return {**verdict, "rounds": n, "history": history}
             job = _job(job_id)
@@ -122,6 +130,52 @@ class CvReviewService:
         return {**verdict, "rounds": rounds, "history": history}   # not reached
 
 
+PAGE_WORDS = re.compile(r"p[aá]gina|\bpages?\b|caracteres|characters|too long|longo demais|verbose|condens|length|comprimento", re.I)
+HEADING = re.compile(r"^\s*(#{1,6}\s|\*\*[^*]+\*\*\s*(\|.*)?$)")
+BULLET = re.compile(r"^\s*[-*+]\s+\S")
+
+
+def only_too_long(verdict: dict) -> bool:
+    """Everything still blocking is the resume being too long: nothing about its content."""
+    blocking = [i for i in verdict.get("issues") or [] if i.get("severity") in BLOCKING]
+    return bool(blocking) and all(i.get("doc") == "resume" and PAGE_WORDS.search(f"{i.get('problem')} {i.get('fix')}") for i in blocking)
+
+
+def trim_once(markdown: str) -> Optional[str]:
+    """One bullet less: the last bullet of the section with the most bullets (the lower one on a tie, older roles are
+    lower). Headings, dates and each section's first bullet always stay. None when there is nothing left to cut."""
+    lines = markdown.split("\n")
+    sections, current = {}, -1
+    for i, line in enumerate(lines):
+        if HEADING.match(line):
+            current = i
+        elif BULLET.match(line):
+            sections.setdefault(current, []).append(i)
+    cuttable = [(len(b), start, b[-1]) for start, b in sections.items() if len(b) > 1]
+    if not cuttable:
+        return None
+    _, _, last = max(cuttable)
+    end = last + 1   # a bullet may wrap onto indented lines below it
+    while end < len(lines) and lines[end].startswith((" ", "\t")) and lines[end].strip() and not BULLET.match(lines[end]):
+        end += 1
+    return "\n".join(lines[:last] + lines[end:])
+
+
+def fit_pages(markdown: str, pages_of=None, tries: int = 60) -> Optional[str]:
+    """Cut bullets one at a time until the PDF fits MAX_PAGES. None when it cannot be made to fit or the PDF is not rendered."""
+    pages_of = pages_of or pdf_pages
+    for _ in range(tries):
+        pages = pages_of(markdown)
+        if pages is None:
+            return None
+        if pages <= MAX_PAGES:
+            return markdown
+        markdown = trim_once(markdown)
+        if markdown is None:
+            return None
+    return None
+
+
 def redo(fixes: str, previous: str, pages: Optional[int] = None) -> str:
     """What the writer gets for another version: the fixes, the version they apply to, and (resume) a size that fits."""
     if not previous.strip():
@@ -132,8 +186,15 @@ def redo(fixes: str, previous: str, pages: Optional[int] = None) -> str:
     return f"{REDO}{fixes}{size}\n\nPREVIOUS VERSION:\n<<<PREVIOUS\n{previous}\nPREVIOUS>>>"
 
 
-def reasons(verdict: dict, limit: int = 4) -> str:
-    """What still fails, in a line or two for you."""
-    blocking = [i for i in verdict.get("issues") or [] if i.get("severity") in BLOCKING]
-    parts = [f"{'CV' if i['doc'] == 'resume' else 'carta'}: {i.get('problem')}" for i in blocking[:limit]]
-    return "; ".join(parts) or verdict.get("summary") or "sem detalhe"
+def reasons(verdict: dict, limit: int = 8) -> str:
+    """The reviewer's comment for you, one line per point: what is wrong and what it asked to fix; then its notes."""
+    issues = verdict.get("issues") or []
+    blocking = [i for i in issues if i.get("severity") in BLOCKING]
+    notes = [i for i in issues if i.get("severity") not in BLOCKING]
+    doc = lambda i: "CV" if i.get("doc") == "resume" else "Carta"
+    lines = [f"• {doc(i)}: {i.get('problem')}" + (f" → {i['fix']}" if i.get("fix") and i.get("fix") != i.get("problem") else "")
+             for i in blocking[:limit]]
+    lines += [f"◦ {doc(i)} (observação): {i.get('problem')}" for i in notes[:3]]
+    if verdict.get("summary"):
+        lines.append(f"Resumo do revisor: {verdict['summary']}")
+    return "\n".join(lines) or "sem detalhe"

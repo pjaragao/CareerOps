@@ -1,3 +1,4 @@
+import re
 import subprocess
 from pathlib import Path
 
@@ -24,14 +25,39 @@ def test_looks_inside_a_json_answer():
     assert content_guard.forbidden_in({"a": [{"b": "solid waste"}], "c": 1})
 
 
+TERMS = r"res[ií]duos? s[oó]lidos?|solid[ -]waste|aterros? sanit|landfill"
+SKIP_DIRS = {".git", "node_modules", "output", "__pycache__", ".venv", "venv", "dist", "build", ".pytest_cache"}
+
+
+def _versioned_hits() -> list:
+    """Files that cite the terms, outside the guard's rules and the tests. With git: the tracked files. Without git (the
+    test container has none): every file in the repo but generated folders, which is stricter, never looser."""
+    excluded = ("config/automation.yml", "backend/tests/", "automation/tests/")
+    try:
+        out = subprocess.run(["git", "grep", "-lIiE", TERMS, "--", ".", ":!config/automation.yml", ":!backend/tests", ":!automation/tests"],
+                             cwd=ROOT, capture_output=True, text=True)
+        if out.returncode in (0, 1):
+            return out.stdout.split()
+    except FileNotFoundError:
+        pass
+    pattern, hits = re.compile(TERMS, re.I), []
+    for path in ROOT.rglob("*"):
+        rel = path.relative_to(ROOT).as_posix()
+        parts = path.relative_to(ROOT).parts
+        hidden = any(x.startswith(".") and x != ".github" for x in parts[:-1])   # other tools' copies (.kilo/worktrees...)
+        if not path.is_file() or hidden or SKIP_DIRS & set(parts) or rel.startswith(excluded):
+            continue
+        try:
+            if pattern.search(path.read_text(encoding="utf-8")):
+                hits.append(rel)
+        except (UnicodeDecodeError, OSError):
+            continue
+    return hits
+
+
 def test_no_versioned_text_cites_it():
     """Only the guard's own rules and these tests may contain the terms."""
-    out = subprocess.run(["git", "grep", "-lIiE", r"res[ií]duos? s[oó]lidos?|solid[ -]waste|aterros? sanit|landfill", "--", ".",
-                          ":!config/automation.yml", ":!backend/tests", ":!automation/tests"], cwd=ROOT, capture_output=True, text=True)
-    untracked = subprocess.run(["grep", "-rlIiE", r"res[ií]duos? s[oó]lidos?|solid[ -]waste|aterros? sanit|landfill", "config", "backend/app/skills", "international", "docs"],
-                               cwd=ROOT, capture_output=True, text=True)
-    assert out.stdout.strip() == ""
-    assert [f for f in untracked.stdout.split() if f != "config/automation.yml"] == []
+    assert _versioned_hits() == []
 
 
 def test_outgoing_text_is_rewritten_once_and_only_once():

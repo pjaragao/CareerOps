@@ -151,3 +151,43 @@ def test_the_first_resume_is_asked_at_a_size_that_fits_two_pages():
     prompt = asyncio.run(cr.SkillService.render_prompt("jobs/resume.md", {"job_title": "x", "company": "y", "lang_name": "English",
                                                                             "job_description": "d", "resume_base": "b", "max_chars": 4800, "orientation": ""}))
     assert "at most 4800" in prompt
+
+
+LONG = {"issues": [{"doc": "resume", "severity": "major", "problem": "o PDF tem 3 páginas", "fix": "The resume must fit in 2 pages"}],
+        "resume_instructions": "", "cover_instructions": "", "summary": "Longo"}
+CV3 = "# Name\n\n## EXPERIENCE\n### Role A\n- a1\n- a2\n- a3\n### Role B\n- b1\n- b2\n- b3\n- b4\n"
+
+
+def test_trimming_cuts_the_longest_section_and_keeps_headings():
+    once = cr.trim_once(CV3)
+    assert "- b4" not in once and "- a3" in once and "### Role B" in once
+    assert cr.trim_once("# N\n### R\n- only\n") is None   # each section keeps its first bullet
+
+
+def test_fit_pages_cuts_until_two_pages():
+    fitted = cr.fit_pages(CV3, pages_of=lambda md: 3 if md.count("\n- ") > 4 else 2)
+    assert fitted.count("\n- ") == 4 and "### Role A" in fitted and "### Role B" in fitted
+    assert cr.fit_pages("# N\n### R\n- x\n", pages_of=lambda md: 3) is None
+
+
+def test_too_long_after_the_rounds_the_reviewer_cuts_it_itself(db, add_job, reviewer, sql, monkeypatch):
+    job = add_job(status="new")
+    sql("UPDATE public.job_listings SET resume_markdown = %s, cover_letter = 'Carta' WHERE id = %s", (CV3, job["id"]))
+    monkeypatch.setattr(cr, "pdf_pages", lambda md, name="resume.pdf": 3 if md.count("\n- ") > 5 else 2)
+    reviewer["readings"] = [LONG, LONG, LONG, CLEAN]
+    verdict = asyncio.run(CvReviewService.run(job["id"], rounds=2))
+    assert verdict["approved"] and verdict.get("trimmed")
+    assert _one("SELECT resume_markdown FROM public.job_listings WHERE id = %s", (job["id"],))["resume_markdown"].count("\n- ") == 5
+
+
+def test_a_content_problem_is_never_trimmed_away(db, add_job, reviewer):
+    job = add_job(status="new")
+    reviewer["readings"] = [INVENTED]
+    verdict = asyncio.run(CvReviewService.run(job["id"], rounds=2))
+    assert not verdict["approved"] and not verdict.get("trimmed")
+
+
+def test_the_reviewer_comment_says_what_to_fix_one_line_each():
+    text = cr.reasons({"issues": INVENTED["issues"] + CLEAN["issues"], "summary": "Inventou certificação"})
+    assert "• CV: certificação AWS inventada → Remove the AWS certification" in text
+    assert "◦ CV (observação): verbo fraco" in text and "Resumo do revisor: Inventou certificação" in text

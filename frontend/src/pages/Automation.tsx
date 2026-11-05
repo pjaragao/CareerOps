@@ -454,11 +454,16 @@ const NeedsYouDetail = ({ action, onDone, novnc, setError }: { action: Action; o
     <div style={{ ...stack, gap: '0.5rem' }}>
       {action.status === 'review_docs' && <>
         <p style={muted}>Leia o CV gerado para esta vaga antes de ele ir ao recrutador.</p>
+        {action.error_code === 'cv_review_failed' && action.error_text && <div style={{ border: '1px solid #8b85ff55', borderRadius: 8, padding: '0.6rem 0.75rem' }}>
+          <div style={{ fontWeight: 600, marginBottom: 4 }}>Comentário do revisor</div>
+          <p style={{ ...muted, whiteSpace: 'pre-line', margin: 0 }}>{action.error_text}</p>
+        </div>}
         <div style={row}>
           <a className="btn btn-secondary" href={`/api/jobs/${action.target_id}/document.pdf?kind=resume`} target="_blank" rel="noreferrer"><FileText size={15} /> CV</a>
           <a className="btn btn-secondary" href={`/api/jobs/${action.target_id}/document.pdf?kind=cover`} target="_blank" rel="noreferrer"><FileText size={15} /> Carta</a>
           <Link className="btn btn-secondary" to="/vagas">Editar em Vagas</Link>
           <button className="btn btn-primary" onClick={() => act(auto.approveDocs(action.id))}><Check size={15} /> Pode enviar</button>
+          {action.error_code === 'cv_review_failed' && <button className="btn btn-secondary" title="Gera o CV e a carta de novo e o revisor lê outra vez" onClick={() => act(auto.retry(action.id))}><RefreshCw size={15} /> Refazer</button>}
           <button className="btn btn-secondary" onClick={() => act(auto.cancel(action.id))}><X size={15} /> Cancelar</button>
         </div>
       </>}

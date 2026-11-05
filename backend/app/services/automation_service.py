@@ -892,7 +892,7 @@ class AutomationService:
                     else:   # still wrong after being redone: it waits for you, with the reasons
                         _rows("""UPDATE public.automation_actions SET status = 'review_docs', error_code = 'cv_review_failed', error_text = %s,
                                         updated_at = NOW() WHERE id = %s""",
-                              (f"O revisor recusou depois de {verdict['rounds']} refação(ões): {reasons(verdict)}", action["id"]))
+                              (f"O revisor recusou depois de {verdict['rounds']} refação(ões):\n{reasons(verdict)}", action["id"]))
                 else:
                     review = state["account_kind"] == "main" and state["review_cv_left"] > 0
                     _rows("UPDATE public.automation_actions SET status = %s, updated_at = NOW() WHERE id = %s",
