@@ -40,6 +40,7 @@ export interface JobFromLink {
   description: string;
   url: string;
   source: string;
+  warning?: string;   // e.g. the description looks cut off at the end
   employment_type?: string;
   seniority?: string;
   salary?: string;

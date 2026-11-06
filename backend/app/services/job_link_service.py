@@ -180,15 +180,41 @@ def _from_workday(u) -> dict | None:
 
 
 # ── Pages that only show the job with JavaScript: Gotenberg's Chromium opens them like a browser ──────────────
-def _rendered_text(url: str) -> str:
+# A word run together with no spaces (e.g. "Canindependentlyownthepath…") is what the PDF text looks like
+# where Chromium's print cut a box off; real words are shorter.
+_GLUED = re.compile(r"[A-Za-zÀ-ÿ]{28,}\W*$")
+
+
+def looks_cut(text: str) -> bool:
+    """True when the text ends where a scroll box was cut off in the print."""
+    return bool(_GLUED.search((text or "").rstrip()))
+
+
+def _print_text(url: str, extra: dict) -> str:
     try:
-        r = requests.post(f"{settings.GOTENBERG_URL}/forms/chromium/convert/url", timeout=60,
-                          files={k: (None, v) for k, v in {"url": url, "waitDelay": "4s", "emulatedMediaType": "screen"}.items()})
+        fields = {"url": url, "waitDelay": "4s", "emulatedMediaType": "screen", **extra}
+        r = requests.post(f"{settings.GOTENBERG_URL}/forms/chromium/convert/url", timeout=90,
+                          files={k: (None, v) for k, v in fields.items()})
         if r.status_code != 200:
             return ""
         return "\n".join((p.extract_text() or "") for p in PdfReader(io.BytesIO(r.content)).pages[:12]).strip()
     except Exception:
         return ""
+
+
+def _rendered_text(url: str) -> str:
+    """The page as Chromium shows it. Sites that open the ad in a modal or drawer with its own scroll
+    (jahnelgroup.com) print only the part inside the window, so it is printed first on one very tall page,
+    which makes the window that tall too. The normal A4-ish print is kept as the fallback."""
+    tall = _print_text(url, {"paperWidth": "11", "paperHeight": "60", "singlePage": "true"})
+    if tall and not looks_cut(tall):
+        return tall
+    normal = _print_text(url, {})
+    if not tall:
+        return normal
+    if not normal:
+        return tall
+    return normal if not looks_cut(normal) else max(tall, normal, key=len)
 
 
 # ── schema.org JobPosting (Google Jobs markup) ────────────────────────────────────────────────────────────────
@@ -297,7 +323,7 @@ class JobLinkService:
         if not u.netloc or "." not in u.netloc:
             raise LinkError("link inválido")
 
-        job, source = None, ""
+        job, source, cut = None, "", False
         linkedin_id = _linkedin_id(u) if "linkedin.com" in u.netloc else None
         if linkedin_id:
             url = f"https://www.linkedin.com/jobs/view/{linkedin_id}/"
@@ -331,12 +357,16 @@ class JobLinkService:
                         text = _rendered_text(url)
                         if len(text) >= 200:
                             ai, rendered = await _from_ai(text), True
+                    cut = rendered and looks_cut(text)
                     # what the page states wins; the AI fills the gaps
                     job = {**ai, **{k: v for k, v in (ld or {}).items() if v}}
                     source = "dados da página + IA" if ld else ("página aberta no navegador e lida pela IA" if rendered else "texto da página lido pela IA")
         if not job or not job.get("title") or not job.get("description"):
             raise LinkError("não encontrei a vaga nesta página: abra a vaga e cole o texto dela")
-        return {**job, "url": url, "source": source, "existing": _existing(url, linkedin_id)}
+        out = {**job, "url": url, "source": source, "existing": _existing(url, linkedin_id)}
+        if cut or looks_cut(job["description"]):
+            out["warning"] = "a descrição parece cortada no fim; confira e cole o texto da vaga se faltar algo"
+        return out
 
     @staticmethod
     async def from_text(text: str, url: str = "") -> dict:

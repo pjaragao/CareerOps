@@ -86,6 +86,11 @@ const NewJobModal = ({ onClose, onSaved }: { onClose: () => void; onSaved: () =>
                 {facts.map(f => <span key={f} style={{ padding: '1px 8px', borderRadius: 999, background: 'rgba(255,255,255,.06)', color: '#d4d4dc' }}>{f}</span>)}
               </div>
             )}
+            {read?.warning && !reading && !error && (
+              <p style={{ margin: '8px 0 0', fontSize: '0.8rem', color: '#f5c542', display: 'flex', gap: 6 }}>
+                <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: 2 }} /> Atenção: {read.warning}.
+              </p>
+            )}
             {read?.existing && !reading && (
               <p style={{ margin: '8px 0 0', fontSize: '0.8rem', color: '#f5c542', display: 'flex', gap: 6 }}>
                 <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: 2 }} />
