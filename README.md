@@ -105,8 +105,8 @@ Worker (Chromium + the extension) ◀──claims──▶ Backend ◀── Cla
 ### 1. Clone & Configure
 
 ```bash
-git clone https://github.com/pjaragao/linkedin_resume.git
-cd linkedin_resume
+git clone https://github.com/pjaragao/CareerOps.git
+cd CareerOps
 
 # Copy and fill environment variables
 cp .env.example .env
