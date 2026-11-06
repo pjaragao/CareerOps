@@ -33,7 +33,7 @@
 - **High-Fidelity Parsing**: Uses **MarkItDown** to convert PDF, DOCX, and XLSX into clean Markdown, preserving document structure for better AI comprehension.
 - **AI-Powered Extraction**: Modular skills analyze raw text to extract professional facts, skills, and structured **STAR Cases** (Situation, Task, Action, Result).
 - **Human-in-the-Loop Validation**: A dedicated Validation Wizard allows users to review, edit, and approve AI-extracted data before it enters the knowledge base.
-- **Intelligent Consolidation**: Automatically merges and de-duplicates information from multiple sources into a single, persistent `user_data.md` "source of truth".
+- **Intelligent Consolidation**: Automatically merges and de-duplicates information from multiple sources into a **single source of truth**: one persistent `user_data.md` that every CV, cover letter, outreach message and interview answer is generated from, so nothing the AI writes can drift from your validated history.
 - **Dynamic Context Injection**: Grounded AI responses via Jinja2 `{% include %}` — your validated history is automatically injected into interview prep, job matching, and LinkedIn optimization prompts.
 
 ### 🧭 Six screens
