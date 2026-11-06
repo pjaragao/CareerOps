@@ -28,9 +28,13 @@ TOOLS = ["browser_snapshot", "browser_navigate", "browser_click", "browser_type"
 ALLOWED_TOOLS = [f"mcp__playwright__{t}" for t in TOOLS]
 # Claude Code's own plumbing, not actions: loading a tool's definition, and the final answer in the --json-schema format
 HARNESS_TOOLS = {"ToolSearch", "StructuredOutput"}
-# Also refused by name: whatever a settings file may have allowed
+# Also refused by name: whatever a settings file may have allowed. Each run also hides every other tool the browser server
+# offers (server_tools), so a tool added or renamed in a new version never reaches the model (2026-11-05: browser_run_code
+# became browser_run_code_unsafe and was offered, then refused only by the permission mode).
 DENIED_TOOLS = ["Bash", "Read", "Write", "Edit", "NotebookEdit", "WebFetch", "WebSearch", "Agent", "Task", "Skill", "Glob", "Grep",
-                "mcp__playwright__browser_evaluate", "mcp__playwright__browser_run_code", "mcp__playwright__browser_install"]
+                "mcp__playwright__browser_evaluate", "mcp__playwright__browser_run_code", "mcp__playwright__browser_run_code_unsafe",
+                "mcp__playwright__browser_install", "mcp__playwright__browser_close", "mcp__playwright__browser_drop",
+                "mcp__playwright__browser_fill_form", "mcp__playwright__browser_network_request", "mcp__playwright__browser_network_requests"]
 
 RESULT_SCHEMA = {
     "type": "object",
@@ -89,15 +93,38 @@ def api(env: dict, path: str, body: dict) -> dict:
         return json.loads(res.read().decode("utf-8"))
 
 
-def build_command(prompt: str, mcp_config: Path) -> list:
+def server_tools(port) -> list:
+    """The tool names the browser server offers, from its own list. Empty when it does not answer: the fixed list still applies."""
+    url = f"http://127.0.0.1:{port}/mcp"
+
+    def post(body: dict, session: str = "") -> tuple:
+        headers = {"Content-Type": "application/json", "Accept": "application/json, text/event-stream"}
+        if session:
+            headers["Mcp-Session-Id"] = session
+        with urllib.request.urlopen(urllib.request.Request(url, data=json.dumps(body).encode("utf-8"), headers=headers), timeout=20) as res:
+            return res.headers.get("Mcp-Session-Id") or session, res.read().decode("utf-8", "replace")
+    try:
+        session, _ = post({"jsonrpc": "2.0", "id": 1, "method": "initialize",
+                           "params": {"protocolVersion": "2025-03-26", "capabilities": {}, "clientInfo": {"name": "careerops-runner", "version": "1"}}})
+        post({"jsonrpc": "2.0", "method": "notifications/initialized"}, session)
+        _, text = post({"jsonrpc": "2.0", "id": 2, "method": "tools/list"}, session)
+        body = [line[5:] for line in text.splitlines() if line.startswith("data:")] or [text]
+        return [t["name"] for t in json.loads(body[-1])["result"]["tools"]]
+    except (OSError, ValueError, KeyError, TypeError) as e:
+        print(f"could not list the browser tools: {e}", file=sys.stderr)
+        return []
+
+
+def build_command(prompt: str, mcp_config: Path, offered: list = ()) -> list:
+    hidden = DENIED_TOOLS + [f"mcp__playwright__{t}" for t in offered if t not in TOOLS and f"mcp__playwright__{t}" not in DENIED_TOOLS]
     return [CLAUDE, "-p", prompt, "--model", "sonnet", "--effort", "low", "--permission-mode", "dontAsk",
             "--strict-mcp-config", "--mcp-config", str(mcp_config), "--allowedTools", ",".join(ALLOWED_TOOLS),
-            "--disallowedTools", ",".join(DENIED_TOOLS), "--output-format", "stream-json", "--verbose",
+            "--disallowedTools", ",".join(hidden), "--output-format", "stream-json", "--verbose",
             "--json-schema", json.dumps(RESULT_SCHEMA), "--max-budget-usd", MAX_BUDGET_USD, "--no-session-persistence"]
 
 
 def parse_stream(lines: list) -> dict:
-    """What the run did (every tool call) and how it ended, from the stream-json output."""
+    """What the run did (every tool call, and which ones Claude Code refused) and how it ended, from the stream-json output."""
     calls, final = [], None
     for line in lines:
         try:
@@ -107,9 +134,12 @@ def parse_stream(lines: list) -> dict:
         if event.get("type") == "assistant":
             for block in (event.get("message") or {}).get("content") or []:
                 if isinstance(block, dict) and block.get("type") == "tool_use":
-                    calls.append({"name": block.get("name"), "input": block.get("input") or {}})
+                    calls.append({"id": block.get("id"), "name": block.get("name"), "input": block.get("input") or {}})
         elif event.get("type") == "result":
             final = event
+    refused = {d.get("tool_use_id") for d in (final or {}).get("permission_denials") or [] if isinstance(d, dict)}
+    for c in calls:
+        c["refused"] = bool(c["id"]) and c["id"] in refused
     return {"calls": calls, "final": final}
 
 
@@ -131,12 +161,13 @@ LINKEDIN_OFF_TARGET = re.compile(r"/(feed|messaging|mynetwork|settings|psettings
 
 
 def audit(calls: list, action: dict) -> list:
-    """What the agent did outside its task. Anything here stops the lane until you look. The tool list already refuses the rest."""
+    """What the agent did outside its task. Anything here stops the lane until you look. The tool list already refuses the rest:
+    a call Claude Code refused did nothing and is only noted (refused_tools); one not known to be refused counts as done."""
     flags = []
     allowed = allowed_hosts(action)
     for call in calls:
         name = call.get("name") or ""
-        if name in HARNESS_TOOLS:
+        if name in HARNESS_TOOLS or call.get("refused"):
             continue
         if name not in ALLOWED_TOOLS:
             flags.append(f"ferramenta não permitida: {name}")
@@ -156,11 +187,15 @@ def audit(calls: list, action: dict) -> list:
     return flags
 
 
+def refused_tools(calls: list) -> list:
+    return sorted({c.get("name") or "" for c in calls if c.get("refused")})
+
+
 def outcome(parsed: dict, returncode: int, action: dict) -> dict:
     """The result to report. A run that did not end cleanly is never "done"."""
     final = parsed["final"] or {}
     result = {"status": "needs_user", "summary": "", "questions": [], "audit_flags": audit(parsed["calls"], action),
-              "cost_usd": final.get("total_cost_usd"), "transcript": {"tools": [c.get("name") for c in parsed["calls"]][:300]}}
+              "cost_usd": final.get("total_cost_usd"), "transcript": {"tools": [c.get("name") for c in parsed["calls"]][:300], "refused": refused_tools(parsed["calls"])}}
     if returncode != 0 or final.get("is_error") or not final:
         result["status"] = "failed"
         result["summary"] = f"A execução do Claude terminou com erro: {str(final.get('result') or returncode)[:500]}"
@@ -175,6 +210,9 @@ def outcome(parsed: dict, returncode: int, action: dict) -> dict:
         result.update({"status": answer["status"], "summary": str(answer.get("summary") or "")[:2500], "questions": answer.get("questions") or []})
     else:
         result["summary"] = "O Claude não devolveu um resultado reconhecível"
+    refused = refused_tools(parsed["calls"])
+    if refused:
+        result["summary"] = (result["summary"] + f"\n\nO sistema recusou (nada foi feito): {', '.join(refused)}").strip()[:2700]
     return result
 
 
@@ -197,7 +235,7 @@ def run_once(env: dict) -> int:
         mcp_config.write_text(json.dumps({"mcpServers": {"playwright": {"type": "http", "url": f"http://127.0.0.1:{port}/mcp"}}}), encoding="utf-8")
         clean_env = {k: v for k, v in env.items() if not k.startswith("CAREEROPS_")}
         try:
-            done = subprocess.run(build_command(prompt, mcp_config), cwd=folder, env=clean_env, capture_output=True, text=True, timeout=TIMEOUT_SECONDS)
+            done = subprocess.run(build_command(prompt, mcp_config, server_tools(port)), cwd=folder, env=clean_env, capture_output=True, text=True, timeout=TIMEOUT_SECONDS)
             parsed, code = parse_stream(done.stdout.splitlines()), done.returncode
         except subprocess.TimeoutExpired as e:
             out = e.stdout.decode("utf-8", "replace") if isinstance(e.stdout, bytes) else (e.stdout or "")
