@@ -113,6 +113,8 @@ cp .env.example .env
 # Edit .env with your Supabase credentials and AI API keys
 ```
 
+> Personal data in `config/` (phone, email, resumes) are placeholders or sample content: replace them with your own before using the app.
+
 ### 2. Start Services
 
 ```bash
