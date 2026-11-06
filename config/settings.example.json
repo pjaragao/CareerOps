@@ -1,0 +1,16 @@
+{
+  "gemini_api_key": "",
+  "linkedin_email": "you@example.com",
+  "scrape_delay": 4,
+  "max_jobs": 20,
+  "openai_api_key": "",
+  "openai_base_url": "",
+  "ai_model_resume": "gemini-3.1-pro-preview",
+  "ai_model_cover": "gemini-3.1-pro-preview",
+  "ai_model_chat": "gemini-3.1-flash-lite",
+  "ai_model_outreach": "gemini-3.1-flash-lite",
+  "ai_model_fallback": "gemini-flash-latest",
+  "ai_model_import": "gemini-3.1-flash-lite",
+  "ai_model_interview": "gemini-3.1-pro-preview",
+  "ai_model_optimizer": "gemini-3.1-pro-preview"
+}

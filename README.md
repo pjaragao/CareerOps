@@ -190,10 +190,10 @@ Load the `extension/` folder as an unpacked extension in Chrome.
 
 ## 📄 License
 
-Private project — All rights reserved.
+Published for portfolio and code-review purposes. All rights reserved; please contact the author before reuse.
 
 ---
 
 <div align="center">
-  <sub>Built with ❤️ by Paulo Aragão — Powered by AI</sub>
+  <sub>Built with ❤️ by <b>Paulo Aragão Jr</b> · <a href="https://github.com/pjaragao">GitHub</a> · <a href="https://www.linkedin.com/in/paulojrarj">LinkedIn</a></sub>
 </div>

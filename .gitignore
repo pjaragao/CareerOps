@@ -71,3 +71,8 @@ supabase/volumes/
 .cursor/
 .aider*
 
+
+# local secrets (API keys, LinkedIn login): copy config/settings.example.json to config/settings.json
+config/settings.json
+.kilo/
+.agents/
