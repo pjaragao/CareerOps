@@ -25,9 +25,9 @@
 ### 🤖 Modular AI Skills Engine
 - **Template-driven architecture** using Jinja2 for all AI prompts
 - **Isolated Skill folders** (`profile`, `jobs`, `interview`, `analytics`) for easy prompt maintenance
-- **Dynamic AI model mapping** — assign specific models to each skill domain via Settings
+- **Per-task AI model mapping** — assign a model to each task (posts, style, writing, default) via Settings
 - **Common rule inheritance** — centralized anti-hallucination and output format rules
-- Multi-provider support: **Gemini**, **NVIDIA NIM**, **Alibaba Cloud**, **Ollama**
+- Multi-provider support: **Gemini** (Flash 3.8 and Argon tiers), **NVIDIA NIM**, **Alibaba Cloud**, **Ollama**
 
 ### 🧠 Knowledge Base Stack & Workflow
 - **High-Fidelity Parsing**: Uses **MarkItDown** to convert PDF, DOCX, and XLSX into clean Markdown, preserving document structure for better AI comprehension.
@@ -122,20 +122,20 @@ docker compose up --build -d
 
 ---
 
-## 🔧 AI Skills Configuration
+## 🔧 AI Model Routing
 
-### Per-Domain Model Mapping
+Models are chosen **per task**, not per prompt folder, and can be changed in *Settings → Style and models*. Requests go through
+an OpenAI-compatible provider layer (Gemini API, NVIDIA NIM, Alibaba Cloud, Ollama, or a local CLI shim); if a configured model
+is unavailable it falls back to the default.
 
-Configure different AI models for each domain in the Settings page. The `SkillService` automatically routes requests based on the prompt folder:
+| Task | Used for | Default model |
+|---|---|---|
+| `posts` | generating LinkedIn posts | `gemini-4-argon-high` |
+| `style` | AI style adjustment of texts | `gemini-4-argon-medium` |
+| `writing` | comments, invites, CV, cover letter, Easy Apply answers | `gemini-3.8-flash-medium` |
+| `default` | usual tasks: extraction, scoring, analysis | `gemini-3.8-flash-low` |
 
-| Domain (Folder) | Setting Key | Recommended |
-|-----------------|-------------|-------------|
-| `profile/` | `ai_model_profile` | gemini-1.5-pro |
-| `jobs/` | `ai_model_jobs` | gemini-1.5-pro |
-| `interview/` | `ai_model_interview` | gemini-1.5-flash |
-| `onboarding/` | `ai_model_onboarding` | gemini-1.5-pro |
-| `analytics/` | `ai_model_analytics` | gemini-1.5-flash |
-| `common/` | `ai_model_chat` | gemini-1.5-flash |
+Fallbacks when a model fails: `gemini-3.8-flash-high`, then `gemini-flash-latest`.
 
 ---
 
