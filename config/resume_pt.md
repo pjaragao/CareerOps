@@ -39,11 +39,12 @@ Atuação independente para grandes grupos empresariais brasileiros, em paralelo
 ### MPB Engenharia — Florianópolis/SC
 **Consultoria de engenharia em saneamento, drenagem, urbanização, meio ambiente e infraestrutura** | mai 2008 – jan 2026
 
-Atende prefeituras, companhias estaduais e órgãos federais, com ~90 licitações por ano. Promoções internas de estagiário a diretor financeiro em quase 18 anos.
+Empresa com mais de 200 colaboradores; atende prefeituras, companhias estaduais e órgãos federais, com ~90 licitações por ano. Promoções internas de estagiário a diretor financeiro em quase 18 anos.
 
 **Diretor Financeiro (CFO)** | fev 2023 – jan 2026
 Tipos de projeto: implantação de orçamento e KPIs, migração de ERP, relatórios de BI, automação financeira.
 - Liderança de equipe financeira de 5 pessoas; implantação do orçamento anual com acompanhamento mensal e dos KPIs de metas operacionais.
+- Liderança da segunda implantação de ERP da empresa (2023), começando pelo financeiro e estendida a todos os setores com mapeamento de processos e treinamento das equipes.
 - Relatórios gerenciais em BI por setor, por projeto e das grandes despesas; contabilidade de custos no novo ERP com apropriação de mão de obra pelo registro de horas.
 - Automação de relatórios e documentos com n8n, IA e Power Platform integrados ao ERP e ao SharePoint.
 
@@ -55,13 +56,13 @@ Tipos de projeto: projetos de saneamento, programa financiado pelo Banco Mundial
 - Estudos de viabilidade (fluxo de caixa descontado) e modelagem tarifária de concessões de água e esgoto; análise de processos de concessão em Penha, Camboriú, Bombinhas e Pomerode.
 - Gestão de 5 a 7 contratos simultâneos (~R$ 20 milhões/ano), de R$ 1 a 2 milhões cada, para empreendimentos de R$ 100 a 800 milhões.
 - Propostas financeiras das ~90 licitações por ano da empresa (técnica e preço e menor preço) e metodologia de precificação por métricas objetivas que reduziu muito o tempo de elaboração.
-- Implantação do ERP, migração para o SharePoint Online com equipe interna, ISO 9001 e implantação do BIM.
+- Liderança da primeira implantação de ERP da empresa (2017), ISO 9001 e implantação do BIM com equipe interna.
 
 **Liderança da Infraestrutura de TI**
 Tipos de projeto: infraestrutura local multiescritório, alta disponibilidade, migração para a nuvem.
-- Responsável pela infraestrutura de TI da empresa, com diversos escritórios interligados à rede local por VPN: Active Directory, administração do tenant Microsoft 365 e file server local com mais de 30 TB.
+- Responsável pela infraestrutura de TI da empresa, com diversos escritórios interligados à rede local por VPN: Active Directory, file server local com mais de 30 TB e gestão do Microsoft 365 de toda a empresa (mais de 200 colaboradores).
 - Alta disponibilidade e continuidade da operação: 2 servidores redundantes em paralelo, nobreak local implantado e mantido, rotinas de backup do servidor local e 3 links de internet, sendo 1 dedicado com failover.
-- Implantação do SharePoint local em 2012 e, depois, migração para o SharePoint Online (nuvem).
+- Implantação do SharePoint local em 2012 para controle de documentos e registros internos e migração para o SharePoint Online em 2018.
 - Desenvolvimento de aplicativos Power Apps, canvas e model-driven.
 
 **Estagiário de Engenharia** | mai 2008 – ago 2011
@@ -73,6 +74,8 @@ Tipos de projeto: infraestrutura local multiescritório, alta disponibilidade, m
 Produtos próprios, como único engenheiro, em paralelo à consultoria: 14 sistemas, 11 em produção. Tipos de projeto: construção de plataformas, lançamento de produtos, modelos de previsão, agentes de IA.
 
 Método: prototipagem de integrações, cadeias de prompts e tool calling no n8n para provar o fluxo e os casos de borda, e consolidação com o Claude Code em serviços de produção (FastAPI, Next.js, workers Python, PL/pgSQL) com testes automatizados e CI.
+
+Como os agentes são construídos: nenhum agente faz o trabalho todo sozinho. Cada fluxo é uma cadeia de agentes especializados trabalhando em série — por exemplo, avaliador → redator → revisor — e a saída de cada etapa é verificada antes da próxima rodar; o revisor pode devolver ou corrigir o trabalho, e suas observações vão para a pessoa que aprova. Os guardrails ficam no código, não só no prompt: números e preços são conferidos no banco antes de a resposta sair, os agentes agem apenas por ferramentas MCP com papéis de banco de privilégio mínimo, e um filtro de conteúdo bloqueia temas proibidos. Por cima, governança: toda ação irreversível (uma candidatura, uma mensagem, uma resposta que envolve valores) espera aprovação humana, muitas vezes pelo WhatsApp; toda execução de agente e chamada de ferramenta fica registrada; as ações têm limites diários; e quando uma etapa falha — a página mudou, uma checagem não passou — ela para com código de erro e captura de tela e vai para um modelo de fallback ou para mim, nunca um palpite silencioso.
 
 - **CentralOps:** ERP de varejo com contabilidade de partidas dobradas, fluxo de caixa, DRE, estoque, folha e fiscal (PostgreSQL, mais de 2.000 testes automatizados) e agente de IA que só usa números calculados pelo banco; PDV, e-commerce, pagamentos Stone e NFC-e; 10 schemas PostgreSQL com filas PGMQ; PDV touch, TEF/Stone, NFC-e direto na SEFAZ com contingência offline, CRM e estoque multicentro com reservas atômicas (Next.js 16, React 19). Servidor MCP usado pelo agente de operações (Hermes), que audita divergências de estoque, monitora a SEFAZ e as filas e responde sobre vendas e caixa, e por um agente de loja que sincroniza catálogo e fotos com o Google Drive.
 - **Modelo de projeção da apuração (Eleições 2026):** modelo estatístico bayesiano sobre os dados oficiais do TSE, calibrado com os 2º turnos de 2014, 2018 e 2022.

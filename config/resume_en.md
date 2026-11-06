@@ -33,6 +33,8 @@ Independent product work, team of one. Project types: platform builds, product l
 
 Build and operate data, modeling and AI products end to end as sole engineer: 14 systems, 11 in production. Method: prototype integrations, prompt chains and agent tool calls in n8n to prove the flow and its edge cases, then harden them with Claude Code into production services (FastAPI, Next.js, Python workers, PL/pgSQL), with automated tests and CI as the quality gate.
 
+How the agents are built: no single agent does the whole job. Each workflow is a chain of narrow agents working in series — for example scorer → writer → reviewer — and each step's output is checked before the next one runs; the reviewer can send work back or fix it, and its notes go to the human who approves. Guardrails live in code, not only in prompts: numbers and prices are verified against the database before a reply goes out, agents act only through MCP tools under least-privilege database roles, and a content guard blocks topics that must never appear. Governance on top: every irreversible action (an application, a message, a payment-related answer) waits for human approval, often from WhatsApp; every agent run and tool call is logged; actions have daily limits; and when a step fails — a page changed, a check did not pass — it stops with a clear error code and a screenshot and goes to a fallback model or to me, never a silent guess.
+
 - **Election-night projection model (Brazil 2026):** Bayesian hierarchical model of municipal deviations from a first-round + vote-transfer baseline on official electoral data (national → regional → state shrinkage); uncertainty calibrated by replaying the 2014, 2018 and 2022 runoffs in real vote-arrival order; 56 tests.
 - **CentralOps — retail ERP with an AI agent.** ~95k-line system (PostgreSQL/Supabase, Python workers, Next.js/TypeScript): double-entry ledger, cash flow and P&L, inventory, payroll, Brazilian tax and e-invoicing; 133 migrations, 2,000+ pgTAP tests, CI/CD. Point of sale, e-commerce, Stone payments and NFC-e e-invoicing; 10 PostgreSQL schemas with PGMQ queues. Omnichannel scope: touch POS, e-commerce, TEF/Stone payments, NFC-e straight to SEFAZ with offline contingency, customer CRM scoring and multi-warehouse inventory with atomic reservations; Next.js 16/React 19 front end. The customer-facing LLM agent acts only through database functions exposed by an MCP server, and a guardrail checks every price and stock level against the database before a reply goes out; an operations agent (Hermes) uses the same MCP server to audit stock divergences, watch SEFAZ transmissions and PGMQ queues and answer sales and cash-flow questions, and a store-operations agent keeps the catalog and product photos in sync with Google Drive.
 - **Trading Copilot (B3):** tracks analyst signals, reconciles broker statements for real costs and slippage, computes capital-gains tax and backtests strategies with TimesFM forecasts; risk cockpit on MetaTrader 5 history (payoff, hit rate, intraday max drawdown, discipline rules) with an LLM trade-journal reviewer; Flask, Pandas, SQLite WAL; 100+ tests.
@@ -53,11 +55,12 @@ Independent practice serving large Brazilian corporate groups. Freelance, held c
 ### MPB Engineering — Florianópolis, Brazil
 **Consultancy for water, wastewater, urban and highway-environmental infrastructure** | May 2008 – Jan 2026
 
-Consultancy serving municipalities, state utilities and federal agencies, bidding ~90 tenders a year. Internal promotions from intern to Finance Director over nearly 18 years.
+Consultancy of 200+ employees serving municipalities, state utilities and federal agencies, bidding ~90 tenders a year. Internal promotions from intern to Finance Director over nearly 18 years.
 
 **Finance Director (CFO)** | Feb 2023 – Jan 2026
 Project types: budgeting and KPI rollout, ERP migration, BI reporting, finance automation.
 - Led a 5-person finance team; introduced the annual budget with monthly variance tracking and the KPIs used to monitor operational goals.
+- Led the company's second ERP implementation (2023), starting from finance and rolled out to every department with process mapping and staff training.
 - Built BI reporting on department and project performance and major expenses; redesigned ERP cost accounting with timesheet-based labor allocation.
 - Automated reporting and document workflows with n8n, LLM APIs and Power Platform integrated with the ERP and SharePoint, eliminating manual data entry.
 
@@ -68,13 +71,13 @@ Project types: feasibility and tariff modeling, concession analysis, tender pric
 - Managed 5–7 concurrent contracts (~US$4M a year) of US$0.2–0.4M each, supporting infrastructure investments of US$20–150M; owned scope, schedule, budget, risk and client reporting.
 - General coordinator and engineer of record for the **World Bank–financed Lagoas do Norte Program** in Teresina (Feb 2014 – Jul 2019): proposal and integrated design of sewerage for 312,000 residents, 28 km of drainage, water, roads, a 1 MW biogas plant and BIM-modeled urban design across ~1,300 ha.
 - Engineer of record on 46 registered engagements, including the Mearim river-basin plan (99,000 km², 2.1M people), water systems for state utilities (up to 1,250 L/s) and environmental management of highway programs (BR-470 for DNIT; Arteris concession, 357 km).
-- Led the firm's ERP, SharePoint Online and BIM transformations with in-house staff.
+- Led the firm's first ERP implementation (2017) and the BIM rollout with in-house staff.
 
 **IT Infrastructure Lead**
 Project types: multi-office on-premises infrastructure, high availability, cloud migration.
-- Owned the firm's IT infrastructure, with several offices joined to the local network over VPN: Active Directory, Microsoft 365 tenant administration and the on-premises file server (30+ TB).
+- Owned the IT infrastructure of the 200+ employee firm, with several offices joined to the local network over VPN: Active Directory, the on-premises file server (30+ TB) and management of Microsoft 365 for the whole company.
 - Built for high availability and continuous operation: 2 redundant servers running in parallel, on-site UPS installed and maintained, local-server backup routines and 3 internet links, 1 of them dedicated with failover.
-- Deployed on-premises SharePoint in 2012, then migrated it to SharePoint Online (cloud).
+- Deployed on-premises SharePoint in 2012 for document control and internal records, then migrated it to SharePoint Online in 2018.
 - Built Power Apps, both canvas and model-driven.
 
 **Engineering Intern** | May 2008 – Aug 2011
