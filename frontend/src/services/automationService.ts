@@ -2,7 +2,8 @@
 import api from './api';
 import type { EligibilityIssue } from './jobService';
 
-export type ActionKind = 'apply' | 'comment' | 'follow' | 'connect' | 'search' | 'check' | 'feed_scan' | 'follow_scan' | 'saved_import';
+export type ActionKind = 'apply' | 'comment' | 'follow' | 'connect' | 'search' | 'check' | 'feed_scan' | 'follow_scan' | 'saved_import'
+  | 'reply_scan' | 'thread_read' | 'reply' | 'like' | 'inbox_scan' | 'message';
 
 export interface Question { key?: string; label: string; type?: string; options?: string[] }
 

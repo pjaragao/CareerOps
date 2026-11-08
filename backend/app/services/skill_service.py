@@ -45,7 +45,7 @@ class SkillService:
     # Skills whose text reaches other people: they go through the content guard (config/automation.yml)
     OUTGOING_SKILLS = {
         "jobs/resume.md", "jobs/cover_letter.md", "jobs/outreach.md", "resumes/improve.md", "resumes/form_suggestions.md",
-        "onboarding/update_resume.md", "linkedin/easy_apply.md", "linkedin/engagement_comment.md", "linkedin/engagement_reply.md",
+        "onboarding/update_resume.md", "linkedin/easy_apply.md", "linkedin/engagement_comment.md", "linkedin/engagement_reply.md", "linkedin/reply_followup.md", "linkedin/inbox_assist.md",
         "linkedin/post_drafts.md", "linkedin/prospect_note.md", "linkedin/prospect_message.md", "linkedin/networking_plan.md",
     }
 

@@ -47,7 +47,7 @@ def database():
     yield
 
 
-TABLES = ("automation_login_links", "bot_notifications", "improvement_suggestions", "automation_events", "automation_runs", "automation_actions", "automation_answers", "job_email_events", "job_searches",
+TABLES = ("linkedin_comment_replies", "linkedin_conversations", "automation_login_links", "bot_notifications", "improvement_suggestions", "automation_events", "automation_runs", "automation_actions", "automation_answers", "job_email_events", "job_searches",
           "job_listings", "linkedin_engagement", "linkedin_prospects", "linkedin_networking_plans")
 
 
@@ -58,7 +58,8 @@ def db(database, monkeypatch):
     from app.services import automation_service, job_search_service
     base = dict(automation_service.config())
     # the reviewer agent calls an AI: its own tests turn it on (test_cv_review.py)
-    cfg = {**base, "automation": {**base["automation"], "window": {"start_hour": 0, "end_hour": 24}, "write_gap_minutes": [0, 0]},
+    cfg = {**base, "automation": {**base["automation"], "window": {"start_hour": 0, "end_hour": 24}, "write_gap_minutes": [0, 0],
+                                  "reply_scan_hours": [], "inbox_scan_hours": []},   # tests that need them set them
            "jobs": {**base["jobs"], "cv_review": "you"}}
     monkeypatch.setattr(automation_service, "config", lambda: cfg)
     monkeypatch.setattr(job_search_service, "config", lambda: cfg)

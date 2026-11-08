@@ -248,6 +248,36 @@ def main():
     check("comment on a post that is not the approved one is refused", row["status"] in ("escalated", "needs_user") and "556" not in fake_state()["comments"], f"{row['status']} {row['error_text']}")
     call("POST", f"/automation/actions/{wrong}/cancel")
 
+    print("replies to your comments, and the inbox (2026-11-08)")
+    post8 = "https://www.linkedin.com/feed/update/urn:li:activity:8801/"
+    head = "Do you see reuse of treated wastewater closing that gap?"
+    like = propose("like", "like-e2e", post8, {"reply_head": head, "reply_author": "Bia Lima"})
+    call("POST", f"/automation/actions/{like}/approve", {"run_now": True})
+    row = wait_status(like, ("done", "needs_user", "escalated", "discarded"), 120)
+    check("like: the reply liked and seen on the page", row["status"] == "done", f"{row['status']} {row['error_code']} {row['error_text']}")
+    check("like: exactly once", fake_state()["liked"].count("8801") == 1, str(fake_state()["liked"]))
+    answer = "Partly: reuse covers cooling make-up water, but only with tertiary treatment on site."
+    reply = propose("reply", "reply-e2e", "https://www.linkedin.com/feed/update/urn:li:activity:8802/",
+                    {"reply_head": head, "reply_author": "Bia Lima", "text": answer, "like": False})
+    call("POST", f"/automation/actions/{reply}/approve", {"run_now": True})
+    row = wait_status(reply, ("done", "needs_user", "escalated"), 150)
+    check("reply: answered under the reply and seen on the page", row["status"] == "done", f"{row['status']} {row['error_code']} {row['error_text']}")
+    check("reply: the approved text, once", [c for c in fake_state()["comments"].get("8802", []) if answer in c] and len(fake_state()["comments"]["8802"]) == 1,
+          str(fake_state()["comments"]))
+    no = "Thank you for reaching out, but this is not something I need at the moment. All the best!"
+    message = propose("message", "message-e2e", "https://www.linkedin.com/messaging/thread/T1/", {"text": no, "name": "Hans Müller"})
+    call("POST", f"/automation/actions/{message}/approve", {"run_now": True})
+    row = wait_status(message, ("done", "needs_user", "escalated"), 120)
+    check("message: sent in the conversation and seen on the page", row["status"] == "done", f"{row['status']} {row['error_code']} {row['error_text']}")
+    check("message: the approved text, once", fake_state()["dm"].get("T1") == [no], str(fake_state()["dm"]))
+    scan = propose("reply_scan", "reply-scan-e2e", "https://www.linkedin.com/notifications/?filter=all", {"limit": 10})
+    sql("UPDATE public.automation_actions SET lane = 'linkedin_read' WHERE id = %s", (scan,))
+    call("POST", f"/automation/actions/{scan}/approve", {"run_now": True})
+    row = wait_status(scan, ("done", "needs_user", "escalated"), 120)
+    check("reply_scan: only the reply notice read and queued", row["status"] == "done" and (row["result"] or {}).get("notices") == 1 and (row["result"] or {}).get("queued") == 1, f"{row['status']} {row['result']} {row['error_text']}")
+    # the thread_read it made would call the AI: out of the queue here
+    sql("UPDATE public.automation_actions SET status = 'cancelled' WHERE kind = 'thread_read' AND status IN ('queued', 'running_ext')")
+
     print("application, real submit")
     add_job("203")
     apply_live = approve_job("203")

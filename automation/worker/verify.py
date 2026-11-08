@@ -74,6 +74,15 @@ async def prove(page, action: dict) -> Tuple[bool, dict]:
         return comment_in(await page.evaluate("() => document.body.innerText || ''"), text), {"url": page.url}
     if kind == "follow":
         return await _prove_state(page, FOLLOWING, IN_MENU_FOLLOWING, NOTE_FOLLOWING, url)
+    if kind in ("reply", "message"):   # the text is on the page (the post's comments, or the conversation)
+        text = action["payload"].get("text") or ""
+        if kind == "reply":
+            await _open_comments(page)
+        return comment_in(await page.evaluate("() => document.body.innerText || ''"), text), {"url": page.url}
+    if kind == "like":
+        await _open_comments(page)
+        state = await _reply_reaction(page, action["payload"].get("reply_head") or "")
+        return bool(state) and not NO_REACTION.search(state), {"url": page.url, "reaction": state}
     proof, evidence = await _prove_state(page, PENDING, IN_MENU_PENDING, NOTE_PENDING, url)
     if not proof:   # last layer: the list of invitations you sent names the person, whatever the profile page shows
         listed = await _in_sent_invitations(page, url)
@@ -82,6 +91,43 @@ async def prove(page, action: dict) -> Tuple[bool, dict]:
         await page.goto(url, wait_until="domcontentloaded", timeout=45000)   # leave the profile there for the screenshot
         await page.wait_for_timeout(2000)
     return proof, evidence
+
+
+NO_REACTION = re.compile(r"^\s*(no reaction|sem rea[cç][aã]o|nenhuma rea[cç][aã]o|none)\b", re.I)
+
+
+async def _open_comments(page) -> None:
+    """A post page may show its comments only after a click on "Comment"/"N comments": one click, no typing."""
+    try:
+        await page.evaluate("""() => {
+            if (document.querySelector('.comments-comment-list, .comments-comments-list, [class*="comments-list"]')) return;
+            const b = [...document.querySelectorAll('main button')].find((x) => /^(\\d+\\s+)?(comments?|coment[aá]rios?)$/i.test((x.innerText || '').trim()));
+            if (b) b.click();
+        }""")
+        await page.wait_for_timeout(2500)
+    except PlaywrightError:
+        pass
+
+
+async def _reply_reaction(page, head: str) -> str:
+    """The reaction state of the comment whose text starts like head: "" when the comment is not found."""
+    return await page.evaluate("""(head) => {
+        // the whole comment is searched (its author's name comes first); only the needle is cut
+        const key = (t) => (t || '').normalize('NFKD').replace(/[\\u0300-\\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+        const want = key(head).slice(0, 30);
+        if (!want) return '';
+        const STATE = /(reaction button state|estado do bot[aã]o de rea[cç][aã]o|bot[aã]o de rea[cç][aã]o)\\s*:\\s*(.*)$/i;
+        for (const el of document.querySelectorAll('article, .comments-comment-entity, .comments-comment-item, [class*="comment-item"]')) {
+            if (!key(el.innerText).includes(want)) continue;
+            for (const b of el.querySelectorAll('[aria-label]')) {
+                if (b.closest('article, .comments-comment-entity, .comments-comment-item, [class*="comment-item"]') !== el) continue;
+                const m = (b.getAttribute('aria-label') || '').match(STATE);
+                if (m) return m[2].trim();
+                if (b.getAttribute('aria-pressed') === 'true' && /like|gostei|curtir/i.test(b.getAttribute('aria-label'))) return 'Like';
+            }
+        }
+        return '';
+    }""", head)
 
 
 # the state spelled out in an aria-label or a banner, in the languages LinkedIn answers in

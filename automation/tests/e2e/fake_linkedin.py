@@ -11,7 +11,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-STATE = {"submitted": [], "comments": {}, "following": [], "invited": [], "visits": [], "checkpoint": False, "ats_sent": [], "injected": [], "chat": []}
+STATE = {"submitted": [], "comments": {}, "following": [], "invited": [], "visits": [], "checkpoint": False, "ats_sent": [], "injected": [], "chat": [],
+         "liked": [], "dm": {}}
 BASE = """<!doctype html><html><head><meta charset="utf-8"><title>{title}</title></head><body><main>{body}</main><script>{script}</script></body></html>"""
 
 
@@ -84,6 +85,56 @@ def post_page(activity):
     script = f"""document.getElementById('open').onclick=()=>{{document.getElementById('box').style.display='block'}};
     document.getElementById('send').onclick=()=>{{fetch('/__comment/{activity}',{{method:'POST',body:document.querySelector('.ql-editor').innerText}}).then(()=>location.reload())}};"""
     return "Post", body, script
+
+
+def reply_thread_page(activity):
+    """A post with a comment of yours and a reply to it (activity 8…): what reply_scan / thread_read / reply / like work on."""
+    liked = activity in STATE["liked"]
+    answers = "".join(f"<div class='comments-comment-item'><a href='/in/eu'>Paulo Jr You</a><p>{html.escape(c)}</p></div>"
+                      for c in STATE["comments"].get(activity, []))
+    body = f"""<div data-urn="urn:li:activity:{activity}"><div class="update-components-actor__title"><span aria-hidden="true">Ana Lima</span></div>
+      <div class="update-components-text">Data centers need water plans before power plans. {activity}</div>
+      <button>Like</button><button aria-label="Comment">Comment</button><button>Repost</button>
+      <div class="comments-comments-list">
+        <div class="comments-thread">
+          <div class="comments-comment-item" id="mine"><a href="/in/eu">Paulo Jr You</a><p>Cooling water is the real bottleneck in dry regions.</p>
+            <button aria-label="Reaction button state: no reaction">Like</button><button>Reply</button></div>
+          <div class="replies">
+            <div class="comments-comment-item" id="theirs"><a href="/in/bia">Bia Lima</a><p>Do you see reuse of treated wastewater closing that gap?</p>
+              <button id="like" aria-label="Reaction button state: {'Like' if liked else 'no reaction'}">Like</button><button id="reply">Reply</button>
+</div>
+            {answers}
+          </div></div></div></div>"""
+    # like LinkedIn, the reply box exists only after "Reply" is clicked
+    script = f"""document.getElementById('reply').onclick=()=>{{if(document.getElementById('rbox'))return;const f=document.createElement('form');f.id='rbox';f.onsubmit=()=>false;
+      f.innerHTML='<div class="ql-editor" contenteditable="true" role="textbox"></div><button id="rsend">Reply</button>';document.getElementById('theirs').after(f);
+      document.getElementById('rsend').onclick=()=>{{fetch('/__comment/{activity}',{{method:'POST',body:document.querySelector('#rbox .ql-editor').innerText}}).then(()=>location.reload())}};}};
+    document.getElementById('like').onclick=(e)=>{{e.currentTarget.setAttribute('aria-label','Reaction button state: Like');fetch('/__like/{activity}',{{method:'POST'}})}};"""
+    return "Post", body, script
+
+
+def notifications_page():
+    return "Notificações", """<article class="nt-card"><a href="/feed/update/urn:li:activity:8801/?commentUrn=urn%3Ali%3Acomment%3A1">
+      Bia Lima replied to your comment on Ana Lima's post.</a></article>
+      <article class="nt-card"><a href="/feed/update/urn:li:activity:555/">Ana Lima posted: Project finance…</a></article>""", ""
+
+
+def received_invitations_page():
+    return "Convites", """<ul><li><a href="/in/hans">Hans Müller</a><div>Talent Partner bei Acme GmbH</div>
+      <div class="invitation-card__custom-message">Hallo Paulo, ich habe Ihren Kommentar zu Wasserinfrastruktur gelesen und würde mich gerne vernetzen.</div>
+      <div>3 mutual connections</div><button>Ignore</button><button>Accept</button></li></ul>""", ""
+
+
+def thread_page(thread):
+    sent = "".join(f"""<li class="msg-s-message-list__event"><span class="msg-s-message-group__name">Paulo Jr</span>
+      <p class="msg-s-event-listitem__body">{html.escape(t)}</p></li>""" for t in STATE["dm"].get(thread, []))
+    body = f"""<h2 class="msg-entity-lockup__entity-title">Hans Müller</h2>
+      <ul><li class="msg-s-message-list__event"><span class="msg-s-message-group__name">Hans Müller</span>
+        <p class="msg-s-event-listitem__body msg-s-event-listitem--other">Wir bieten Webentwicklung und Leadgenerierung für Ihr Unternehmen an.</p></li>{sent}</ul>
+      <form class="msg-form" onsubmit="return false"><div class="msg-form__contenteditable" contenteditable="true" role="textbox"></div>
+        <button class="msg-form__send-button" type="submit" id="dmsend">Send</button></form>"""
+    script = f"""document.getElementById('dmsend').onclick=()=>{{fetch('/__dm/{thread}',{{method:'POST',body:document.querySelector('.msg-form__contenteditable').innerText}}).then(()=>location.reload())}};"""
+    return "Mensagens", body, script
 
 
 def profile_page(slug):
@@ -166,6 +217,8 @@ def messaging_page(old):
         items = '<ul><li class="msg-conversation-listitem"><h3>Bia Lima</h3><p class="msg-conversation-card__message-snippet">Oi, tudo bem?</p></li></ul>'
     else:
         items = '<ul><li><div componentkey="conversation-1"><p>Bia Lima</p><p>Oi, tudo bem?</p></div></li></ul>'
+    if STATE.get("unread"):   # the inbox scan: one unread conversation, linked to its thread
+        items += '<ul><li><a href="/messaging/thread/T1/" class="msg-conversation-card__convo-item--unread">Hans Müller</a></li></ul>'
     return "Mensagens", f"<h2>Messaging</h2>{items}", ""
 
 
@@ -263,6 +316,12 @@ class Handler(BaseHTTPRequestHandler):
             STATE["following"].append(key)
         elif kind == "__invite":
             STATE["invited"].append(key)
+        elif kind == "__like":
+            STATE["liked"].append(key)
+        elif kind == "__dm":
+            STATE["dm"].setdefault(key, []).append(body)
+        elif kind == "__unread":
+            STATE["unread"] = body == "on"
         elif kind == "__chat":
             STATE["chat"].append(key)
         elif kind == "__ats":
@@ -272,7 +331,8 @@ class Handler(BaseHTTPRequestHandler):
         elif kind == "__old_messaging":
             STATE["old_messaging"] = body == "on"
         elif kind == "__reset":
-            STATE.update({"submitted": [], "comments": {}, "following": [], "invited": [], "visits": [], "checkpoint": False, "ats_sent": [], "injected": [], "chat": []})
+            STATE.update({"submitted": [], "comments": {}, "following": [], "invited": [], "visits": [], "checkpoint": False, "ats_sent": [], "injected": [], "chat": [],
+                          "liked": [], "dm": {}, "unread": False})
         self.send(body="{}", kind="application/json")
 
     def do_GET(self):
@@ -293,7 +353,10 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/login":
             return self.send(302, headers={"Location": "/feed/"})
         if path.startswith("/feed/update/"):
-            return self.page(post_page(path.rstrip("/").split(":")[-1]))
+            activity = path.rstrip("/").split(":")[-1]
+            return self.page(reply_thread_page(activity) if activity.startswith("88") else post_page(activity))
+        if path.startswith("/notifications"):
+            return self.page(notifications_page())
         if path.startswith("/feed"):
             return self.page(("Feed", "<h1>Feed</h1>", ""))
         if path.startswith("/jobs/search-results"):
@@ -316,6 +379,10 @@ class Handler(BaseHTTPRequestHandler):
             return self.page(connections_page())
         if path.startswith("/mynetwork/invitation-manager/sent"):
             return self.page(sent_invitations_page())
+        if path.startswith("/mynetwork/invitation-manager/received"):
+            return self.page(received_invitations_page())
+        if path.startswith("/messaging/thread/"):
+            return self.page(thread_page(path.strip("/").split("/")[2]))
         if path.startswith("/messaging"):
             return self.page(messaging_page(STATE.get("old_messaging", False)))
         if path.startswith("/in/"):

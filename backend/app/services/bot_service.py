@@ -19,14 +19,18 @@ from app.services.automation_service import AutomationService, _local, _one, _ro
 
 log = logging.getLogger("bot")
 
-KIND_LABEL = {"apply": "Vagas", "comment": "Comentários", "connect": "Conexões", "follow": "Seguir"}
+KIND_LABEL = {"apply": "Vagas", "comment": "Comentários", "reply": "Respostas a comentários", "message": "Mensagens",
+              "connect": "Conexões", "follow": "Seguir"}
 # the summary (2026-11-05): "5 vagas, 3 comentários e 1 conexão", one message, at most every digest_minutes
 KIND_COUNT = {"apply": ("vaga", "vagas"), "comment": ("comentário", "comentários"), "connect": ("conexão", "conexões"),
-              "follow": ("perfil para seguir", "perfis para seguir")}
+              "follow": ("perfil para seguir", "perfis para seguir"), "reply": ("resposta a comentário", "respostas a comentários"),
+              "message": ("mensagem", "mensagens"), "like": ("curtida", "curtidas")}
 YOURS = {"needs_user": ("precisa de você", "precisam de você"), "review_docs": ("CV para revisar", "CVs para revisar"),
          "awaiting_confirm": ("pronta para o clique final", "prontas para o clique final")}
 WAITING = ("proposed",) + tuple(YOURS)
-SENT_KINDS = ("summary", "halt")   # all else is counted in the summary, never sent on its own
+# all else is counted in the summary, never sent on its own. "inbox" (2026-11-08): an invitation with a message, a recruiter's
+# answer, a service offer turned down — each one told as it comes, with the translation and the suggestion
+SENT_KINDS = ("summary", "halt", "inbox")
 
 
 def _and(parts: List[str]) -> str:
@@ -312,12 +316,17 @@ class BotService:
                     lines.append(f"   ↳ {r.get('target_url')}")
                 elif k == "connect":
                     lines.append(f"{n} {p.get('name') or r.get('title')} — {_short(p.get('headline'), 90)}{f' · {fit}' if fit else ''}")
+                elif k == "reply":
+                    lines.append(f"{n} {p.get('reply_author') or r.get('title')} respondeu “{_short(p.get('reply_head'), 160)}” → “{_short(p.get('text'), 400)}”")
+                    lines.append(f"   ↳ {r.get('target_url')}")
+                elif k == "message":
+                    lines.append(f"{n} {p.get('name') or r.get('title')}: “{_short(p.get('translation') or p.get('last'), 160)}” → “{_short(p.get('text'), 400)}”")
                 else:
                     lines.append(f"{n} {p.get('name') or r.get('title')}" + (f" — {_short(p.get('why'), 90)}" if p.get("why") else ""))
         if len(rows) > shown:
             lines.append(f"\n…e mais {len(rows) - shown} na lista abaixo.")
         lines.append(f"\n🔎 Lista com detalhes: {BotService.approval_link(kind)}")
-        lines.append("Responda a esta mensagem: “ok” aprova todas (vai no horário, 8h–20h), “ok 1 3” só essas, “ok agora” executa já, "
+        lines.append("Responda a esta mensagem: “ok” aprova todas (vai no horário, 8h–23h), “ok 1 3” só essas, “ok agora” executa já, "
                      "“não 2” rejeita a 2, “não” rejeita todas.")
         return "\n".join(lines), order
 

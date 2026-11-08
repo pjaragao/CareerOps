@@ -156,7 +156,8 @@ def test_triage_failure_is_tried_again_later(db, sql, monkeypatch):
 def test_schedule_puts_a_round_in_the_queue_once(db, sql, monkeypatch):
     from app.services import automation_service
     Search.ensure_seeds()
-    cfg = {**db, "automation": {**db["automation"], "search_hours": [0], "check_hours": [0], "feed_scan_hours": [], "follow_scan_hours": []}}
+    cfg = {**db, "automation": {**db["automation"], "search_hours": [0], "check_hours": [0], "feed_scan_hours": [], "follow_scan_hours": [],
+                                             "reply_scan_hours": [], "inbox_scan_hours": []}}
     monkeypatch.setattr(automation_service, "config", lambda: cfg)
     first = Auto.schedule_reads()
     assert first == 7 and Auto.schedule_reads() == 0

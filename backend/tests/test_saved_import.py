@@ -17,7 +17,8 @@ def at(hour):
 
 def only_saved_reads(db, monkeypatch, **automation):
     """The other reads of the day out of the way."""
-    cfg = {**db, "automation": {**db["automation"], "search_hours": [], "check_hours": [], "feed_scan_hours": [], "follow_scan_hours": [], **automation}}
+    cfg = {**db, "automation": {**db["automation"], "search_hours": [], "check_hours": [], "feed_scan_hours": [], "follow_scan_hours": [],
+                                "reply_scan_hours": [], "inbox_scan_hours": [], **automation}}
     monkeypatch.setattr(automation_service, "config", lambda: cfg)
 
 

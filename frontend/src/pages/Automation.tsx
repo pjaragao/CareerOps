@@ -34,7 +34,7 @@ const ago = (iso?: string | null): string => {
 const isRecent = (iso?: string | null) => !!iso && Date.now() - new Date(iso).getTime() < 48 * 3600000;
 const when = (iso?: string | null) => (iso ? new Date(iso).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '');
 
-const KIND_LABEL: Record<string, string> = { apply: 'Candidatura', comment: 'Comentário', connect: 'Conexão', follow: 'Seguir', search: 'Busca', check: 'Verificação', feed_scan: 'Leitura do feed', follow_scan: 'Sugestões para seguir', saved_import: 'Vagas salvas' };
+const KIND_LABEL: Record<string, string> = { apply: 'Candidatura', comment: 'Comentário', connect: 'Conexão', follow: 'Seguir', search: 'Busca', check: 'Verificação', feed_scan: 'Leitura do feed', follow_scan: 'Sugestões para seguir', saved_import: 'Vagas salvas', reply_scan: 'Respostas aos comentários', thread_read: 'Leitura de resposta', reply: 'Resposta a comentário', like: 'Curtida', inbox_scan: 'Convites e mensagens', message: 'Mensagem' };
 const STATUS_LABEL: Record<string, string> = {
   approved: 'Gerando documentos', review_docs: 'Aguarda você ler o CV', queued: 'Na fila', running_ext: 'Executando', verifying: 'Conferindo na página', awaiting_confirm: 'Aguarda seu envio',
   unknown_outcome: 'Vai conferir antes de repetir', escalated: 'Aguarda rotina Claude', running_claude: 'Rotina Claude', needs_user: 'Precisa de você', done: 'Feito', discarded: 'Descartada', failed: 'Falhou', expired: 'Expirou', cancelled: 'Cancelada',
@@ -92,14 +92,18 @@ const StatusBar = () => {
 };
 
 // ── Approve: one compact list, like Vagas ────────────────────────────────
-type WriteKind = 'apply' | 'comment' | 'connect' | 'follow';
+type WriteKind = 'apply' | 'comment' | 'connect' | 'follow' | 'reply' | 'message' | 'like';
 const KINDS: { id: WriteKind; label: string; plural: string; color: string }[] = [
   { id: 'apply', label: 'Vaga', plural: 'Vagas', color: '#8b85ff' }, { id: 'comment', label: 'Comentário', plural: 'Comentários', color: GREEN },
   { id: 'connect', label: 'Conexão', plural: 'Conexões', color: '#00b0ff' }, { id: 'follow', label: 'Seguir', plural: 'Seguir', color: GRAY },
+  { id: 'reply', label: 'Resposta', plural: 'Respostas', color: '#26c6da' }, { id: 'message', label: 'Mensagem', plural: 'Mensagens', color: '#ffb74d' },
+  { id: 'like', label: 'Curtida', plural: 'Curtidas', color: GRAY },
 ];
+// texts you may edit before approving: the approved text is what goes out
+const EDITABLE = ['comment', 'reply', 'message'];
 const kindOf = (k: string) => KINDS.find((x) => x.id === k) || { id: k, label: k, plural: k, color: GRAY };
 // when the automation works on its own; "executar agora" does not wait for it
-const WINDOW = '8h–20h';
+const WINDOW = '8h–23h';
 const fitColor = (n: number) => (n >= 85 ? GREEN : n >= 70 ? YELLOW : GRAY);
 const ellipsis: React.CSSProperties = { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' };
 // on a phone the kind moves next to the title, so the title keeps the width
@@ -118,6 +122,8 @@ const what = (a: Action): { title: string; sub: string } => {
   const p = a.payload || {};
   if (a.kind === 'apply') return { title: a.job_title || p.title || a.title || 'Vaga', sub: [a.company || p.company, a.location].filter(Boolean).join(' · ') };
   if (a.kind === 'comment') return { title: `Post de ${p.author || a.title || '—'}`, sub: p.text || '' };
+  if (a.kind === 'reply') return { title: `${p.reply_author || a.title || '—'} respondeu ao seu comentário`, sub: p.text || '' };
+  if (a.kind === 'message') return { title: `Mensagem para ${p.name || a.title || '—'}`, sub: p.text || '' };
   return { title: p.name || a.title || '—', sub: p.headline || p.why || p.reason || '' };
 };
 
@@ -220,6 +226,13 @@ const ProposalDetail = ({ action, text, setText, onRevised }: { action: Action; 
         {(p.post_full || p.post_head) && <p style={{ ...muted, whiteSpace: 'pre-wrap', maxHeight: 260, overflow: 'auto' }}>{p.post_full || p.post_head}</p>}
         <CommentEditor action={action} text={text} setText={setText} onRevised={onRevised} />
       </>}
+      {(action.kind === 'reply' || action.kind === 'message') && <>
+        {p.reason && <p style={muted}>{p.reason}</p>}
+        {action.kind === 'reply' && p.my_comment && <p style={{ ...muted, whiteSpace: 'pre-wrap' }}>Seu comentário: “{p.my_comment}”</p>}
+        {action.kind === 'reply' && p.reply_head && <p style={{ ...muted, whiteSpace: 'pre-wrap' }}>Resposta de {p.reply_author || '—'}: “{p.reply_head}”</p>}
+        {action.kind === 'message' && (p.translation || p.last) && <p style={{ ...muted, whiteSpace: 'pre-wrap' }}>{p.translation ? 'Tradução' : 'Mensagem'}: “{p.translation || p.last}”</p>}
+        <textarea style={{ ...input, minHeight: 110 }} value={text} onChange={(e) => setText(e.target.value)} aria-label="Texto" />
+      </>}
       {(action.kind === 'connect' || action.kind === 'follow') && <>
         {p.headline && <div style={muted}>{p.headline}</div>}
         {p.reason && <p style={muted}>{p.reason}</p>}
@@ -260,8 +273,8 @@ const ProposalRow = ({ action, picked, onPick, onDone, setError }: { action: Act
         <td className="jb-td jb-hide-sm" style={{ fontSize: '0.76rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{ago(action.posted_at || action.sort_at || action.created_at)}</td>
         <td className="jb-td" style={{ textAlign: 'right', paddingLeft: 0, whiteSpace: 'nowrap' }} onClick={(e) => e.stopPropagation()}>
           <div style={{ display: 'inline-flex', flexWrap: 'nowrap', gap: 6 }}>
-            <button className="jb-icon primary" title={`Aprovar: vai no próximo horário (${WINDOW})`} disabled={busy} onClick={() => decide(auto.approve(action.id, action.kind === 'comment' ? text : undefined))}><Check size={15} /></button>
-            <button className="jb-icon" title="Aprovar e executar agora, mesmo fora do horário" style={{ color: YELLOW }} disabled={busy} onClick={() => decide(auto.approve(action.id, action.kind === 'comment' ? text : undefined, true))}><Zap size={15} /></button>
+            <button className="jb-icon primary" title={`Aprovar: vai no próximo horário (${WINDOW})`} disabled={busy} onClick={() => decide(auto.approve(action.id, EDITABLE.includes(action.kind) ? text : undefined))}><Check size={15} /></button>
+            <button className="jb-icon" title="Aprovar e executar agora, mesmo fora do horário" style={{ color: YELLOW }} disabled={busy} onClick={() => decide(auto.approve(action.id, EDITABLE.includes(action.kind) ? text : undefined, true))}><Zap size={15} /></button>
             <button className="jb-icon danger" title="Rejeitar" disabled={busy} onClick={() => decide(auto.reject(action.id))}><X size={15} /></button>
             {action.target_url && <a className="jb-icon jb-hide-sm" title="Abrir no LinkedIn" href={action.target_url} target="_blank" rel="noreferrer"><ExternalLink size={15} /></a>}
           </div>
@@ -776,10 +789,10 @@ const EmailLine = ({ event, onDone }: { event: EmailEvent; onDone: () => void })
 };
 
 // ── Searches, limits, mode ───────────────────────────────────────────────
-const LIMIT_LABEL: Record<string, string> = { apply: 'Candidaturas', comment: 'Comentários', connect: 'Convites', follow: 'Seguir', search: 'Buscas', job_read: 'Vagas lidas', check: 'Verificações', feed_scan: 'Leituras do feed', follow_scan: 'Sugestões' };
+const LIMIT_LABEL: Record<string, string> = { apply: 'Candidaturas', comment: 'Comentários', connect: 'Convites', follow: 'Seguir', search: 'Buscas', job_read: 'Vagas lidas', check: 'Verificações', feed_scan: 'Leituras do feed', follow_scan: 'Sugestões', reply: 'Respostas a comentários', like: 'Curtidas', message: 'Mensagens', reply_scan: 'Leituras de respostas', thread_read: 'Respostas lidas', inbox_scan: 'Leituras da caixa' };
 
 // what each kind reads as, writes first; the reads at the end
-const LIMIT_ORDER = ['apply', 'comment', 'connect', 'follow', 'search', 'job_read', 'check', 'feed_scan', 'follow_scan'];
+const LIMIT_ORDER = ['apply', 'comment', 'reply', 'like', 'message', 'connect', 'follow', 'search', 'job_read', 'check', 'feed_scan', 'follow_scan', 'reply_scan', 'thread_read', 'inbox_scan'];
 const STEP_NAMES = ['Degrau 1', 'Degrau 2', 'Degrau 3'];
 const smallInput: React.CSSProperties = { ...input, width: 64, padding: '0.35rem 0.4rem', textAlign: 'center' };
 

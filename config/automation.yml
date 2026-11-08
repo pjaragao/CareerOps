@@ -19,16 +19,23 @@ content_guard:
     - \bRSU\b
 
 automation:
-  window: {start_hour: 8, end_hour: 20}      # APP_TIMEZONE: nothing is claimed outside it
+  window: {start_hour: 8, end_hour: 23}      # APP_TIMEZONE: nothing is claimed outside it
   write_gap_minutes: [5, 20]                 # between two writes on LinkedIn, picked at random in this range
   max_windows: 3                             # all browsers together (WSL has little memory to spare)
   lanes: {linkedin_read: 1, linkedin_write: 1, ats: 2}
-  approval_hours: {apply: 168, comment: 48, connect: 168, follow: 168}
+  approval_hours: {apply: 168, comment: 48, connect: 168, follow: 168, reply: 48, like: 48, message: 72}
   search_hours: [9, 15]                      # the two rounds of the day
   check_hours: [7, 19]                       # who accepted / replied
   feed_scan_hours: [10, 16]
   follow_scan_hours: [11]
+  reply_scan_hours: [9, 13, 18]              # replies to your comments (notifications page)
+  inbox_scan_hours: [8, 12, 17]              # received invitations and unread conversations
   ramp_days: 7                               # a week with no warning goes up one step of the limits
+
+# The inbox (invitations and conversations): your rule for the language of the answers is in linkedin_inbox_service.py
+inbox:
+  auto_decline: true                         # a clear service offer gets a polite no on its own; you are told after
+  decline_confidence: 0.8                    # below it, the no waits for your OK like any other message
 
 linkedin:
   own_posts: false                           # posts of your own (drafted from themes, scheduled, published): off; comments go on

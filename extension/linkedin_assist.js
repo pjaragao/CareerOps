@@ -2119,6 +2119,317 @@
                             added: res.data.added, promoted: res.data.promoted });
     }
 
+    // ── Replies to your comments (2026-11-08) ────────────────────────────────────────────────────────
+    // reply_scan: the notifications page, read only. "X replied to your comment" (in the languages LinkedIn shows) with a
+    // link to the post; each new one becomes a thread_read in the backend.
+    const REPLIED = /replied to your comment|respondeu (a|ao) (seu )?coment[aá]rio|respondi[oó] a tu comentario|a r[ée]pondu [àa] votre commentaire|hat auf (ihren|deinen) kommentar geantwortet|mentioned you in a comment|mencionou voc[eê] em um coment[aá]rio/i;
+    function replyNotices() {
+        const out = new Map();
+        document.querySelectorAll('main a[href*="/feed/update/"], main a[href*="/posts/"]').forEach((a) => {
+            // the nearest card only: climbing past it would reach the list and take every notice for a reply
+            let card = a.closest('article, li, [data-finite-scroll-hotkey-item], .nt-card');
+            if (!card) { card = a.parentElement; for (let k = 0; k < 3 && card && !REPLIED.test(card.innerText || ''); k++) card = card.parentElement; }
+            if (!card || !REPLIED.test(card.innerText || '')) return;
+            const url = a.href.split('#')[0];
+            const text = clean(card.innerText).replace(/\n+/g, ' ').slice(0, 900);
+            const actor = clean((text.match(/^(.+?)\s+(replied|respondeu|respondi[oó]|a r[ée]pondu|hat auf|mentioned|mencionou)/i) || [])[1] || '').slice(0, 200);
+            const key = ((url.match(/(?:replyUrn|commentUrn)=[^&]+/g) || []).join('&') || url).slice(0, 500);
+            if (!out.has(key)) out.set(key, { url, key, text, actor: actor || null });
+        });
+        return [...out.values()];
+    }
+    async function managedReplyScan() {
+        await waitFor(() => document.querySelector('main a[href]'), 20000);
+        for (let k = 0; k < 2; k++) { window.scrollBy(0, window.innerHeight); await wait(1500 + Math.random() * 800); }
+        const notices = replyNotices().slice(0, managedRun.info.payload.limit || 10);
+        if (!notices.length) {
+            // a notifications page with cards and none of them a reply is fine; no cards at all is a layout we do not know
+            if (document.querySelector('main article, main li, main .nt-card')) { await managedRead({ notices: 0, queued: 0 }); return; }
+            managedStuck('unexpected_layout', 'Página de notificações não reconhecida');
+            return;
+        }
+        const res = await managedApi('POST', '/automation/reply-notices', { notices });
+        if (!res.ok) { managedStuck('unexpected_layout', errText(res)); return; }
+        await managedRead({ notices: notices.length, queued: res.data.queued });
+    }
+
+    // The comments of the post on screen, as blocks: { block, author, self, text, thread }
+    async function commentBlocks() {
+        const post = await waitFor(() => findPosts()[0], 15000);
+        if (!post) return { post: null, blocks: [] };
+        await openComments(post);
+        await wait(1200);
+        const blocks = [...post.querySelectorAll('button, [role="button"]')].filter(isReplyAction).map((b) => {
+            const block = commentBlock(b, post);
+            const who = authorOf(block);
+            return { btn: b, block, author: who.name, self: who.self, text: textOf(block), thread: threadOf(block, post) };
+        });
+        return { post, blocks };
+    }
+    const headKey = (t) => (t || '').normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+    // the reply the action is about: by its text when known, else by its author, in a thread that holds a comment of yours
+    function findReply(blocks, head, author) {
+        const key = headKey(head);
+        if (key) {
+            // the whole comment is searched (author's name and headline come first); only the needle is cut
+            const hit = blocks.find((b) => !b.self && headKey(b.text).includes(key.slice(0, 30)));
+            if (hit) return hit;
+        }
+        const name = plain(author || '').split(/\s+/)[0];
+        return blocks.find((b) => !b.self && name && plain(b.author || '').startsWith(name) && blocks.some((m) => m.self && b.thread.contains(m.block))) || null;
+    }
+
+    async function managedThreadRead() {
+        const { reply_id: replyId, actor } = managedRun.info.payload;
+        const { post, blocks } = await commentBlocks();
+        if (!post) { managedStuck('post_deleted', 'Post não encontrado na página'); return; }
+        const reply = findReply(blocks, null, actor) || blocks.find((b) => !b.self && blocks.some((m) => m.self && b.thread.contains(m.block) && b !== m));
+        const mine = reply && blocks.find((m) => m.self && reply.thread.contains(m.block));
+        if (!reply || !mine) { managedStuck('selector_not_found', 'Não achei a resposta ao seu comentário neste post'); return; }
+        const info = postInfo(post);
+        const res = await managedApi('POST', `/automation/replies/${replyId}`, {
+            post_text: (info.post_text || '').slice(0, 8000), post_author: info.author_name || null, my_comment: mine.text.slice(0, 4000),
+            reply_text: reply.text.slice(0, 4000), reply_author: reply.author || actor || null, thread: textOf(reply.thread).slice(0, 8000),
+        });
+        if (!res.ok) { managedStuck('unexpected_layout', errText(res)); return; }
+        await managedRead({ decision: res.data.decision });
+    }
+
+    async function managedLike() {
+        const { reply_head: head, reply_author: author } = managedRun.info.payload;
+        const { post, blocks } = await commentBlocks();
+        if (!post) { managedStuck('post_deleted', 'Post não encontrado na página'); return; }
+        const reply = findReply(blocks, head, author);
+        if (!reply) { managedStuck('selector_not_found', 'A resposta não está mais no post'); return; }
+        const like = [...reply.block.querySelectorAll('button, [role="button"]')].find(isLike);
+        if (!like) { managedStuck('selector_not_found', 'Botão Gostei da resposta não encontrado'); return; }
+        const state = reactionState(like);
+        if ((state !== null && !NO_REACTION.test(state)) || like.getAttribute('aria-pressed') === 'true') { managedStuck('already_liked', 'Já curtida'); return; }
+        if (!managedRun.info.allow_final) { await managedDry({ found: 'like' }); return; }
+        await gate();
+        if (await managedExecuted({ liked: true })) pressLike(like);
+    }
+
+    // The answer goes under the reply that was approved, with the approved text, the person @mentioned; the reply is liked too
+    async function managedReplyToReply() {
+        const { reply_head: head, reply_author: author, text, like } = managedRun.info.payload;
+        const { post, blocks } = await commentBlocks();
+        if (!post) { managedStuck('post_deleted', 'Post não encontrado na página'); return; }
+        const reply = findReply(blocks, head, author);
+        if (!reply) { managedStuck('selector_not_found', 'A resposta não está mais no post'); return; }
+        reply.btn.click();
+        const ed = await waitFor(() => [...reply.thread.querySelectorAll(EDITOR)].find((el) => el.offsetParent !== null && !own(el))
+            || [...reply.block.parentElement.querySelectorAll(EDITOR)].find((el) => el.offsetParent !== null && !own(el)), 5000);
+        if (!ed) { managedStuck('selector_not_found', 'Caixa de resposta não encontrada'); return; }
+        await gate();
+        await ensureMention(ed, reply.author || author);
+        fill(ed, text, true);
+        await wait(700);
+        const words = (t) => (t || '').replace(/\s+/g, ' ').trim();
+        if (!words(ed.innerText).includes(words(text))) { managedStuck('step_stuck', 'O texto digitado saiu diferente do aprovado: não respondi'); return; }
+        if (!managedRun.info.allow_final) { await managedDry({ typed: true }); return; }
+        const nearestSubmit = () => {
+            for (let box = ed.parentElement, k = 0; box && k < 8; box = box.parentElement, k++) {
+                const b = [...box.querySelectorAll('button')].find((x) => !own(x) && x.offsetParent !== null && !x.disabled
+                    && (x.className.includes('comments-comment-box__submit-button') || SUBMIT.test(label(x))) && x !== reply.btn);
+                if (b) return b;
+            }
+            return null;
+        };
+        const submit = await waitFor(nearestSubmit, 4000);
+        if (!submit) { managedStuck('selector_not_found', 'Botão Responder não encontrado'); return; }
+        await gate();
+        if (!(await managedExecuted({ replied: true, liked: !!like }))) return;
+        submit.click();
+        if (like) { await wait(1500); pressLike([...reply.block.querySelectorAll('button, [role="button"]')].find(isLike)); }
+    }
+
+    // ── Inbox (2026-11-08): received invitations, then the unread conversations, one page after the other. Reading only:
+    // nothing is accepted, ignored or sent. Opening a conversation marks it read on LinkedIn (you are told on WhatsApp).
+    const INBOX_KEY = 'careeropsInboxScan';
+    const inboxState = (id) => { try { const s = JSON.parse(sessionStorage.getItem(INBOX_KEY) || 'null'); return s && s.id === id ? s : null; } catch (e) { return null; } };
+    const saveInbox = (s) => sessionStorage.setItem(INBOX_KEY, JSON.stringify(s));
+    const runHash = () => `#careerops-run=${managedRun.id}.${managedRun.nonce}`;
+    const INVITE_NOISE = /mutual connection|conex(ão|ões) em comum|^(accept|ignore|aceitar|ignorar|message|mensagem|see more|ver mais|reply|responder)$|\b\d+\s*(h|d|w|m|min|sem|dias?)\b(\s*ago)?$|invited you|convidou voc/i;
+    function receivedInvites() {
+        const out = new Map();
+        document.querySelectorAll('main a[href*="/in/"]').forEach((a) => {
+            const slug = linkSlug(a);
+            if (!slug || out.has(slug)) return;
+            let card = a.closest('li, [componentkey], .invitation-card') || a.parentElement;
+            for (let k = 0; k < 5 && card && !/accept|aceitar/i.test(card.innerText || ''); k++) card = card.parentElement;
+            if (!card || !/accept|aceitar/i.test(card.innerText || '')) return;
+            const custom = card.querySelector('.invitation-card__custom-message, [class*="custom-message"], blockquote');
+            const lines = clean(card.innerText).split('\n').map((l) => l.trim()).filter(Boolean);
+            const name = personName(lines[0] || a.innerText || '');
+            const headline = lines[1] || '';
+            const message = custom ? clean(custom.innerText) : (lines.slice(2).filter((l) => l.length >= 25 && !INVITE_NOISE.test(l)).sort((x, y) => y.length - x.length)[0] || '');
+            out.set(slug, { kind: 'invite', key: `invite:${slug}`, name, headline, profile_url: `https://www.linkedin.com/in/${slug}/`, messages: message ? [{ from: 'them', text: message.slice(0, 6000) }] : [] });
+        });
+        return [...out.values()].filter((i) => i.messages.length);
+    }
+    function unreadThreads() {
+        const out = new Map();
+        document.querySelectorAll('a[href*="/messaging/thread/"]').forEach((a) => {
+            const item = a.closest('li') || a;
+            const unread = item.querySelector('.msg-conversation-card__convo-item--unread, [class*="unread"], .notification-badge')
+                || /\bunread\b|n[aã]o lida/i.test(item.getAttribute('aria-label') || a.getAttribute('aria-label') || '');
+            const url = a.href.split('?')[0].split('#')[0];
+            if (unread && !out.has(url)) out.set(url, url);
+        });
+        return [...out.values()];
+    }
+    // root: the page (/messaging/thread/…) or one of the floating chat windows (the overlay, how most chats are read)
+    function threadMessages(root = document) {
+        const header = root.querySelector('.msg-thread__link-to-profile, .msg-entity-lockup__entity-title, .msg-overlay-bubble-header__title, main h2');
+        const them = personName(clean((header || {}).innerText || ''));
+        const profile = (root.querySelector('a.msg-thread__link-to-profile, .msg-thread a[href*="/in/"], .msg-overlay-bubble-header a[href*="/in/"], main a[href*="/in/"], a[href*="/in/"]') || {}).href || null;
+        const messages = [];
+        let sender = '';
+        root.querySelectorAll('.msg-s-message-list__event, li[class*="message-list__event"]').forEach((ev) => {
+            const name = ev.querySelector('.msg-s-message-group__name, [class*="message-group__name"]');
+            if (name) sender = personName(clean(name.innerText));
+            ev.querySelectorAll('.msg-s-event-listitem__body, [class*="event-listitem__body"]').forEach((body) => {
+                const text = clean(body.innerText);
+                const other = body.closest('.msg-s-event-listitem--other, [class*="listitem--other"]');
+                const mine = other ? false : (sender ? plain(sender) !== plain(them) : true);
+                if (text) messages.push({ from: mine ? 'me' : 'them', text: text.slice(0, 6000), key: (ev.getAttribute('data-event-urn') || '').slice(0, 300) || null });
+            });
+        });
+        const headline = clean((root.querySelector('.msg-entity-lockup__entity-info, .msg-thread__subtitle, .artdeco-entity-lockup__subtitle') || {}).innerText || '').slice(0, 400);
+        return { name: them || null, headline, profile_url: profile && /\/in\//.test(profile) ? profile.split('?')[0] : null, messages: messages.slice(-30) };
+    }
+
+    async function managedInboxScan() {
+        const limit = managedRun.info.payload.limit || 10;
+        const st = inboxState(managedRun.id) || { id: managedRun.id, step: 'invites', items: [], queue: [] };
+        if (st.step === 'invites') {
+            if (!/\/mynetwork\/invitation-manager/.test(location.pathname)) { location.href = 'https://www.linkedin.com/mynetwork/invitation-manager/received/' + runHash(); return; }
+            await waitFor(() => document.querySelector('main a[href*="/in/"]') || /no pending invitations|nenhum convite|no invitations/i.test((document.querySelector('main') || document.body).innerText || ''), 20000);
+            await wait(1500);
+            st.items.push(...receivedInvites().slice(0, limit));
+            st.step = 'list';
+            saveInbox(st);
+            location.href = 'https://www.linkedin.com/messaging/' + runHash();
+            return;
+        }
+        if (st.step === 'list') {
+            if (!/^\/messaging/.test(location.pathname)) { location.href = 'https://www.linkedin.com/messaging/' + runHash(); return; }
+            const listed = await waitFor(() => document.querySelector('a[href*="/messaging/thread/"]'), 20000);
+            if (!listed) { sessionStorage.removeItem(INBOX_KEY); managedStuck('unexpected_layout', 'Lista de conversas não reconhecida'); return; }
+            await wait(1500);
+            st.queue = unreadThreads().slice(0, limit);
+            st.step = 'thread';
+            saveInbox(st);
+        }
+        if (st.step === 'thread') {
+            if (/\/messaging\/thread\//.test(location.pathname) && st.current) {
+                await waitFor(() => document.querySelector('.msg-s-event-listitem__body, [class*="event-listitem__body"]'), 15000);
+                await wait(1500);
+                const t = threadMessages();
+                if (t.messages.length) st.items.push({ kind: 'chat', key: `chat:${st.current}`, thread_url: st.current, ...t });
+                st.current = null;
+            }
+            const next = st.queue.shift();
+            if (next) {
+                st.current = next;
+                saveInbox(st);
+                await gate();
+                await wait(1200 + Math.random() * 1000);
+                location.href = next + runHash();
+                return;
+            }
+            sessionStorage.removeItem(INBOX_KEY);
+            const items = st.items.filter((i) => i.messages && i.messages.length).slice(0, 30);
+            const res = items.length ? await managedApi('POST', '/automation/inbox-items', { items }) : { ok: true, data: {} };
+            if (!res.ok) { managedStuck('unexpected_layout', errText(res)); return; }
+            await managedRead({ invites: items.filter((i) => i.kind === 'invite').length, chats: items.filter((i) => i.kind === 'chat').length, ...res.data });
+        }
+    }
+
+    const MSG_EDITOR = '.msg-form__contenteditable[contenteditable="true"], form.msg-form [contenteditable="true"], [role="textbox"][contenteditable="true"][aria-label*="essage"], [role="textbox"][contenteditable="true"][aria-label*="ensagem"]';
+    const MSG_SEND = /^(send|enviar)$/i;
+    async function managedMessage() {
+        const { text } = managedRun.info.payload;
+        const ed = await waitFor(() => [...document.querySelectorAll(MSG_EDITOR)].find((el) => el.offsetParent !== null && !own(el)), 20000);
+        if (!ed) {
+            const page = (document.querySelector('main') || document.body).innerText || '';
+            managedStuck(/can.t message|n[aã]o (é possível|pode) (enviar|mandar)|conversation (was )?deleted/i.test(page) ? 'post_deleted' : 'selector_not_found', 'Caixa de mensagem não encontrada');
+            return;
+        }
+        await gate();
+        fill(ed, text);
+        await wait(700);
+        const words = (t) => (t || '').replace(/\s+/g, ' ').trim();
+        if (words(ed.innerText) !== words(text)) { managedStuck('step_stuck', 'O texto digitado saiu diferente do aprovado: não enviei'); return; }
+        if (!managedRun.info.allow_final) { await managedDry({ typed: true }); return; }
+        const form = ed.closest('form') || ed.parentElement.parentElement.parentElement;
+        const send = await waitFor(() => [...(form || document).querySelectorAll('button')].find((b) => !own(b) && !b.disabled && b.offsetParent !== null
+            && (b.classList.contains('msg-form__send-button') || b.type === 'submit' && MSG_SEND.test(label(b)) || MSG_SEND.test(label(b)))), 4000);
+        if (!send) { managedStuck('selector_not_found', 'Botão Enviar não encontrado'); return; }
+        await gate();
+        if (await managedExecuted({ sent: true })) send.click();
+    }
+
+    // ── 💬 In your own browser: a suggestion for the conversation on screen (you read, edit and send it) ──────────
+    const chatBtn = button('✨ Sugerir resposta', () => suggestChat());
+    chatBtn.style.cssText += ';position:fixed;top:72px;right:16px;z-index:2147483646;margin:0;box-shadow:0 4px 14px rgba(0,0,0,.3)';
+    const isThreadPage = () => /^\/messaging\/thread\//.test(location.pathname);
+    function placeChatButton() {
+        if (managedRun || !isThreadPage()) { chatBtn.remove(); return; }
+        if (chatBtn.parentElement !== document.documentElement) document.documentElement.appendChild(chatBtn);
+    }
+    // a "✨" in the header of each floating chat window
+    const BUBBLE = '.msg-overlay-conversation-bubble, [class*="msg-overlay-conversation-bubble"][role="dialog"], aside [class*="conversation-bubble"]';
+    function decorateBubbles() {
+        if (managedRun) return;
+        document.querySelectorAll(BUBBLE).forEach((bubble) => {
+            if (bubble.querySelector('.careerops-bubblebtn') || !bubble.querySelector(MSG_EDITOR)) return;
+            const header = bubble.querySelector('.msg-overlay-bubble-header, header') || bubble.firstElementChild;
+            if (!header) return;
+            const b = button('✨', () => suggestChat(null, bubble), true);
+            b.classList.add('careerops-bubblebtn');
+            b.title = 'CareerOps: tradução, origem e sugestão de resposta';
+            b.style.cssText += ';font-size:12px;padding:2px 8px;margin:0 4px';
+            header.insertBefore(b, header.lastElementChild || null);
+        });
+    }
+    async function suggestChat(instruction, root = document) {
+        document.querySelectorAll('.careerops-chatcard').forEach((c) => c.remove());
+        const box = card('CareerOps · conversa');
+        box.classList.add('careerops-chatcard');
+        box.style.cssText += ';position:fixed;top:112px;right:16px;width:380px;max-height:75vh;overflow:auto;z-index:2147483646;box-shadow:0 6px 20px rgba(0,0,0,.25)';
+        document.documentElement.appendChild(box);
+        const status = line(box, 'Lendo a conversa…');
+        const t = threadMessages(root);
+        if (!t.messages.length) { status.textContent = 'Não achei as mensagens desta conversa'; status.style.color = '#d63031'; return; }
+        const res = await api('POST', '/inbox/suggest', { name: t.name, headline: t.headline, profile_url: t.profile_url, messages: t.messages, instruction: instruction || null });
+        if (!res.ok) { status.textContent = errText(res); status.style.color = '#d63031'; return; }
+        const r = res.data;
+        const CAT = { redirect: '↪️ Responderam ao seu contato: o caminho é outro', recruiter: '🎯 Recrutador', service_offer: '🚫 Oferta de serviço', networking: '🤝 Networking', job_seeker: '🙋 Pedido de vaga/ajuda', other: '💬 Outro' };
+        status.textContent = `${CAT[r.category] || r.category} · ${r.lang_name}${r.summary ? ` — ${r.summary}` : ''}`;
+        status.style.fontWeight = '600';
+        if (r.translation) line(box, `🌐 Tradução: “${r.translation}”`, '#333');
+        line(box, `📍 Origem: ${r.origin || r.origin_guess || 'nada no CareerOps'}`, '#777');
+        if (r.todo) line(box, `📌 Para você: ${r.todo}`, '#b7791f');
+        if (r.notice === 'es') line(box, 'Inclui o aviso de que você entende espanhol (só nesta vez).', '#b7791f');
+        if (r.notice === 'translator') line(box, 'Inclui o aviso do tradutor (só nesta vez).', '#b7791f');
+        const ta = editor(box, r.suggestion);
+        const actions = document.createElement('div');
+        actions.appendChild(button('Inserir na mensagem', async () => {
+            const ed = [...root.querySelectorAll(MSG_EDITOR)].find((el) => el.offsetParent !== null && !own(el));
+            if (!ed) { toast('Não achei a caixa de mensagem — use Copiar', false); return; }
+            fill(ed, ta.value);
+            toast('Inserido. Revise e clique em Enviar.');
+            box.remove();
+        }));
+        actions.appendChild(button('Copiar', () => navigator.clipboard.writeText(ta.value).then(() => toast('Copiado')), false));
+        actions.appendChild(button('🔄 Outra', () => suggestChat(instruction, root), false));
+        actions.appendChild(button('✕', () => box.remove(), false));
+        box.appendChild(actions);
+        promptRow(box, 'Refazer com um pedido (ex.: proponha uma call na quinta, pergunte a faixa salarial)', (v) => suggestChat(v, root));
+    }
+
     async function managedFeedScan() {
         await waitFor(() => findPosts().length, 20000);
         for (let k = 0; k < 4; k++) { window.scrollBy(0, window.innerHeight); await wait(1500 + Math.random() * 800); }
@@ -2164,7 +2475,9 @@
         managedRun = { id: info.id, nonce, info, fields: [], closed: false };
         history.replaceState(null, '', location.pathname + location.search);
         activity(`Automação: ${info.kind}`);
-        const run = { apply: managedApply, connect: managedConnect, follow: managedFollow, comment: managedComment, search: managedSearch, check: managedCheck, feed_scan: managedFeedScan, follow_scan: managedFollowScan, saved_import: managedSavedImport }[info.kind];
+        const run = { apply: managedApply, connect: managedConnect, follow: managedFollow, comment: managedComment, search: managedSearch, check: managedCheck, feed_scan: managedFeedScan, follow_scan: managedFollowScan, saved_import: managedSavedImport,
+            reply_scan: managedReplyScan, thread_read: managedThreadRead, like: managedLike, reply: managedReplyToReply,
+            inbox_scan: managedInboxScan, message: managedMessage }[info.kind];
         try {
             await run();
         } catch (e) {
@@ -2424,6 +2737,8 @@
         // the job pane is reused when another job is opened: reset our button for the new job
         document.querySelectorAll('.careerops-jobbtn').forEach((b) => { if (b.dataset.job !== String(currentJobId())) b.remove(); });
         placeInvite();
+        placeChatButton();
+        decorateBubbles();
         checkProfileDegree();
         const listPage = /\/search\/results\/people|\/mynetwork/.test(location.pathname);
         scoreBtn.style.display = listPage ? '' : 'none';

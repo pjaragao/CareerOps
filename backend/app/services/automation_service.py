@@ -26,24 +26,28 @@ from app.services import content_guard
 
 log = logging.getLogger("automation")
 
-WRITE_KINDS = ("apply", "comment", "follow", "connect")
-READ_KINDS = ("search", "check", "feed_scan", "follow_scan", "saved_import")
+WRITE_KINDS = ("apply", "comment", "follow", "connect", "reply", "like", "message")
+READ_KINDS = ("search", "check", "feed_scan", "follow_scan", "saved_import", "reply_scan", "thread_read", "inbox_scan")
+# What the system does on its own, without your OK (2026-11-08): liking a reply that needs no answer, turning down a
+# service offer politely. Each one goes straight to the queue ("auto_approved" event), inside the window and the limits.
+AUTO_KINDS = ("like", "message")
 # Reads that keep their own hours (Configurações) instead of the time window of the rest
 ANYTIME_KINDS = ("saved_import",)
-WRITE_KINDS = ("apply", "comment", "follow", "connect")
 RUNNING = ("running_ext", "verifying", "awaiting_confirm", "running_claude")
 OPEN = ("proposed", "approved", "review_docs", "queued", "unknown_outcome", "escalated", "needs_user") + RUNNING
 
 # What happens to an action that could not finish, by the reason the executor gives
 CLAUDE_CODES = {"selector_not_found", "step_stuck", "unexpected_layout", "external_form_unfinished"}
 HALT_CODES = {"checkpoint", "restriction_notice", "session_expired", "rate_limited"}
-DISCARD_CODES = {"job_closed", "already_applied", "post_deleted", "already_following", "already_connected", "already_pending"}
+DISCARD_CODES = {"job_closed", "already_applied", "post_deleted", "already_following", "already_connected", "already_pending", "already_liked"}
 # Everything else (unknown question, captcha, login, an account to create…) is yours: Precisa de você
 
 LINKEDIN_LANES = ["linkedin_read", "linkedin_write"]
 
 # The old address of your saved jobs: LinkedIn sends it to the page of the day (/jobs-tracker/ since late 2026)
 SAVED_JOBS_URL = "https://www.linkedin.com/my-items/saved-jobs/"
+NOTIFICATIONS_URL = "https://www.linkedin.com/notifications/?filter=all"
+RECEIVED_INVITES_URL = "https://www.linkedin.com/mynetwork/invitation-manager/received/"
 SAVED_IMPORT_DEFAULT = {"enabled": True, "day_start": 8, "day_end": 24, "day_every": 1, "night_every": 2}
 
 
@@ -73,12 +77,13 @@ def question_key(text: str) -> str:
 
 
 def ensure_schema() -> None:
-    """Applies migrations_v15.sql (idempotent)."""
-    sql = (Path(__file__).resolve().parent.parent / "db" / "migrations" / "migrations_v15.sql").read_text(encoding="utf-8")
+    """Applies migrations_v15.sql and migrations_v17.sql (replies and inbox) (idempotent)."""
+    folder = Path(__file__).resolve().parent.parent / "db" / "migrations"
     conn = get_db_connection()
     try:
         with conn.cursor() as cur:
-            cur.execute(sql)
+            for name in ("migrations_v15.sql", "migrations_v17.sql"):
+                cur.execute((folder / name).read_text(encoding="utf-8"))
         conn.commit()
     finally:
         conn.close()
@@ -137,7 +142,7 @@ class AutomationService:
             return False
         if kind == "apply":
             return state["account_kind"] == "main" and state["allow_final_submit"] and settings.AUTOMATION_ALLOW_FINAL_SUBMIT
-        if state["account_kind"] == "test" and kind in ("comment", "connect"):
+        if state["account_kind"] == "test" and kind in ("comment", "connect", "reply", "message"):
             return target_url in ((config().get("test_account") or {}).get("allowed_targets") or [])
         return True
 
@@ -222,15 +227,31 @@ class AutomationService:
     @staticmethod
     def create_action(kind: str, key: str, title: str, target_url: Optional[str], payload: Dict[str, Any], status: str = "proposed",
                       target_type: Optional[str] = None, target_id: Optional[int] = None, rank: int = 50,
-                      sort_at: Optional[datetime] = None, lane: Optional[str] = None) -> Optional[dict]:
-        """One action per idempotency key: proposing the same thing twice does nothing."""
+                      sort_at: Optional[datetime] = None, lane: Optional[str] = None, auto: bool = False) -> Optional[dict]:
+        """One action per idempotency key: proposing the same thing twice does nothing. auto (only AUTO_KINDS): it goes
+        without your OK — unless its text fails the NDA guard, then it waits for you like any other."""
         lane = lane or ("linkedin_read" if kind in READ_KINDS else "linkedin_write")
-        return _one("""
+        if auto and kind in AUTO_KINDS:
+            try:
+                content_guard.ensure_clean(payload, "O texto automático")
+            except content_guard.BlockedContent:
+                auto, status = False, "proposed"
+        else:
+            auto = False
+        action = _one("""
             INSERT INTO public.automation_actions (kind, lane, status, target_type, target_id, target_url, title, rank, sort_at,
                                                    payload, payload_hash, idempotency_key)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, COALESCE(%s, NOW()), %s, %s, %s)
             ON CONFLICT (idempotency_key) DO NOTHING RETURNING *""",
                     (kind, lane, status, target_type, target_id, target_url, title, rank, sort_at, Json(payload), payload_hash(payload), key))
+        if action and auto:
+            hours = ((config().get("automation") or {}).get("approval_hours") or {}).get(kind, 48)
+            # not approved_at: like the reads, it keeps to the time window and to the day's limit of its kind
+            action = _one("""UPDATE public.automation_actions SET status = 'queued', expires_at = %s, updated_at = NOW()
+                              WHERE id = %s RETURNING *""", (now() + timedelta(hours=hours), action["id"]))
+            _rows("INSERT INTO public.automation_events (action_id, source, event, data) VALUES (%s, 'backend', 'auto_approved', '{}'::jsonb)",
+                  (action["id"],))
+        return action
 
     @staticmethod
     def fit_of(action: dict) -> Optional[int]:
@@ -266,6 +287,11 @@ class AutomationService:
     def _approved_payload(cur, action: dict, text: Optional[str]) -> dict:
         """What will be executed, frozen now. Editing means approving a new text."""
         payload = dict(action["payload"] or {})
+        if action["kind"] in ("reply", "message"):
+            if text is not None:
+                payload["text"] = text.strip()
+            if not (payload.get("text") or "").strip():
+                raise ValueError("Texto vazio")
         if action["kind"] == "comment":
             if text is not None:
                 payload["text"] = text.strip()
@@ -340,6 +366,10 @@ class AutomationService:
             _rows("UPDATE public.linkedin_engagement SET status = 'skipped' WHERE id = %s AND status = 'pending'", (action["target_id"],))
         if action and action["kind"] == "connect":
             _rows("UPDATE public.linkedin_prospects SET status = 'skipped' WHERE id = %s AND status = 'to_contact'", (action["target_id"],))
+        if action and action["kind"] == "reply":
+            _rows("UPDATE public.linkedin_comment_replies SET status = 'skipped', updated_at = NOW() WHERE id = %s", (action["target_id"],))
+        if action and action["kind"] == "message":
+            _rows("UPDATE public.linkedin_conversations SET status = 'ignored', updated_at = NOW() WHERE id = %s", (action["target_id"],))
         return action
 
     @staticmethod
@@ -475,7 +505,7 @@ class AutomationService:
     @staticmethod
     def in_window() -> bool:
         window = (config().get("automation") or {}).get("window") or {}
-        return window.get("start_hour", 8) <= _local().hour < window.get("end_hour", 20)
+        return window.get("start_hour", 8) <= _local().hour < window.get("end_hour", 23)
 
     @staticmethod
     def claim(lane: str, worker: str) -> dict:
@@ -719,6 +749,12 @@ class AutomationService:
             Copilot.update_engagement(target, "done", action["payload"].get("text"))
         elif kind == "connect":
             Copilot.update_prospect(target, "invited")
+        elif kind in ("reply", "like"):
+            from app.services.linkedin_inbox_service import InboxService
+            InboxService.reply_done(action)
+        elif kind == "message":
+            from app.services.linkedin_inbox_service import InboxService
+            InboxService.message_sent(action)
 
     @staticmethod
     def abort(action_id: int, reason: str = "stopped", retry_after: int = 0) -> Optional[dict]:
@@ -970,6 +1006,16 @@ class AutomationService:
             if local.hour >= hour:
                 made += bool(AutomationService.create_action(
                     "feed_scan", f"feed_scan:{day}:{hour}", "Posts do feed", "https://www.linkedin.com/feed/", {"limit": 8}, status="queued", rank=42))
+        for hour in cfg.get("reply_scan_hours") or []:
+            if local.hour >= hour:
+                made += bool(AutomationService.create_action(
+                    "reply_scan", f"reply_scan:{day}:{hour}", "Respostas aos seus comentários", NOTIFICATIONS_URL, {"limit": 10},
+                    status="queued", rank=38))
+        for hour in cfg.get("inbox_scan_hours") or []:
+            if local.hour >= hour:
+                made += bool(AutomationService.create_action(
+                    "inbox_scan", f"inbox_scan:{day}:{hour}", "Convites e mensagens", RECEIVED_INVITES_URL, {"limit": 10},
+                    status="queued", rank=37))
         if AutomationService.saved_import_due(local) and not _one(
                 "SELECT 1 FROM public.automation_actions WHERE kind = 'saved_import' AND status = ANY(%s) LIMIT 1", (list(OPEN),)):
             made += bool(AutomationService.create_action(
@@ -1031,9 +1077,22 @@ class AutomationService:
         return _one("UPDATE public.automation_actions SET run_now = TRUE WHERE id = %s RETURNING *", (action["id"],))
 
     @staticmethod
+    def run_scan(kind: str) -> dict:
+        """inbox_scan / reply_scan right now: one at a time; one already waiting is just moved to the front."""
+        running = _one("""SELECT * FROM public.automation_actions WHERE kind = %s AND status = ANY(%s) ORDER BY id DESC LIMIT 1""",
+                       (kind, ["queued"] + list(RUNNING)))
+        if running:
+            _rows("UPDATE public.automation_actions SET run_now = TRUE WHERE id = %s", (running["id"],))
+            return {**running, "already": True}
+        url, title = ((RECEIVED_INVITES_URL, "Convites e mensagens") if kind == "inbox_scan" else (NOTIFICATIONS_URL, "Respostas aos seus comentários"))
+        action = AutomationService.create_action(kind, f"{kind}:now:{now().isoformat()}", title, url, {"limit": 10}, status="queued",
+                                                 rank=37 if kind == "inbox_scan" else 38)
+        return _one("UPDATE public.automation_actions SET run_now = TRUE WHERE id = %s RETURNING *", (action["id"],))
+
+    @staticmethod
     def expire_stale_proposals() -> None:
         _rows("""UPDATE public.automation_actions SET status = 'expired', finished_at = NOW(), updated_at = NOW()
-                  WHERE status = 'proposed' AND kind = 'comment' AND created_at < NOW() - INTERVAL '7 days'""")
+                  WHERE status = 'proposed' AND kind IN ('comment', 'reply', 'message') AND created_at < NOW() - INTERVAL '7 days'""")
         # a job you already moved on (applied by hand, rejected, archived) leaves the approval list
         _rows("""UPDATE public.automation_actions a SET status = 'discarded', error_code = 'already_handled', finished_at = NOW(), updated_at = NOW(),
                         error_text = 'Saiu da lista: a vaga já está como ' || j.status

@@ -14,6 +14,7 @@ PG=$NAME-pg
 BACKEND=$NAME-backend
 WORKER=$NAME-worker
 FAKE=$NAME-fake
+PDF=$NAME-gotenberg
 export E2E_WORKER=$WORKER
 # the worker's ports on the host: noVNC, then the two browser tools (E2E_PORT shifts them, for the same reason)
 P="${E2E_PORT:-0}"
@@ -24,12 +25,12 @@ for a in "$@"; do [ "$a" = "--keep" ] && KEEP=1; [ "$a" = "--claude" ] && CLAUDE
 
 cleanup() {
     [ -n "$KEEP" ] && return
-    docker rm -f "$WORKER" "$FAKE" "$BACKEND" "$PG" >/dev/null 2>&1
+    docker rm -f "$WORKER" "$FAKE" "$BACKEND" "$PG" "$PDF" >/dev/null 2>&1
     docker network rm "$NET" >/dev/null 2>&1
     docker volume rm $NAME-output >/dev/null 2>&1
 }
 trap cleanup EXIT
-docker rm -f "$WORKER" "$FAKE" "$BACKEND" "$PG" >/dev/null 2>&1
+docker rm -f "$WORKER" "$FAKE" "$BACKEND" "$PG" "$PDF" >/dev/null 2>&1
 docker network rm "$NET" >/dev/null 2>&1
 docker volume rm $NAME-output >/dev/null 2>&1
 
@@ -48,19 +49,25 @@ docker exec -i "$PG" psql -q -U postgres -d postgres < "$ROOT/backend/tests/sche
 # Any hour, no gap between writes: everything else is the real configuration
 CONFIG="$(mktemp -d)"
 cp -r "$ROOT/config/." "$CONFIG/"
+# settings.json is local (gitignored) and config is mounted read-only: without it the backend tries to create it and fails
+[ -f "$CONFIG/settings.json" ] || cp "$ROOT/config/settings.example.json" "$CONFIG/settings.json"
 "$PYTHON" - "$CONFIG/automation.yml" <<'EOF'
 import re, sys
 p = sys.argv[1]; t = open(p, encoding="utf-8").read()
-t = t.replace("window: {start_hour: 8, end_hour: 20}", "window: {start_hour: 0, end_hour: 24}").replace("write_gap_minutes: [5, 20]", "write_gap_minutes: [0, 0]")
+t = re.sub(r"window: \{start_hour: \d+, end_hour: \d+\}", "window: {start_hour: 0, end_hour: 24}", t)
+t = re.sub(r"(reply_scan_hours|inbox_scan_hours): \[[\d, ]*\]", r"\1: []", t)   # the scenarios start these themselves
+t = t.replace("write_gap_minutes: [5, 20]", "write_gap_minutes: [0, 0]")
 t = t.replace("search_hours: [9, 15]", "search_hours: []").replace("check_hours: [7, 19]", "check_hours: []").replace("feed_scan_hours: [10, 16]", "feed_scan_hours: []").replace("follow_scan_hours: [11]", "follow_scan_hours: []")
 t = t.replace("external_apply: false", "external_apply: true")
 open(p, "w", encoding="utf-8").write(t)
 EOF
 docker run -d --name "$FAKE" --network "$NET" --memory 128m -p 127.0.0.1:18443:8443 -v "$E2E:/e2e:ro" careerops-automation:e2e python /e2e/fake_linkedin.py 8443 >/dev/null
+# the CV and cover letter PDFs of the applications
+docker run -d --name "$PDF" --network "$NET" --memory 400m gotenberg/gotenberg:8 >/dev/null
 docker run -d --name "$BACKEND" --network "$NET" --memory 600m -p 127.0.0.1:18005:8000 -v "$CONFIG:/app/config:ro" -v $NAME-output:/app/output \
     -e SUPABASE_DB_HOST="$PG" -e SUPABASE_DB_PASSWORD=e2e -e CAREEROPS_APPROVER_TOKEN=e2e-approver -e CAREEROPS_WORKER_TOKEN=e2e-worker \
     -e AI_PROVIDER=openai -e AI_API_KEY=x -e AI_MODEL=fake -e AI_BASE_URL="http://$FAKE:8080/v1" \
-    -e AUTOMATION_ALLOW_FINAL_SUBMIT=true careerops-backend:e2e >/dev/null
+    -e GOTENBERG_URL="http://$PDF:3000" -e AUTOMATION_ALLOW_FINAL_SUBMIT=true careerops-backend:e2e >/dev/null
 until curl -sf http://127.0.0.1:18005/health >/dev/null; do sleep 1; done
 
 docker run -d --init --name "$WORKER" --network "$NET" --memory 2500m --shm-size 1g \

@@ -248,6 +248,12 @@ async def set_saved_import(req: SavedImportIn):
     return Auto.set_saved_import(req.enabled, req.day_start, req.day_end, req.day_every, req.night_every)
 
 
+@router.post("/scans/{kind}/run", dependencies=[Depends(require_decider)])
+async def run_scan(kind: Literal["inbox_scan", "reply_scan"]):
+    """Now (Lolo, or by hand): the invitations and conversations, or the replies to your comments, without waiting for the hour."""
+    return {**Auto.run_scan(kind), "mode": Auto.state().get("mode")}
+
+
 @router.post("/saved-import/run", dependencies=[Depends(require_decider)])
 async def run_saved_import():
     return {**Auto.run_saved_import(), "mode": Auto.state().get("mode")}
@@ -404,6 +410,77 @@ class FollowTargetsIn(BaseModel):
 async def follow_targets(req: FollowTargetsIn):
     made = [Auto.follow_target(t.url, t.name or "", t.why or "", t.market) for t in req.targets]
     return {"proposed": sum(bool(m) for m in made)}
+
+
+# ── Replies to your comments, and the inbox (read by the scans in the server's browser) ──────────────
+class ReplyNotice(BaseModel):
+    url: str = Field(..., pattern=r"^https://www\.linkedin\.com/")
+    key: Optional[str] = Field(None, max_length=500)
+    text: Optional[str] = Field("", max_length=1000)
+    actor: Optional[str] = Field(None, max_length=200)
+
+
+class ReplyNoticesIn(BaseModel):
+    notices: List[ReplyNotice] = Field(..., max_length=30)
+
+
+@router.post("/reply-notices", dependencies=[Depends(require_worker)])
+async def reply_notices(req: ReplyNoticesIn):
+    from app.services.linkedin_inbox_service import InboxService
+    return {"queued": InboxService.add_reply_notices([n.model_dump() for n in req.notices])}
+
+
+class ReplyThreadIn(BaseModel):
+    post_text: str = Field("", max_length=8000)
+    post_author: Optional[str] = Field(None, max_length=300)
+    my_comment: str = Field(..., min_length=1, max_length=4000)
+    reply_text: str = Field(..., min_length=1, max_length=4000)
+    reply_author: Optional[str] = Field(None, max_length=300)
+    thread: Optional[str] = Field(None, max_length=8000)
+
+
+@router.post("/replies/{reply_id}", dependencies=[Depends(require_worker)])
+async def reply_thread(reply_id: int, req: ReplyThreadIn):
+    from app.services.linkedin_inbox_service import InboxService
+    try:
+        row = await InboxService.read_reply(reply_id, **req.model_dump())
+    except (RuntimeError, content_guard.BlockedContent) as e:
+        InboxService.reply_read_failed(reply_id)
+        raise HTTPException(status_code=502, detail=str(e))
+    return _found(row)
+
+
+class InboxMessage(BaseModel):
+    from_: Literal["me", "them"] = Field(..., alias="from")
+    text: str = Field(..., max_length=6000)
+    key: Optional[str] = Field(None, max_length=300)
+
+
+class InboxItem(BaseModel):
+    kind: Literal["invite", "chat"]
+    key: Optional[str] = Field(None, max_length=500)
+    name: Optional[str] = Field(None, max_length=300)
+    headline: Optional[str] = Field(None, max_length=500)
+    profile_url: Optional[str] = Field(None, max_length=500)
+    thread_url: Optional[str] = Field(None, pattern=r"^https://www\.linkedin\.com/messaging/")
+    messages: List[InboxMessage] = Field(..., max_length=40)
+
+
+class InboxItemsIn(BaseModel):
+    items: List[InboxItem] = Field(..., max_length=30)
+
+
+def _messages(items) -> list:
+    return [{**i.model_dump(exclude={"messages"}), "messages": [{"from": m.from_, "text": m.text, "key": m.key} for m in i.messages]} for i in items]
+
+
+@router.post("/inbox-items", dependencies=[Depends(require_worker)])
+async def inbox_items(req: InboxItemsIn):
+    from app.services.linkedin_inbox_service import InboxService
+    try:
+        return await InboxService.ingest(_messages(req.items))
+    except RuntimeError as e:
+        raise HTTPException(status_code=502, detail=str(e))
 
 
 @router.get("/worker-config", dependencies=[Depends(require_worker)])

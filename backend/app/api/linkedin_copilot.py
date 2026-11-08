@@ -260,6 +260,30 @@ async def draft_reply(req: ReplyIn):
         raise HTTPException(status_code=502, detail=str(e))
 
 
+class ChatMessageIn(BaseModel):
+    from_: Literal["me", "them"] = Field(..., alias="from")
+    text: str = Field(..., max_length=6000)
+
+
+class ChatSuggestIn(BaseModel):
+    name: Optional[str] = Field(None, max_length=300)
+    headline: Optional[str] = Field(None, max_length=500)
+    profile_url: Optional[str] = Field(None, max_length=500)
+    messages: List[ChatMessageIn] = Field(..., min_length=1, max_length=60)
+    instruction: Optional[str] = Field(None, max_length=1000)
+
+
+@router.post("/inbox/suggest")
+async def inbox_suggest(req: ChatSuggestIn):
+    """The conversation open in your browser: translation, who they are to you and the next message (not stored, not sent)."""
+    from app.services.linkedin_inbox_service import InboxService
+    try:
+        return await InboxService.suggest(req.name, req.headline, [{"from": m.from_, "text": m.text} for m in req.messages],
+                                          req.profile_url, req.instruction)
+    except RuntimeError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
 @router.patch("/engagement/{item_id}")
 async def update_engagement(item_id: int, req: EngagementUpdate):
     return _found(Copilot.update_engagement(item_id, req.status, req.comment_draft))
