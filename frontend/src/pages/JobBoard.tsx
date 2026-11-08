@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { jobService, Job } from '../services/jobService';
 import {
   Plus, MapPin, Trash2, LayoutDashboard, List as ListIcon, ExternalLink, Rocket, FileText, Mail, MessageSquare,
-  Search, ChevronDown, ChevronLeft, ChevronRight, ArrowUpDown, Check, X, AlertTriangle,
+  Search, ChevronDown, ChevronLeft, ChevronRight, ArrowUpDown, Check, X, AlertTriangle, Eye, Link2,
 } from 'lucide-react';
 import JobDetail, { JobTab, JobAction } from '../components/JobDetail';
 import NewJobModal from '../components/NewJobModal';
@@ -20,13 +20,14 @@ const STATUS: { id: string; label: string; color: string }[] = [
 ];
 const statusOf = (id: string) => STATUS.find(s => s.id === id) || { id, label: id, color: '#7a7a90' };
 
-type SortKey = 'recent' | 'oldest' | 'updated' | 'company' | 'title' | 'status' | 'score';
+type SortKey = 'recent' | 'oldest' | 'updated' | 'company' | 'title' | 'status' | 'score' | 'views';
 const SORTS: { id: SortKey; label: string }[] = [
   { id: 'recent', label: 'Mais recentes' }, { id: 'updated', label: 'Atualizadas por último' }, { id: 'oldest', label: 'Mais antigas' },
   { id: 'score', label: 'Melhor avaliação' }, { id: 'status', label: 'Status (funil)' }, { id: 'company', label: 'Empresa A–Z' },
-  { id: 'title', label: 'Cargo A–Z' },
+  { id: 'title', label: 'Cargo A–Z' }, { id: 'views', label: 'Mais vistas no portfólio' },
 ];
 type DocFilter = 'all' | 'with' | 'without';
+type ViewFilter = 'all' | 'viewed' | 'unseen';
 
 const time = (d?: string | null) => (d ? new Date(d).getTime() : 0);
 const ago = (d?: string | null) => {
@@ -114,6 +115,47 @@ const StatusPill = ({ status, onClick }: { status: string; onClick?: (e: React.M
   );
 };
 
+// Copies this job's own portfolio link (the same one written in its CV)
+const CopyPortfolioLink = ({ job }: { job: Job }) => {
+  const [state, setState] = useState<'idle' | 'ok' | 'err'>('idle');
+  if (!job.resume_markdown && !job.portfolio_token) return null;
+  const copy = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      const { url } = await jobService.getPortfolio(job.id);
+      if (!url) throw new Error('portfolio not configured');
+      await navigator.clipboard.writeText(url);
+      setState('ok');
+    } catch {
+      setState('err');
+    }
+    setTimeout(() => setState('idle'), 1800);
+  };
+  const color = state === 'ok' ? '#00c853' : state === 'err' ? '#ff5c5c' : '#7cc4ff';
+  return (
+    <button onClick={copy} title={state === 'ok' ? 'Link copiado' : state === 'err' ? 'Não foi possível copiar' : 'Copiar o link do portfólio desta vaga'}
+      style={{ display: 'inline-flex', alignItems: 'center', gap: 3, background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+        color, fontSize: '0.7rem', fontWeight: 700 }}>
+      {state === 'ok' ? <Check size={12} /> : <Link2 size={12} />} Link
+    </button>
+  );
+};
+
+// How many times the company opened this job's portfolio link (pulled from the portfolio every 5 min)
+export const PortfolioViewsBadge = ({ job }: { job: Pick<Job, 'portfolio_views' | 'portfolio_seconds' | 'portfolio_last_view_at'> }) => {
+  const n = job.portfolio_views || 0;
+  if (!n) return null;
+  const min = Math.round((job.portfolio_seconds || 0) / 60);
+  const last = job.portfolio_last_view_at ? new Date(job.portfolio_last_view_at).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '';
+  const tip = `Portfólio aberto ${n}x${min ? ` · ${min} min de leitura` : ''}${last ? ` · último em ${last}` : ''}`;
+  return (
+    <span title={tip} style={{ display: 'inline-flex', alignItems: 'center', gap: 3, flexShrink: 0, padding: '1px 6px', borderRadius: 6, fontSize: '0.66rem',
+      fontWeight: 800, color: '#7cc4ff', background: '#7cc4ff1f', border: '1px solid #7cc4ff55' }}>
+      <Eye size={10} /> {n}
+    </span>
+  );
+};
+
 // The ad asks to live in a region / for a work visa the candidate lacks: red = requirement, yellow = soft or unclear
 const ELIGIBILITY_LABEL = { residency: 'Residência', work_authorization: 'Visto' } as const;
 export const EligibilityBadge = ({ job }: { job: Pick<Job, 'eligibility_status' | 'eligibility_issues'> }) => {
@@ -136,6 +178,7 @@ const JobBoard = () => {
   const [viewMode, setViewMode] = useState<'table' | 'kanban'>(() => saved('view', 'table'));
   const [statusFilter, setStatusFilter] = useState<string>(() => saved('status', 'active'));
   const [docFilter, setDocFilter] = useState<DocFilter>(() => saved('docs', 'all'));
+  const [viewFilter, setViewFilter] = useState<ViewFilter>(() => saved('views', 'all'));
   const [sort, setSort] = useState<SortKey>(() => saved('sort', 'recent'));
   const [pageSize, setPageSize] = useState<number>(() => saved('pageSize', 25));
   const [query, setQuery] = useState('');
@@ -147,8 +190,8 @@ const JobBoard = () => {
   const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { remember('view', viewMode); }, [viewMode]);
-  useEffect(() => { remember('status', statusFilter); remember('docs', docFilter); remember('sort', sort); remember('pageSize', pageSize); },
-    [statusFilter, docFilter, sort, pageSize]);
+  useEffect(() => { remember('status', statusFilter); remember('docs', docFilter); remember('views', viewFilter); remember('sort', sort); remember('pageSize', pageSize); },
+    [statusFilter, docFilter, viewFilter, sort, pageSize]);
 
   // Every job (archived ones too) in one list: filters, counts, sort and pages are done here, instantly
   const fetchAll = async (): Promise<Job[]> => {
@@ -187,9 +230,10 @@ const JobBoard = () => {
   const q = query.trim().toLowerCase();
   const matchesText = (j: Job) => !q || `${j.job_title} ${j.company} ${j.location}`.toLowerCase().includes(q);
   const matchesDocs = (j: Job) => docFilter === 'all' || (docFilter === 'with' ? !!j.resume_markdown : !j.resume_markdown);
-  const base = useMemo(() => jobs.filter(j => matchesText(j) && matchesDocs(j)),
+  const matchesViews = (j: Job) => viewFilter === 'all' || (viewFilter === 'viewed' ? (j.portfolio_views || 0) > 0 : !(j.portfolio_views || 0));
+  const base = useMemo(() => jobs.filter(j => matchesText(j) && matchesDocs(j) && matchesViews(j)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [jobs, q, docFilter]);
+    [jobs, q, docFilter, viewFilter]);
   const counts = useMemo(() => {
     const c: Record<string, number> = { all: base.length, active: base.filter(j => j.status !== 'archived' && j.status !== 'rejected').length };
     base.forEach(j => { c[j.status] = (c[j.status] || 0) + 1; });
@@ -203,13 +247,14 @@ const JobBoard = () => {
       oldest: (a, b) => time(a.created_at) - time(b.created_at),
       updated: (a, b) => time(b.updated_at || b.created_at) - time(a.updated_at || a.created_at),
       score: (a, b) => Number(b.evaluation_score || 0) - Number(a.evaluation_score || 0),
+      views: (a, b) => (b.portfolio_views || 0) - (a.portfolio_views || 0) || time(b.portfolio_last_view_at) - time(a.portfolio_last_view_at),
       status: (a, b) => funnel(a.status) - funnel(b.status) || time(b.created_at) - time(a.created_at),
       company: (a, b) => (a.company || '').localeCompare(b.company || '', 'pt'),
       title: (a, b) => (a.job_title || '').localeCompare(b.job_title || '', 'pt'),
     };
     return [...rows].sort(cmp[sort]);
   }, [base, statusFilter, sort]);
-  const filterKey = [q, statusFilter, docFilter, sort, pageSize].join('|');
+  const filterKey = [q, statusFilter, docFilter, viewFilter, sort, pageSize].join('|');
   const pages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const current = Math.min(pageState.key === filterKey ? pageState.page : 1, pages);
   const setPage = (n: number) => { setPageState({ key: filterKey, page: n }); listRef.current?.scrollTo({ top: 0 }); };
@@ -275,6 +320,11 @@ const JobBoard = () => {
           <option value="with">Com CV gerado</option>
           <option value="without">Sem CV gerado</option>
         </select>
+        <select className="jb-select" value={viewFilter} onChange={e => setViewFilter(e.target.value as ViewFilter)} title="Filtrar por visualizações do portfólio">
+          <option value="all">Portfólio: todas</option>
+          <option value="viewed">Portfólio visualizado ({jobs.filter(j => (j.portfolio_views || 0) > 0).length})</option>
+          <option value="unseen">Portfólio não visto</option>
+        </select>
         {viewMode === 'table' && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto' }}>
             <ArrowUpDown size={14} style={{ color: 'var(--text-muted)' }} />
@@ -318,6 +368,7 @@ const JobBoard = () => {
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
                         <span style={{ fontWeight: 700, color: '#fff', fontSize: '0.88rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{job.job_title}</span>
                         <EligibilityBadge job={job} />
+                        <PortfolioViewsBadge job={job} />
                       </div>
                       <div style={{ fontSize: '0.76rem', color: 'var(--text-muted)', display: 'flex', gap: 10, overflow: 'hidden', whiteSpace: 'nowrap' }}>
                         <span style={{ color: 'var(--accent-light)', fontWeight: 600 }}>{job.company}</span>
@@ -329,6 +380,7 @@ const JobBoard = () => {
                       <div style={{ display: 'flex', gap: 6, fontSize: '0.7rem', fontWeight: 700 }}>
                         <span title={job.resume_markdown ? 'CV gerado' : 'Sem CV'} style={{ color: job.resume_markdown ? '#00c853' : 'rgba(255,255,255,.2)' }}>CV</span>
                         <span title={job.cover_letter ? 'Carta gerada' : 'Sem carta'} style={{ color: job.cover_letter ? '#00c853' : 'rgba(255,255,255,.2)' }}>Carta</span>
+                        <CopyPortfolioLink job={job} />
                       </div>
                     </td>
                     <td className="jb-td jb-hide-sm" style={{ fontSize: '0.76rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{ago(job.updated_at || job.created_at)}</td>
@@ -382,6 +434,7 @@ const JobBoard = () => {
                         className="card-hover" style={{ padding: '0.8rem', borderRadius: 12, cursor: 'grab', background: 'rgba(30,30,42,.6)', border: '1px solid var(--border)', borderLeft: `3px solid ${col.color}` }}>
                         <div style={{ fontWeight: 700, fontSize: '0.84rem', color: '#fff', marginBottom: 2 }}>{job.job_title}</div>
                         {(job.eligibility_status === 'blocked' || job.eligibility_status === 'warning') && <div style={{ marginBottom: 4 }}><EligibilityBadge job={job} /></div>}
+                        {(job.portfolio_views || 0) > 0 && <div style={{ marginBottom: 4 }}><PortfolioViewsBadge job={job} /></div>}
                         <div style={{ fontSize: '0.74rem', color: 'var(--accent-light)', marginBottom: 8 }}>{job.company}</div>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6 }}>
                           <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 4, minWidth: 0, overflow: 'hidden', whiteSpace: 'nowrap' }}><MapPin size={11} /> {job.location || 'Remoto'}</span>

@@ -555,7 +555,12 @@ async def bot_ack(req: AckIn):
 @router.get("/bot/summary", dependencies=[Depends(require_decider)])
 async def bot_summary():
     """The short summary for the good morning and when you ask: what waits for you, and the link."""
-    return {"text": BotService.summary_text()}
+    try:   # views not told yet are shown, not marked: the next summary still tells them
+        from app.services.portfolio_service import PortfolioService
+        views = PortfolioService.news()
+    except Exception:
+        views = []
+    return {"text": BotService.summary_text(views=views)}
 
 
 @router.get("/bot/overview", dependencies=[Depends(require_decider)])

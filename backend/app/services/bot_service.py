@@ -183,7 +183,7 @@ class BotService:
         return _and(parts)
 
     @staticmethod
-    def summary_text(news: Optional[Dict[str, Dict[str, int]]] = None, emails: int = 0) -> str:
+    def summary_text(news: Optional[Dict[str, Dict[str, int]]] = None, emails: int = 0, views: Optional[List[dict]] = None) -> str:
         """Short: what is new (when given), what is waiting now, and the link. Also for the good morning and on request."""
         waiting = BotService._waiting()
         approve, yours = BotService._kinds_text(waiting.get("proposed") or {}), BotService._yours_text(waiting)
@@ -198,6 +198,9 @@ class BotService:
             lines.append("Nada esperando por você.")
         if emails:
             lines.append(f"📬 {emails} e-mail(s) novo(s) sobre candidaturas.")
+        if views:
+            from app.services.portfolio_service import PortfolioService
+            lines.append(PortfolioService.news_text(views))
         lines.append(BotService.approval_link())
         return "\n".join(lines)
 
@@ -218,14 +221,23 @@ class BotService:
         emails = sum(1 for n in folded if n["kind"].startswith("email_") and n["kind"] != "email_summary")
         if folded:   # counted here, never sent one by one
             _rows("UPDATE public.bot_notifications SET delivered_at = NOW() WHERE id = ANY(%s)", ([n["id"] for n in folded],))
-        if not fresh and not emails:
+        try:   # portfolio views since the last summary (pulled from Vercel by PortfolioService.pull)
+            from app.services.portfolio_service import PortfolioService
+            views = PortfolioService.news()
+        except Exception:
+            views = []
+        if not fresh and not emails and not views:
             return 0
         news: Dict[str, Dict[str, int]] = {}
         for a in fresh:
             news.setdefault(a["status"], {})
             news[a["status"]][a["kind"]] = news[a["status"]].get(a["kind"], 0) + 1
         _rows("UPDATE public.automation_actions SET notified_status = status WHERE id = ANY(%s)", ([a["id"] for a in fresh],))
-        return bool(BotService.notify("summary", BotService.summary_text(news, emails), {"news": news, "emails": emails}))
+        sent = bool(BotService.notify("summary", BotService.summary_text(news, emails, views),
+                                      {"news": news, "emails": emails, "portfolio_views": sum(int(v["views"]) for v in views)}))
+        if sent and views:
+            PortfolioService.mark_told()
+        return sent
 
     @staticmethod
     def _halt_notice() -> int:

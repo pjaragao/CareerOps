@@ -92,6 +92,19 @@ async def _email_monitor():
         await asyncio.sleep(300)
 
 
+async def _portfolio_pull():
+    """Every 5 min: brings home the portfolio views recorded on Vercel and uploads changed job CVs
+    (outbound calls only; nothing on the homelab is exposed)."""
+    from app.services.portfolio_service import PortfolioService
+    while True:
+        try:
+            await asyncio.to_thread(PortfolioService.pull)
+            await asyncio.to_thread(PortfolioService.sync_cvs)
+        except Exception as e:
+            logging.getLogger("portfolio").warning("portfolio pull failed: %s", e)
+        await asyncio.sleep(300)
+
+
 @app.on_event("startup")
 async def start_scheduler():
     try:
@@ -116,6 +129,12 @@ async def start_scheduler():
         await asyncio.to_thread(JobSearchService.ensure_seeds)
     except Exception as e:
         logging.getLogger("automation").warning("migrations_v15 not applied: %s", e)
+    try:
+        from app.services.portfolio_service import ensure_schema as ensure_portfolio_schema
+        await asyncio.to_thread(ensure_portfolio_schema)   # migrations_v16: portfolio link and views per job
+    except Exception as e:
+        logging.getLogger("portfolio").warning("migrations_v16 not applied: %s", e)
+    app.state.portfolio_pull = asyncio.create_task(_portfolio_pull())
     app.state.automation = asyncio.create_task(_automation())
     app.state.email_monitor = asyncio.create_task(_email_monitor())
     app.state.linkedin_scheduler = asyncio.create_task(_publish_scheduled_posts())

@@ -180,6 +180,10 @@ class JobService:
             }
             column = column_map.get(content_type)
             if not column: return False
+            if content_type == 'resume' and content:
+                # every CV carries this job's own portfolio link (contact line only; content unchanged)
+                from app.services.portfolio_service import PortfolioService
+                content = PortfolioService.attach(job_id, content)
             
             with conn.cursor() as cur:
                 cur.execute(f"UPDATE public.job_listings SET {column} = %s, updated_at = %s WHERE id = %s", 

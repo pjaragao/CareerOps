@@ -25,6 +25,11 @@ export interface Job {
   eligibility_status?: 'ok' | 'warning' | 'blocked' | null;
   eligibility_issues?: EligibilityIssue[];
   eligibility_checked_at?: string | null;
+  // portfolio link of this job (pjaragao-portfolio.vercel.app), opened N times by the company
+  portfolio_token?: string | null;
+  portfolio_views?: number;
+  portfolio_seconds?: number;
+  portfolio_last_view_at?: string | null;
 }
 
 export interface EligibilityIssue {
@@ -56,6 +61,8 @@ export interface AIOptions {
 
 export const jobService = {
   getJob: async (id: number) => (await api.get<Job>(`/jobs/${id}`)).data,
+  // this job's own portfolio link (signed token; created on first use)
+  getPortfolio: async (id: number) => (await api.get<{ url: string | null; views: number; seconds: number; last_view_at: string | null }>(`/jobs/${id}/portfolio`)).data,
   getJobs: async (status?: string) => {
     const url = status ? `/jobs/?status=${status}` : '/jobs/';
     const response = await api.get<{ jobs: Job[] }>(url);

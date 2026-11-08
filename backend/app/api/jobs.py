@@ -33,6 +33,18 @@ async def get_job(job_id: int):
         raise HTTPException(status_code=404, detail="Job not found")
     return job
 
+@router.get("/{job_id}/portfolio")
+async def job_portfolio(job_id: int):
+    """This job's portfolio link and who opened it (events pulled from the portfolio every 5 min)."""
+    from app.services.portfolio_service import PortfolioService, _q
+    job = JobService.get_job_by_id(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    events = _q("""SELECT event, details, location, device, occurred_at FROM public.portfolio_events
+                   WHERE job_id = %s ORDER BY occurred_at DESC LIMIT 30""", (job_id,))
+    return {"url": PortfolioService.link_for(job), "views": job.get("portfolio_views") or 0,
+            "seconds": job.get("portfolio_seconds") or 0, "last_view_at": job.get("portfolio_last_view_at"), "events": events}
+
 @router.get("/linkedin/{linkedin_job_id}")
 async def job_by_linkedin_id(linkedin_job_id: str):
     """The CareerOps job for a LinkedIn job id (Easy Apply uses it to attach the CV generated for that job)."""
