@@ -1,5 +1,16 @@
 import api from './api';
 
+// What the AI extracted from the files, reviewed by you before it becomes knowledge
+export interface ExperienceItem { role?: string; company?: string; period?: string; description?: string; [key: string]: unknown }
+export interface StarCase { title?: string; situation?: string; task?: string; action?: string; result?: string; [key: string]: unknown }
+export interface KnowledgeData {
+  summary?: string;
+  skills?: string[];
+  experiences?: ExperienceItem[];
+  star_cases?: StarCase[];
+  [key: string]: unknown;
+}
+
 export interface UserDocument {
   id: number;
   filename: string;
@@ -7,8 +18,8 @@ export interface UserDocument {
   processing_status: 'pending' | 'processing' | 'awaiting_validation' | 'validated' | 'failed';
   created_at: string;
   last_processed_at: string | null;
-  extracted_data?: any;
-  validated_data?: any;
+  extracted_data?: KnowledgeData;
+  validated_data?: KnowledgeData;
   raw_text?: string;
 }
 
@@ -37,19 +48,19 @@ export const documentService = {
     return response.data;
   },
 
-  consolidate: async (docIds: number[]): Promise<any> => {
+  consolidate: async (docIds: number[]): Promise<KnowledgeData> => {
     const response = await api.post('/documents/consolidate', docIds);
     return response.data;
   },
 
-  validateDocument: async (id: number, validatedData: any): Promise<{ ok: boolean }> => {
+  validateDocument: async (id: number, validatedData: KnowledgeData): Promise<{ ok: boolean }> => {
     const response = await api.post(`/documents/${id}/validate`, {
       validated_data: validatedData
     });
     return response.data;
   },
 
-  validateBulk: async (docIds: number[], mergedData: any): Promise<{ ok: boolean }> => {
+  validateBulk: async (docIds: number[], mergedData: KnowledgeData): Promise<{ ok: boolean }> => {
     const response = await api.post('/documents/bulk-validate', {
       doc_ids: docIds,
       merged_data: mergedData
@@ -62,7 +73,7 @@ export const documentService = {
     return response.data;
   },
 
-  optimizeResume: async (): Promise<any> => {
+  optimizeResume: async (): Promise<{ error?: string; [key: string]: unknown }> => {
     const response = await api.post('/documents/optimize-resume');
     return response.data;
   },

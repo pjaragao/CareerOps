@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { profileService, Profile } from '../services/profileService';
+import React, { useEffect, useState, useCallback } from 'react';
+import { profileService, Profile, ProfileLanguageData } from '../services/profileService';
 import { 
   Save, 
   User, 
@@ -11,8 +11,7 @@ import {
   Trash2, 
   GraduationCap, 
   Code,
-  Zap,
-  Globe
+  Zap
 } from 'lucide-react';
 
 const ProfilePage = () => {
@@ -29,11 +28,7 @@ const ProfilePage = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     setLoading(true);
     try {
       const p = await profileService.getProfile().catch(() => ({} as Profile));
@@ -54,7 +49,12 @@ const ProfilePage = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    const first = setTimeout(loadData, 0);
+    return () => clearTimeout(first);
+  }, [loadData]);
 
   const handleSave = async () => {
     setSaving(true);
@@ -63,14 +63,14 @@ const ProfilePage = () => {
       await profileService.saveResume(resumes.en, 'en');
       await profileService.saveResume(resumes.pt, 'pt');
       alert("Profile saved successfully!");
-    } catch (error) {
+    } catch {
       alert("Failed to save profile");
     } finally {
       setSaving(false);
     }
   };
 
-  const updateProfile = (section: 'personal' | 'legal' | 'preferences', field: string, value: any) => {
+  const updateProfile = (section: 'personal' | 'legal' | 'preferences', field: string, value: string) => {
     setProfile(prev => ({
       ...prev,
       [section]: {
@@ -80,7 +80,7 @@ const ProfilePage = () => {
     }));
   };
 
-  const updateLanguageData = (field: 'experience' | 'education' | 'skills' | 'about', value: any) => {
+  const updateLanguageData = <K extends 'experience' | 'education' | 'skills' | 'about'>(field: K, value: ProfileLanguageData[K]) => {
     setProfile(prev => ({
       ...prev,
       languages: {
@@ -114,7 +114,7 @@ const ProfilePage = () => {
         }
       }));
       alert("AI extracted your info successfully! Please review the tabs.");
-    } catch (error) {
+    } catch {
       alert("Failed to parse resume with AI");
     } finally {
       setLoading(false);

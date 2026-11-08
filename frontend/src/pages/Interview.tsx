@@ -1,6 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { interviewService, STARStory } from '../services/interviewService';
-import { MessageSquare, Plus, Wand2, Trash2, CheckCircle, X } from 'lucide-react';
+import { Plus, Wand2, Trash2, CheckCircle, X } from 'lucide-react';
+
+type StarPart = 'situation' | 'task' | 'action' | 'result';
+const STAR_PARTS: StarPart[] = ['situation', 'task', 'action', 'result'];
 
 const InterviewPage = () => {
   const [stories, setStories] = useState<STARStory[]>([]);
@@ -9,14 +12,14 @@ const InterviewPage = () => {
   const [showGenerator, setShowGenerator] = useState(false);
   const [generatedStory, setGeneratedStory] = useState<Omit<STARStory, 'id' | 'tags'> | null>(null);
 
-  useEffect(() => {
-    loadStories();
+  const loadStories = useCallback(async () => {
+    setStories(await interviewService.getStories());
   }, []);
 
-  const loadStories = async () => {
-    const data = await interviewService.getStories();
-    setStories(data);
-  };
+  useEffect(() => {
+    const first = setTimeout(loadStories, 0);
+    return () => clearTimeout(first);
+  }, [loadStories]);
 
   const handleGenerate = async () => {
     if (!rawExperience.trim()) return;
@@ -24,7 +27,7 @@ const InterviewPage = () => {
     try {
       const result = await interviewService.generateSTAR(rawExperience);
       setGeneratedStory(result);
-    } catch (error) {
+    } catch {
       alert("Failed to generate STAR case");
     } finally {
       setIsGenerating(false);
@@ -51,7 +54,7 @@ const InterviewPage = () => {
       setShowManual(false);
       setManualStory({ title: '', situation: '', task: '', action: '', result: '' });
       await loadStories();
-    } catch (error) {
+    } catch {
       alert("Failed to save STAR case");
     }
   };
@@ -82,11 +85,11 @@ const InterviewPage = () => {
               value={manualStory.title}
               onChange={e => setManualStory({...manualStory, title: e.target.value})}
             />
-            {['situation', 'task', 'action', 'result'].map(part => (
+            {STAR_PARTS.map(part => (
               <textarea 
                 key={part}
                 placeholder={part.charAt(0).toUpperCase() + part.slice(1)}
-                value={(manualStory as any)[part]}
+                value={manualStory[part]}
                 onChange={e => setManualStory({...manualStory, [part]: e.target.value})}
                 style={{ height: '80px' }}
               />
@@ -127,10 +130,10 @@ const InterviewPage = () => {
               <div style={{ marginBottom: '1.5rem' }}>
                 <h4 style={{ color: 'var(--accent)', marginBottom: '0.5rem' }}>{generatedStory.title}</h4>
                 <div style={{ display: 'grid', gap: '1rem' }}>
-                  {['situation', 'task', 'action', 'result'].map(part => (
+                  {STAR_PARTS.map(part => (
                     <div key={part}>
                       <strong style={{ textTransform: 'capitalize', fontSize: '0.8rem', color: 'var(--text-muted)' }}>{part}</strong>
-                      <p style={{ fontSize: '0.95rem', marginTop: '4px' }}>{(generatedStory as any)[part]}</p>
+                      <p style={{ fontSize: '0.95rem', marginTop: '4px' }}>{generatedStory[part]}</p>
                     </div>
                   ))}
                 </div>
@@ -191,15 +194,15 @@ const InterviewPage = () => {
             </div>
 
             <div style={{ display: 'grid', gap: '2rem' }}>
-              {[
+              {([
                 { key: 'situation', label: 'Situation', color: '#3b82f6' },
                 { key: 'task', label: 'Task', color: '#8b5cf6' },
                 { key: 'action', label: 'Action', color: '#d946ef' },
                 { key: 'result', label: 'Result', color: '#22c55e' }
-              ].map(part => (
+              ] as { key: StarPart; label: string; color: string }[]).map(part => (
                 <div key={part.key} style={{ borderLeft: `4px solid ${part.color}`, paddingLeft: '1.5rem' }}>
                   <h4 style={{ color: part.color, textTransform: 'uppercase', fontSize: '0.75rem', letterSpacing: '1px', marginBottom: '0.5rem', fontWeight: 800 }}>{part.label}</h4>
-                  <p style={{ fontSize: '1.05rem', lineHeight: 1.7, color: 'rgba(255,255,255,0.9)' }}>{(selectedStory as any)[part.key]}</p>
+                  <p style={{ fontSize: '1.05rem', lineHeight: 1.7, color: 'rgba(255,255,255,0.9)' }}>{selectedStory[part.key]}</p>
                 </div>
               ))}
             </div>

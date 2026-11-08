@@ -43,10 +43,10 @@ export interface Profile {
   };
   languages?: Record<string, ProfileLanguageData>;
   // Fallback
-  experience?: any;
-  education?: any;
-  skills?: any;
-  keywords?: any;
+  experience?: ProfileLanguageData['experience'];
+  education?: ProfileLanguageData['education'];
+  skills?: ProfileLanguageData['skills'];
+  keywords?: ProfileLanguageData['keywords'];
   about?: string;
 }
 

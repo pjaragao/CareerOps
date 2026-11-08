@@ -68,7 +68,7 @@ export const jobService = {
     const response = await api.get<{ jobs: Job[] }>(url);
     return response.data.jobs;
   },
-  addManualJob: async (job: any) => {
+  addManualJob: async (job: Partial<Job> & { title?: string }) => {
     // Correct mapping for ManualJobCreate (expects 'title', not 'job_title')
     const payload = {
       title: job.job_title || job.title,

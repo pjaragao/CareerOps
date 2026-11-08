@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { settingsService, AppSettings } from '../services/settingsService';
 import api, { getAccessToken, setAccessToken } from '../services/api';
 import { Save, Key, Zap, Shield, Lock, Bookmark } from 'lucide-react';
@@ -80,30 +80,28 @@ const SettingsPage = () => {
   const [token, setToken] = useState(getAccessToken);
   const [tokenStatus, setTokenStatus] = useState('');
 
-  useEffect(() => {
-    loadSettings();
-    loadModels();
-  }, []);
-
-  const loadModels = async () => {
+  const loadModels = useCallback(async () => {
     try {
-      const models = await settingsService.getAvailableModels();
-      setAvailableModels(models);
-    } catch (e) {
+      setAvailableModels(await settingsService.getAvailableModels());
+    } catch {
       console.error("Failed to load models");
     }
-  };
+  }, []);
 
-  const loadSettings = async () => {
+  const loadSettings = useCallback(async () => {
     try {
-      const data = await settingsService.getSettings();
-      setSettings(data);
+      setSettings(await settingsService.getSettings());
     } catch (error) {
       console.error("Failed to load settings", error);
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    const first = setTimeout(() => { loadSettings(); loadModels(); }, 0);
+    return () => clearTimeout(first);
+  }, [loadSettings, loadModels]);
 
   const handleSave = async () => {
     setSaving(true);

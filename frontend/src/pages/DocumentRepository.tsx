@@ -1,14 +1,12 @@
-import React, { useEffect, useState } from 'react';
-import { documentService, UserDocument } from '../services/documentService';
+import React, { useCallback, useEffect, useState } from 'react';
+import { documentService, UserDocument, KnowledgeData, ExperienceItem, StarCase } from '../services/documentService';
 import { 
   FileText, 
   Upload, 
   Trash2, 
   CheckCircle, 
-  Clock, 
   AlertCircle, 
   RefreshCw, 
-  Eye, 
   Check, 
   X,
   Plus,
@@ -23,43 +21,31 @@ type Step = 'upload' | 'analyze' | 'review' | 'finalize';
 
 const DocumentRepository = () => {
   const [documents, setDocuments] = useState<UserDocument[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [currentStep, setCurrentStep] = useState<Step>('upload');
   
   // Review state
-  const [selectedDoc, setSelectedDoc] = useState<UserDocument | null>(null);
-  const [validationData, setValidationData] = useState<any>(null);
+  const [, setSelectedDoc] = useState<UserDocument | null>(null);
+  const [validationData, setValidationData] = useState<KnowledgeData | null>(null);
   const [isBulkReview, setIsBulkReview] = useState(false);
   const [pendingDocIds, setPendingDocIds] = useState<number[]>([]);
 
-  useEffect(() => {
-    loadDocuments();
-    const interval = setInterval(() => {
-      // Only poll if we are in analysis step or have pending docs
-      loadDocuments();
-    }, 3000);
-    return () => clearInterval(interval);
-  }, []);
-
-  const loadDocuments = async () => {
+  const loadDocuments = useCallback(async () => {
     try {
-      const docs = await documentService.listDocuments();
-      setDocuments(docs);
-      
-      // Auto-determine step based on data if not manually set
-      const pendingAnalysis = docs.filter(d => d.processing_status === 'pending');
-      const awaitingReview = docs.filter(d => d.processing_status === 'awaiting_validation');
-      
-      if (currentStep === 'upload' && docs.length > 0 && pendingAnalysis.length > 0) {
-        // Stay in upload or move to analyze? Let's let user click.
-      }
+      setDocuments(await documentService.listDocuments());
     } catch (error) {
       console.error("Failed to load documents", error);
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    const first = setTimeout(loadDocuments, 0);
+    const interval = setInterval(loadDocuments, 3000);   // follows the analysis while it runs
+    return () => { clearTimeout(first); clearInterval(interval); };
+  }, [loadDocuments]);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -85,7 +71,7 @@ const DocumentRepository = () => {
     try {
       await documentService.processBulk(pending.map(p => p.id));
       setCurrentStep('analyze');
-    } catch (error) {
+    } catch {
       alert("Failed to start analysis");
     }
   };
@@ -100,9 +86,9 @@ const DocumentRepository = () => {
       setValidationData(consolidated);
       setIsBulkReview(true);
       setPendingDocIds(pending.map(p => p.id));
-      setSelectedDoc({ filename: 'Consolidated Knowledge', processing_status: 'awaiting_validation' } as any);
+      setSelectedDoc({ id: 0, filename: 'Consolidated Knowledge', content_type: '', processing_status: 'awaiting_validation', created_at: '', last_processed_at: null });
       setCurrentStep('review');
-    } catch (error) {
+    } catch {
       alert("Failed to consolidate knowledge");
     } finally {
       setLoading(false);
@@ -110,7 +96,7 @@ const DocumentRepository = () => {
   };
 
   const handleValidate = async () => {
-    if (pendingDocIds.length === 0) return;
+    if (pendingDocIds.length === 0 || !validationData) return;
     try {
       if (isBulkReview) {
         await documentService.validateBulk(pendingDocIds, validationData);
@@ -120,7 +106,7 @@ const DocumentRepository = () => {
       setSelectedDoc(null);
       await loadDocuments();
       setCurrentStep('finalize');
-    } catch (error) {
+    } catch {
       alert("Failed to validate");
     }
   };
@@ -134,7 +120,7 @@ const DocumentRepository = () => {
       } else {
         alert("Resume optimization suggestions generated! Check the Profile page.");
       }
-    } catch (error) {
+    } catch {
       alert("Failed to optimize resume");
     } finally {
       setLoading(false);
@@ -146,7 +132,7 @@ const DocumentRepository = () => {
     try {
       await documentService.deleteDocument(id);
       loadDocuments();
-    } catch (error) {
+    } catch {
       alert("Failed to delete");
     }
   };
@@ -365,7 +351,7 @@ const DocumentRepository = () => {
                       <span key={i} className="badge" style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 12px' }}>
                         {skill}
                         <button onClick={() => {
-                          const next = validationData.skills.filter((_:any, idx:number) => idx !== i);
+                          const next = (validationData.skills || []).filter((_, idx) => idx !== i);
                           setValidationData({...validationData, skills: next});
                         }} style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', display: 'flex' }}><X size={12} /></button>
                       </span>
@@ -380,7 +366,7 @@ const DocumentRepository = () => {
                 {/* Experiences */}
                 <section>
                   <label className="field-label">Work Experience</label>
-                  {(validationData.experiences || []).map((exp: any, i: number) => (
+                  {(validationData.experiences || []).map((exp: ExperienceItem, i: number) => (
                     <div key={i} className="panel" style={{ background: 'rgba(255,255,255,0.02)', padding: '1.5rem', marginBottom: '1.5rem' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
                         <div>
@@ -390,9 +376,9 @@ const DocumentRepository = () => {
                         <div style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>{exp.period}</div>
                       </div>
                       <textarea 
-                        value={exp.description} 
+                        value={exp.description ?? ''} 
                         onChange={e => {
-                          const next = [...validationData.experiences];
+                          const next = [...(validationData.experiences || [])];
                           next[i].description = e.target.value;
                           setValidationData({...validationData, experiences: next});
                         }}
@@ -405,12 +391,12 @@ const DocumentRepository = () => {
                 {/* STAR Cases */}
                 <section>
                   <label className="field-label">Key Achievements (STAR Cases)</label>
-                  {(validationData.star_cases || []).map((case_data: any, i: number) => (
+                  {(validationData.star_cases || []).map((case_data: StarCase, i: number) => (
                     <div key={i} className="panel" style={{ border: '1px solid rgba(59, 130, 246, 0.3)', padding: '1.5rem', marginBottom: '1.5rem' }}>
                       <input 
-                        value={case_data.title} 
+                        value={case_data.title ?? ''} 
                         onChange={e => {
-                          const next = [...validationData.star_cases];
+                          const next = [...(validationData.star_cases || [])];
                           next[i].title = e.target.value;
                           setValidationData({...validationData, star_cases: next});
                         }}
@@ -419,26 +405,26 @@ const DocumentRepository = () => {
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                         <div style={{ display: 'grid', gridTemplateColumns: '30px 1fr', gap: '10px' }}>
                           <span style={{ color: 'var(--primary-color)', fontWeight: 800 }}>S</span>
-                          <textarea value={case_data.situation} onChange={e => {
-                            const next = [...validationData.star_cases]; next[i].situation = e.target.value; setValidationData({...validationData, star_cases: next});
+                          <textarea value={case_data.situation ?? ''} onChange={e => {
+                            const next = [...(validationData.star_cases || [])]; next[i].situation = e.target.value; setValidationData({...validationData, star_cases: next});
                           }} style={{ height: '60px', fontSize: '0.9rem' }} />
                         </div>
                         <div style={{ display: 'grid', gridTemplateColumns: '30px 1fr', gap: '10px' }}>
                           <span style={{ color: 'var(--primary-color)', fontWeight: 800 }}>T</span>
-                          <textarea value={case_data.task} onChange={e => {
-                            const next = [...validationData.star_cases]; next[i].task = e.target.value; setValidationData({...validationData, star_cases: next});
+                          <textarea value={case_data.task ?? ''} onChange={e => {
+                            const next = [...(validationData.star_cases || [])]; next[i].task = e.target.value; setValidationData({...validationData, star_cases: next});
                           }} style={{ height: '60px', fontSize: '0.9rem' }} />
                         </div>
                         <div style={{ display: 'grid', gridTemplateColumns: '30px 1fr', gap: '10px' }}>
                           <span style={{ color: 'var(--primary-color)', fontWeight: 800 }}>A</span>
-                          <textarea value={case_data.action} onChange={e => {
-                            const next = [...validationData.star_cases]; next[i].action = e.target.value; setValidationData({...validationData, star_cases: next});
+                          <textarea value={case_data.action ?? ''} onChange={e => {
+                            const next = [...(validationData.star_cases || [])]; next[i].action = e.target.value; setValidationData({...validationData, star_cases: next});
                           }} style={{ height: '80px', fontSize: '0.9rem' }} />
                         </div>
                         <div style={{ display: 'grid', gridTemplateColumns: '30px 1fr', gap: '10px' }}>
                           <span style={{ color: 'var(--primary-color)', fontWeight: 800 }}>R</span>
-                          <textarea value={case_data.result} onChange={e => {
-                            const next = [...validationData.star_cases]; next[i].result = e.target.value; setValidationData({...validationData, star_cases: next});
+                          <textarea value={case_data.result ?? ''} onChange={e => {
+                            const next = [...(validationData.star_cases || [])]; next[i].result = e.target.value; setValidationData({...validationData, star_cases: next});
                           }} style={{ height: '60px', fontSize: '0.9rem' }} />
                         </div>
                       </div>
