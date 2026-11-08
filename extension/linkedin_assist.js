@@ -2315,10 +2315,12 @@
         }
         if (st.step === 'list') {
             if (!/^\/messaging/.test(location.pathname)) { location.href = 'https://www.linkedin.com/messaging/' + runHash(); return; }
-            const listed = await waitFor(() => document.querySelector('a[href*="/messaging/thread/"]'), 20000);
-            if (!listed) { sessionStorage.removeItem(INBOX_KEY); managedStuck('unexpected_layout', 'Lista de conversas não reconhecida'); return; }
+            const listed = await waitFor(() => convoItems().length || document.querySelector('a[href*="/messaging/thread/"]'), 20000);
+            if (!listed) { await inboxFinish(st, 'Lista de conversas não reconhecida'); return; }
             await wait(1500);
-            st.queue = unreadThreads().slice(0, limit);
+            // late 2026: the list items carry no link, a click opens the conversation in the same page
+            if (convoItems().length) { await readConversationsInPlace(st, limit); return; }
+            st.queue = unreadThreads().slice(0, limit);   // the layout with a link per conversation (kept: it may come back)
             st.step = 'thread';
             saveInbox(st);
         }
@@ -2326,7 +2328,7 @@
             if (/\/messaging\/thread\//.test(location.pathname) && st.current) {
                 await waitFor(() => document.querySelector('.msg-s-event-listitem__body, [class*="event-listitem__body"]'), 15000);
                 await wait(1500);
-                const t = threadMessages();
+                const t = threadMessages(threadPane());
                 if (t.messages.length) st.items.push({ kind: 'chat', key: `chat:${st.current}`, thread_url: st.current, ...t });
                 st.current = null;
             }
@@ -2339,12 +2341,50 @@
                 location.href = next + runHash();
                 return;
             }
-            sessionStorage.removeItem(INBOX_KEY);
-            const items = st.items.filter((i) => i.messages && i.messages.length).slice(0, 30);
-            const res = items.length ? await managedApi('POST', '/automation/inbox-items', { items }) : { ok: true, data: {} };
-            if (!res.ok) { managedStuck('unexpected_layout', errText(res)); return; }
-            await managedRead({ invites: items.filter((i) => i.kind === 'invite').length, chats: items.filter((i) => i.kind === 'chat').length, ...res.data });
+            await inboxFinish(st);
         }
+    }
+
+    // What was read goes to the backend even when a later step fails (the invitations are not lost with the list)
+    async function inboxFinish(st, failure) {
+        sessionStorage.removeItem(INBOX_KEY);
+        const items = st.items.filter((i) => i.messages && i.messages.length).slice(0, 30);
+        const res = items.length ? await managedApi('POST', '/automation/inbox-items', { items }) : { ok: true, data: {} };
+        if (failure) { managedStuck('unexpected_layout', `${failure} (${items.length} item(ns) lidos antes foram enviados)`); return; }
+        if (!res.ok) { managedStuck('unexpected_layout', errText(res)); return; }
+        await managedRead({ invites: items.filter((i) => i.kind === 'invite').length, chats: items.filter((i) => i.kind === 'chat').length, ...res.data });
+    }
+
+    const threadPane = () => document.querySelector('.scaffold-layout__detail, .msg-convo-wrapper, .msg-thread') || document;
+    const convoItems = () => [...document.querySelectorAll('li.msg-conversation-listitem, li[class*="conversation-listitem"]')]
+        .filter((li) => li.querySelector('.msg-conversation-card__participant-names, [class*="participant-names"]'));
+    // The conversations whose last message is theirs (not "You: …", not an ad), read or not: one you already read in your own
+    // browser still deserves a suggestion. The backend skips a last message it already handled.
+    async function readConversationsInPlace(st, limit) {
+        const seen = new Set();
+        for (let k = 0; k < limit; k++) {
+            const li = convoItems().find((x) => {
+                const name = clean((x.querySelector('[class*="participant-names"]') || {}).innerText || '');
+                const snippet = clean((x.querySelector('[class*="message-snippet"]') || {}).innerText || '');
+                return name && !seen.has(name) && !/^(you|voc[eê])\s*:/i.test(snippet) && !/\b(sponsored|patrocinado)\b/i.test(x.innerText || '');
+            });
+            if (!li) break;
+            const name = clean(li.querySelector('[class*="participant-names"]').innerText);
+            seen.add(name);
+            await gate();
+            (li.querySelector('.msg-conversation-listitem__link, [class*="convo-item-link"], [tabindex="0"]') || li).click();
+            // the pane shows this person, with their messages
+            const shown = await waitFor(() => {
+                const title = clean((threadPane().querySelector('.msg-entity-lockup__entity-title, .msg-thread__link-to-profile, h2') || {}).innerText || '');
+                return plain(title).startsWith(plain(name).split(' ')[0]) && threadPane().querySelector('.msg-s-event-listitem__body, [class*="event-listitem__body"]');
+            }, 12000);
+            if (!shown) continue;
+            await wait(1500 + Math.random() * 800);
+            const t = threadMessages(threadPane());
+            const url = /\/messaging\/thread\//.test(location.pathname) ? location.href.split('?')[0].split('#')[0] : null;
+            if (t.messages.length && url) st.items.push({ kind: 'chat', key: `chat:${url}`, thread_url: url, ...t, name: t.name || name });
+        }
+        await inboxFinish(st);
     }
 
     const MSG_EDITOR = '.msg-form__contenteditable[contenteditable="true"], form.msg-form [contenteditable="true"], [role="textbox"][contenteditable="true"][aria-label*="essage"], [role="textbox"][contenteditable="true"][aria-label*="ensagem"]';

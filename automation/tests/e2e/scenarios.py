@@ -278,6 +278,27 @@ def main():
     # the thread_read it made would call the AI: out of the queue here
     sql("UPDATE public.automation_actions SET status = 'cancelled' WHERE kind = 'thread_read' AND status IN ('queued', 'running_ext')")
 
+    # the inbox, both layouts: the conversation list with a link per unread conversation (old) and the late-2026 one, no links,
+    # a click opens the conversation in place (seen 2026-11-08)
+    for layout in ("new", "old"):
+        fake_post("/__inbox_new", "on" if layout == "new" else "off")
+        fake_post("/__unread", "off" if layout == "new" else "on")
+        sql("DELETE FROM public.linkedin_conversations")
+        scan = propose("inbox_scan", f"inbox-scan-e2e-{layout}", "https://www.linkedin.com/mynetwork/invitation-manager/received/", {"limit": 5})
+        sql("UPDATE public.automation_actions SET lane = 'linkedin_read' WHERE id = %s", (scan,))
+        call("POST", f"/automation/actions/{scan}/approve", {"run_now": True})
+        row = wait_status(scan, ("done", "needs_user", "escalated"), 180)
+        convs = {c["conv_key"].split(":")[0]: c for c in sql("SELECT * FROM public.linkedin_conversations")}
+        check(f"inbox_scan ({layout} list): invitation and conversation read", row["status"] == "done" and "invite" in convs and "chat" in convs,
+              f"{row['status']} {row['error_text']} {row['result']} {list(convs)}")
+        if layout == "new":
+            check("inbox_scan (new list): skips your own last word and ads", fake_state().get("opened") == ["Z1"], str(fake_state().get("opened")))
+            check("inbox_scan: an answer to your contact waits for your OK, never declined alone",
+                  bool(sql("SELECT 1 FROM public.automation_actions WHERE kind = 'message' AND status = 'proposed' AND payload->>'text' LIKE '%%heads-up%%'")))
+        sql("UPDATE public.automation_actions SET status = 'cancelled' WHERE kind = 'message' AND status IN ('proposed', 'queued')")
+    fake_post("/__inbox_new", "off")
+    fake_post("/__unread", "off")
+
     print("application, real submit")
     add_job("203")
     apply_live = approve_job("203")

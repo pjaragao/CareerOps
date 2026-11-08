@@ -222,6 +222,31 @@ def messaging_page(old):
     return "Mensagens", f"<h2>Messaging</h2>{items}", ""
 
 
+def messaging_new_page():
+    """Late 2026 (seen on 2026-11-08): list items with no link; a click opens the conversation in the right pane and the address
+    becomes /messaging/thread/<id>/. Nothing marks unread conversations once you have read them."""
+    items = """<ul>
+      <li class="msg-conversation-listitem" data-thread="Z1"><div class="msg-conversation-listitem__link" tabindex="0">
+        <h3 class="msg-conversation-card__participant-names"><span>Zhenghang Yin</span></h3>
+        <p class="msg-conversation-card__message-snippet">Zhenghang: Hi Paulo, thank you for reaching out.</p></div></li>
+      <li class="msg-conversation-listitem" data-thread="N1"><div class="msg-conversation-listitem__link" tabindex="0">
+        <h3 class="msg-conversation-card__participant-names"><span>Nikole Lim</span></h3>
+        <p class="msg-conversation-card__message-snippet">You: I just published my portfolio</p></div></li>
+      <li class="msg-conversation-listitem" data-thread="S1"><div class="msg-conversation-listitem__link" tabindex="0">
+        <h3 class="msg-conversation-card__participant-names"><span>HCLSoftware</span></h3>
+        <p class="msg-conversation-card__message-snippet">Sponsored · HCL UnO+</p></div></li></ul>
+      <div class="scaffold-layout__detail" id="pane"></div>"""
+    script = """const THREADS={Z1:['Zhenghang Yin','Hi Paulo, thank you for reaching out. The fastest way to connect with the hiring manager is through the link in the job post.'],
+      N1:['Nikole Lim','Nice to meet you'],S1:['HCLSoftware','Buy now']};
+    document.querySelectorAll('.msg-conversation-listitem').forEach((li)=>li.querySelector('.msg-conversation-listitem__link').onclick=()=>{
+      const id=li.dataset.thread;const [who,text]=THREADS[id];fetch('/__opened/'+id,{method:'POST'});
+      history.pushState(null,'','/messaging/thread/'+id+'/');
+      document.getElementById('pane').innerHTML='<h2 class="msg-entity-lockup__entity-title">'+who+'</h2><ul><li class="msg-s-message-list__event">'+
+        '<span class="msg-s-message-group__name">'+who+'</span><div class="msg-s-event-listitem msg-s-event-listitem--other" data-event-urn="urn:'+id+'">'+
+        '<p class="msg-s-event-listitem__body">'+text+'</p></div></li></ul>';});"""
+    return "Mensagens", f"<h2>Messaging</h2>{items}", script
+
+
 def search_results_page():
     """Late 2026: cards without links, keyed by componentkey; the address is rewritten as the page loads, losing the #fragment."""
     items = "".join(f"""<div role="button" componentkey="job-card-component-ref-{i}"><div>Vaga buscada {i} (Verified job)</div><div>Vaga buscada {i}</div><div>Acme {i}</div><div>Brazil (Remote)</div><div>Posted {i - 300} hours ago</div><div>{'Easy Apply' if i % 2 else ''}</div></div>""" for i in (301, 302, 303))
@@ -278,6 +303,13 @@ class FakeAI(BaseHTTPRequestHandler):
         if "key=wa " in prompt:
             answers["wa"] = "Yes"
         content = json.dumps({"answers": answers, "corrections": {}, "needs_user": [], "notes": ""})
+        if "TASK: read it, do not answer yet" in prompt:   # linkedin/inbox_assist.md, first step
+            german = "Hallo" in prompt or "Wir bieten" in prompt
+            content = json.dumps({"lang": "de" if german else "en", "translation_pt": "Tradução de teste" if german else "",
+                                  "category": "redirect" if "reaching out" in prompt else "networking", "confidence": 0.9,
+                                  "summary": "teste", "todo": "Candidate-se pelo link da vaga" if "reaching out" in prompt else ""})
+        elif "TASK: write the professional's next message" in prompt:
+            content = json.dumps({"reply": "Thanks for the heads-up! I'll follow your tip."})
         body = json.dumps({"id": "x", "object": "chat.completion", "created": 0, "model": "fake", "choices": [{"index": 0, "finish_reason": "stop", "message": {"role": "assistant", "content": content}}], "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}}).encode()
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
@@ -320,6 +352,10 @@ class Handler(BaseHTTPRequestHandler):
             STATE["liked"].append(key)
         elif kind == "__dm":
             STATE["dm"].setdefault(key, []).append(body)
+        elif kind == "__opened":
+            STATE.setdefault("opened", []).append(key)
+        elif kind == "__inbox_new":
+            STATE["inbox_new"] = body == "on"
         elif kind == "__unread":
             STATE["unread"] = body == "on"
         elif kind == "__chat":
@@ -381,6 +417,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.page(sent_invitations_page())
         if path.startswith("/mynetwork/invitation-manager/received"):
             return self.page(received_invitations_page())
+        if path.startswith("/messaging") and STATE.get("inbox_new") and not path.startswith("/messaging/thread/"):
+            return self.page(messaging_new_page())
         if path.startswith("/messaging/thread/"):
             return self.page(thread_page(path.strip("/").split("/")[2]))
         if path.startswith("/messaging"):
