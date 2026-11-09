@@ -120,6 +120,17 @@ def notifications_page():
 
 
 def received_invitations_page():
+    if STATE.get("inbox_new"):
+        # late 2026 (seen 2026-11-08): a row per invitation keyed by componentkey; the long text near the name is the HEADLINE,
+        # the message comes after Ignore/Accept; one invitation without a message
+        row = lambda i, slug, name, headline, msg: f"""<div componentkey="invitation_manager_row_urn:li:invitation:{i}"><div role="listitem">
+          <a href="/in/{slug}/"><img></a><p><a aria-label="View {name}’s profile" href="/in/{slug}/"><strong>{name}</strong></a> wants to connect</p>
+          <p><span>{headline}</span></p><p><span>Cleber Pizzato and 6 other mutual connections</span></p>
+          <button aria-label="Ignore an invitation to connect from {name}">Ignore</button><button aria-label="Accept {name}’s invitation">Accept</button>
+          {f'<p>{msg}</p><button>… show more</button><button>Reply to {name.split()[0]}</button>' if msg else ''}</div></div>"""
+        return "Convites", row(1, "rafael", "Rafael Rodrigues", "Senior Closer da empresa Nexu Consultoria", "") + row(
+            2, "hans", "Hans Müller", "Mehr Anfragen bedienen, ohne neue Stelle: Ich baue KI-Systeme.",
+            "Hallo Paulo, ich habe Ihren Kommentar zu Wasserinfrastruktur gelesen."), ""
     return "Convites", """<ul><li><a href="/in/hans">Hans Müller</a><div>Talent Partner bei Acme GmbH</div>
       <div class="invitation-card__custom-message">Hallo Paulo, ich habe Ihren Kommentar zu Wasserinfrastruktur gelesen und würde mich gerne vernetzen.</div>
       <div>3 mutual connections</div><button>Ignore</button><button>Accept</button></li></ul>""", ""

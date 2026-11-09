@@ -474,13 +474,32 @@ def _messages(items) -> list:
     return [{**i.model_dump(exclude={"messages"}), "messages": [{"from": m.from_, "text": m.text, "key": m.key} for m in i.messages]} for i in items]
 
 
+_inbox_tasks: set = set()
+
+
 @router.post("/inbox-items", dependencies=[Depends(require_worker)])
-async def inbox_items(req: InboxItemsIn):
+async def inbox_items(req: InboxItemsIn, wait: bool = False):
+    """Two AI calls per new message: with several of them it outlasts the extension's wait (2026-11-08: 3 min). The scan gets
+    its answer now and the analysis goes on here; what it finds reaches you on WhatsApp. wait=true (tests) answers at the end."""
+    import asyncio
+    import logging
     from app.services.linkedin_inbox_service import InboxService
-    try:
-        return await InboxService.ingest(_messages(req.items))
-    except RuntimeError as e:
-        raise HTTPException(status_code=502, detail=str(e))
+    items = _messages(req.items)
+    if wait:
+        try:
+            return await InboxService.ingest(items)
+        except RuntimeError as e:
+            raise HTTPException(status_code=502, detail=str(e))
+
+    async def run():
+        try:
+            logging.getLogger("linkedin_inbox").info("inbox ingest: %s", await InboxService.ingest(items))
+        except Exception:
+            logging.getLogger("linkedin_inbox").exception("inbox ingest failed")
+    task = asyncio.create_task(run())
+    _inbox_tasks.add(task)   # kept until it ends (a task with no reference may be collected)
+    task.add_done_callback(_inbox_tasks.discard)
+    return {"accepted": len(items)}
 
 
 @router.get("/worker-config", dependencies=[Depends(require_worker)])

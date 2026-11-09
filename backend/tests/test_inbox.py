@@ -200,3 +200,12 @@ def test_a_redirect_gets_a_short_thanks_and_a_task_for_you(db, sql, monkeypatch)
     assert "translator" not in msg["payload"]["text"] and "Spanish" not in msg["payload"]["text"]   # English: no notice
     note = sql("SELECT * FROM public.bot_notifications WHERE kind = 'inbox'")[0]
     assert note["urgent"] and "Chat to Apply" in note["text"] and "prospecção" in note["text"]   # found by name: the link is /in/ACoAA…
+
+
+def test_the_scan_is_answered_at_once_and_the_analysis_goes_on(db, sql, client, monkeypatch):
+    from .conftest import WORKER
+    fake_ai(monkeypatch, classify={"lang": "en", "category": "networking", "confidence": 0.9}, answer={"reply": "Thanks!"})
+    res = client.post("/api/automation/inbox-items", headers=WORKER, json={"items": [OFFER]})
+    assert res.status_code == 200 and res.json() == {"accepted": 1}
+    waited = client.post("/api/automation/inbox-items?wait=true", headers=WORKER, json={"items": [OFFER]})
+    assert waited.status_code == 200 and "new" in waited.json()

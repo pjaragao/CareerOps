@@ -2251,22 +2251,51 @@
     const saveInbox = (s) => sessionStorage.setItem(INBOX_KEY, JSON.stringify(s));
     const runHash = () => `#careerops-run=${managedRun.id}.${managedRun.nonce}`;
     const INVITE_NOISE = /mutual connection|conex(ão|ões) em comum|^(accept|ignore|aceitar|ignorar|message|mensagem|see more|ver mais|reply|responder)$|\b\d+\s*(h|d|w|m|min|sem|dias?)\b(\s*ago)?$|invited you|convidou voc/i;
+    const ACCEPT = /^(accept|aceitar)\b/i;
+    const isAccept = (b) => ACCEPT.test(clean(b.innerText || '')) || /^(accept|aceitar)\b/i.test(b.getAttribute('aria-label') || '');
+    // late 2026 (seen 2026-11-08): one block per invitation, componentkey "invitation_manager_row_urn:li:invitation:<id>": the name
+    // ("X wants to connect"), the headline, Ignore/Accept and, AFTER the buttons, the message ("… show more", "Reply to X")
+    function inviteRows() {
+        const rows = [...document.querySelectorAll('[componentkey^="invitation_manager_row_"]')];
+        if (rows.length) return rows;
+        // the layout before: the smallest block around each Accept that holds only that one
+        return [...document.querySelectorAll('main button, main [role="button"]')].filter(isAccept).map((btn) => {
+            let el = btn;
+            while (el.parentElement && el.parentElement !== document.body && [...el.parentElement.querySelectorAll('button, [role="button"]')].filter(isAccept).length === 1) el = el.parentElement;
+            return el;
+        });
+    }
     function receivedInvites() {
         const out = new Map();
-        document.querySelectorAll('main a[href*="/in/"]').forEach((a) => {
-            const slug = linkSlug(a);
+        inviteRows().forEach((row) => {
+            const a = row.querySelector('a[aria-label][href*="/in/"]') || row.querySelector('a[href*="/in/"]');
+            const slug = a && linkSlug(a);
             if (!slug || out.has(slug)) return;
-            let card = a.closest('li, [componentkey], .invitation-card') || a.parentElement;
-            for (let k = 0; k < 5 && card && !/accept|aceitar/i.test(card.innerText || ''); k++) card = card.parentElement;
-            if (!card || !/accept|aceitar/i.test(card.innerText || '')) return;
-            const custom = card.querySelector('.invitation-card__custom-message, [class*="custom-message"], blockquote');
-            const lines = clean(card.innerText).split('\n').map((l) => l.trim()).filter(Boolean);
-            const name = personName(lines[0] || a.innerText || '');
-            const headline = lines[1] || '';
-            const message = custom ? clean(custom.innerText) : (lines.slice(2).filter((l) => l.length >= 25 && !INVITE_NOISE.test(l)).sort((x, y) => y.length - x.length)[0] || '');
+            const lines = clean(row.innerText).split('\n').map((l) => l.trim()).filter(Boolean);
+            const name = personName(clean((row.querySelector('a[href*="/in/"] strong') || {}).innerText || '') || (lines[0] || '').replace(/\s+wants to connect.*$|\s+quer se conectar.*$/i, ''));
+            const accept = [...row.querySelectorAll('button, [role="button"]')].find(isAccept);
+            // the text before the buttons: name, headline, mutual connections; after them: the message (no button text)
+            const before = [], after = [];
+            const walker = document.createTreeWalker(row, NodeFilter.SHOW_TEXT);
+            for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+                const t = (n.textContent || '').trim();
+                if (!t || (n.parentElement && n.parentElement.closest('button, [role="button"]'))) continue;
+                const block = n.parentElement && n.parentElement.closest('p, div, span, blockquote');
+                ((accept && accept.compareDocumentPosition(n) & Node.DOCUMENT_POSITION_FOLLOWING) ? after : before).push({ t, block });
+            }
+            const joined = (parts) => { const out = []; let last = null; parts.forEach(({ t, block }) => { if (block === last && out.length) out[out.length - 1] += ' ' + t; else out.push(t); last = block; }); return out; };
+            const head = joined(before).filter((l) => !/^(wants to connect|quer se conectar)$/i.test(l) && clean(l) !== name && !l.startsWith(name));
+            const headline = (head.find((l) => !INVITE_NOISE.test(l)) || '').slice(0, 400);
+            const custom = row.querySelector('.invitation-card__custom-message, [class*="custom-message"], blockquote');
+            const message = custom ? clean(custom.innerText) : joined(after).filter((l) => !/^(reply to|responder a)\b/i.test(l) && !/^(…|\.\.\.)?\s*(show more|ver mais|see more)$/i.test(l)).join('\n').replace(/\s*(…|\.\.\.)\s*(show more|ver mais|see more)\s*$/i, '').trim();
             out.set(slug, { kind: 'invite', key: `invite:${slug}`, name, headline, profile_url: `https://www.linkedin.com/in/${slug}/`, messages: message ? [{ from: 'them', text: message.slice(0, 6000) }] : [] });
         });
         return [...out.values()].filter((i) => i.messages.length);
+    }
+    // "… show more" of each message, before reading (only expands the text)
+    async function expandInviteMessages() {
+        const more = inviteRows().flatMap((row) => [...row.querySelectorAll('button, [role="button"]')].filter((b) => /^(…|\.\.\.)?\s*(show more|ver mais|see more)$/i.test(clean(b.innerText || ''))));
+        for (const b of more.slice(0, 15)) { b.click(); await wait(300); }
     }
     function unreadThreads() {
         const out = new Map();
@@ -2307,6 +2336,7 @@
             if (!/\/mynetwork\/invitation-manager/.test(location.pathname)) { location.href = 'https://www.linkedin.com/mynetwork/invitation-manager/received/' + runHash(); return; }
             await waitFor(() => document.querySelector('main a[href*="/in/"]') || /no pending invitations|nenhum convite|no invitations/i.test((document.querySelector('main') || document.body).innerText || ''), 20000);
             await wait(1500);
+            await expandInviteMessages();
             st.items.push(...receivedInvites().slice(0, limit));
             st.step = 'list';
             saveInbox(st);

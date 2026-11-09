@@ -288,10 +288,18 @@ def main():
         sql("UPDATE public.automation_actions SET lane = 'linkedin_read' WHERE id = %s", (scan,))
         call("POST", f"/automation/actions/{scan}/approve", {"run_now": True})
         row = wait_status(scan, ("done", "needs_user", "escalated"), 180)
-        convs = {c["conv_key"].split(":")[0]: c for c in sql("SELECT * FROM public.linkedin_conversations")}
+        for _ in range(30):   # the analysis runs in the background after the scan
+            convs = {c["conv_key"].split(":")[0]: c for c in sql("SELECT * FROM public.linkedin_conversations")}
+            if "invite" in convs and "chat" in convs:
+                break
+            time.sleep(2)
         check(f"inbox_scan ({layout} list): invitation and conversation read", row["status"] == "done" and "invite" in convs and "chat" in convs,
               f"{row['status']} {row['error_text']} {row['result']} {list(convs)}")
         if layout == "new":
+            invites = sql("SELECT name, headline, last_message FROM public.linkedin_conversations WHERE kind = 'invite'")
+            check("inbox_scan (new invitations): only the one with a message, its name, the message not the headline",
+                  len(invites) == 1 and invites[0]["name"] == "Hans Müller" and invites[0]["last_message"].startswith("Hallo Paulo")
+                  and "KI-Systeme" in (invites[0]["headline"] or ""), str(invites))
             check("inbox_scan (new list): skips your own last word and ads", fake_state().get("opened") == ["Z1"], str(fake_state().get("opened")))
             check("inbox_scan: an answer to your contact waits for your OK, never declined alone",
                   bool(sql("SELECT 1 FROM public.automation_actions WHERE kind = 'message' AND status = 'proposed' AND payload->>'text' LIKE '%%heads-up%%'")))
