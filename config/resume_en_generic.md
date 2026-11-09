@@ -33,7 +33,7 @@ Independent product work, team of one: platform builds, product launches, foreca
 - **Customer-facing LLM agent** behind an MCP server (16 tools): acts only through database functions under signed context tokens and row-level security; a guardrail checks every price and stock figure against the database; human handoff when unsure.
 - **Election-night projection model (Brazil 2026):** Bayesian hierarchical model on official electoral data (national → regional → state shrinkage); uncertainty calibrated by replaying the 2014, 2018 and 2022 runoffs in real vote-arrival order; 56 tests.
 - **Trading Copilot (B3):** broker-statement reconciliation of real costs and slippage, capital-gains tax, TimesFM backtests; 100+ tests.
-- Also: a multi-tenant WhatsApp AI agent (300+ tests), a career-automation platform and a sports-pool SaaS; all self-hosted on Docker/Coolify.
+- Also: a multi-tenant WhatsApp AI agent (300+ tests), a career-automation platform and a sports-pool SaaS; all in production on Docker/Coolify.
 
 The agents work in series, never as one agent doing everything: narrow steps (scorer → writer → reviewer) with each output checked before the next runs and a reviewer that can send work back. Guardrails are in code — figures verified against the database, MCP tools under least-privilege roles, a content guard for forbidden topics — and governance sits on top: human approval for every irreversible action, logs of every agent run and tool call, daily limits, and failures that stop with a clear error and screenshot and go to a fallback model or a person.
 
@@ -50,8 +50,8 @@ The agents work in series, never as one agent doing everything: narrow steps (sc
 **Finance Director (CFO)** | Feb 2023 – Jan 2026
 - Led a 5-person finance team; introduced the annual budget with monthly variance tracking and the KPIs used to monitor operational goals.
 - Led the company's second ERP implementation (2023), from finance to every department.
-- Built BI reporting on department, project and major-expense performance; redesigned ERP cost accounting with cost centers and timesheet-based labor allocation.
-- Automated reporting and document workflows with n8n, LLM APIs and Power Platform integrated with the ERP and SharePoint, eliminating manual data entry.
+- Built BI reporting on department, project and major-expense performance; built a Power Apps canvas timesheet app in Teams (SQL database, director approval) that merged approved hours with payroll and allocated labor to redesigned ERP cost centers, giving the first real labor cost per project.
+- Built an AI accounts-payable pipeline: one Microsoft 365 intake instead of email, Teams and WhatsApp; n8n with Docling and a multimodal fallback; an LLM that may only pick from the ERP's active cost centers and accounts; human review of every entry; posting through the Sienge ERP API; monthly feedback of confirmed examples into the prompt.
 
 **Senior Engineer — Feasibility Modeling, Proposals & Projects** | Aug 2011 – Jan 2023
 Project types: feasibility and tariff models, tender pricing, World Bank–financed program, ERP and BIM rollouts.

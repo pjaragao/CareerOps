@@ -26,7 +26,7 @@ languages:
       and optimize business performance through cutting-edge application development.
 
       Today I build and run AI systems end to end as sole engineer: 14 systems, 11
-      in production on my own self-hosted Docker/Coolify platform (48 containers,
+      in production on my own Docker/Coolify production platform (48 containers,
       88,000+ agent and scheduled runs). I prototype integrations, prompt chains and
       agent tool calls in n8n, then harden them with Claude Code into FastAPI, Next.js
       and Python services on PostgreSQL — LLM agents with MCP tools, guardrails and
@@ -136,7 +136,7 @@ languages:
         earlier, a sports-pool SaaS (Next.js 15, Expo/React Native, Turborepo, Mercado
         Pago) and a World Cup 2026 iCal feed.
 
-        - Self-hosted platform: 48 containers in 21 stacks on Coolify with GitOps
+        - Production platform: 48 containers in 21 stacks on Coolify with GitOps
         deploys, Tailscale zero-trust with Nginx TLS 1.3 and no public ports, n8n
         hub, daily backups to Google Drive; 88,000+ agent and cron runs.'
     - role: Independent Consultant — Infrastructure Project Finance & Modeling
@@ -214,7 +214,7 @@ languages:
       negócios e infraestruturas.
 
       Hoje construo e opero sistemas de IA de ponta a ponta como único engenheiro:
-      14 sistemas, 11 em produção na minha plataforma self-hosted em Docker/Coolify
+      14 sistemas, 11 em produção na minha plataforma de produção em Docker/Coolify
       (48 containers, mais de 88 mil execuções de agentes e rotinas). Prototipo integrações,
       cadeias de prompts e tool calling no n8n e consolido com o Claude Code em serviços
       FastAPI, Next.js e Python sobre PostgreSQL — agentes de IA com ferramentas MCP,

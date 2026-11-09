@@ -27,11 +27,11 @@ Engineer (sanitary & environmental) and former CFO, 15+ years in infrastructure 
 *   CentralOps staff assistant ("Central"): tool loop on the server with the user's own JWT (RLS), voice, camera (barcode, payment slip, Pix, invoice) and PDF/photo reading; writes only through confirmation cards.
 *   **Trading Copilot** (Oct 2026 – Present): Python/Flask, B3 market. Analyst-signal monitor, order tickets, MetaTrader 5 execution with confirmation, broker-statement parser reconciling executions, real P&L with costs and slippage, monthly capital-gains tax (IRPF/DARF), backtests, screeners, TimesFM forecasts, live quotes via SSE. ~18k lines, 100+ tests.
 *   **Mr Irrelevant** (Sep 2026 – Present): multi-tenant WhatsApp agent for fantasy-football leagues (Hermes Agent + Evolution API + Sleeper API). Tool with 40 queries, per-league isolation (persona, secrets, sessions, cron, knowledge base), LLM fallback chain ending in deterministic text, cron editorial, charts, live alerts. ~28k lines, 300+ tests including end-to-end.
-*   **Election-night projection model** (inside Mr Irrelevant, Sep–Oct 2026): league/eleicao_modelo.py, eleicao_backtest.py, eleicao_tse.py. Projects the 2026 presidential runoff during the count from official TSE data, no AI: per-municipality expected share from 1st round + vote-transfer prior; deviation modeled in log-odds with Gaussian priors (national, region, state effects, leftover-vote and size covariates, municipal effect) solved in closed form (regularized weighted least squares) → hierarchical shrinkage; UF residual so national totals match TSE exactly; turnout scaling; analytic uncertainty with a misspecification floor calibrated by backtests of the 2014/2018/2022 runoffs replayed zone by zone in real arrival order (TSE open data read via HTTP Range, ~6 MB instead of ~1.4 GB); P(win)=Φ((S−½)/sd). Live feed: TSE results CDN, Ed25519 JWS signature verification, ETag polling within rate limits, governors/senators/SC deputies (seat allocation by party-list rules cross-checked with TSE), charts, WhatsApp delivery. ~2.6k lines, 56 tests. Do not claim accuracy numbers until backtest results are confirmed.
+*   **Election-night projection model** (inside Mr Irrelevant, Sep–Oct 2026): league/eleicao_modelo.py, eleicao_backtest.py, eleicao_tse.py. Projects the 2026 presidential runoff during the count from official TSE data, no AI: per-municipality expected share from 1st round + vote-transfer prior; deviation modeled in log-odds with Gaussian priors (national, region, state effects, leftover-vote and size covariates, municipal effect) solved in closed form (regularized weighted least squares) → hierarchical shrinkage; UF residual so national totals match TSE exactly; turnout scaling; analytic uncertainty with a misspecification floor calibrated by backtests of the 2014/2018/2022 runoffs replayed zone by zone in real arrival order (TSE open data read via HTTP Range, ~6 MB instead of ~1.4 GB); P(win)=Φ((S−½)/sd). Live feed: TSE results CDN, Ed25519 JWS signature verification, ETag polling within rate limits, governors/senators/SC deputies (seat allocation by party-list rules cross-checked with TSE), charts, WhatsApp delivery. ~2.6k lines, 56 tests. Confirmed backtest (2014/2018/2022 runoffs, n=90 checkpoints): from 5% of votes counted, mean error of the national share 0.28 pp; 90% intervals covered the result 84% of the time; never confident and wrong (0 cases of P(win) ≥ 95% for the eventual loser). Use only these numbers.
 *   **CareerOps** (Feb 2026 – Jun 2026): FastAPI + React/TS + Chrome extension (MV3), PostgreSQL JSONB, Jinja2 prompt skills, Gemini/NVIDIA NIM/Ollama, MarkItDown, Gotenberg PDFs, human-in-the-loop validation.
 *   **Public Tender Radar** (Feb 2026 – Mar 2026): Flask + Firebase Genkit + Gemini classifying tenders from the PNCP API.
 *   **JãoBolão** (2026): Next.js 15, React Native/Expo, Supabase, Stripe, RevenueCat, WhatsApp bot.
-*   Homelab: Docker, Coolify, Traefik, nginx, self-hosted Supabase, Vaultwarden, Evolution API, backups.
+*   Platform: Docker, Coolify (GitOps deploys), Traefik, nginx, Supabase/PostgreSQL, Vaultwarden, Evolution API, Tailscale, daily backups. Never call it "self-hosted" or "homelab" in resumes, LinkedIn or cover letters — describe it as "my own Docker/Coolify production platform" or just "in production".
 
 ### Independent Consultant — Infrastructure Engineering & Project Finance
 *Feb 2026 – Present*
@@ -47,6 +47,8 @@ Engineer (sanitary & environmental) and former CFO, 15+ years in infrastructure 
 *   BI management reports: department performance, major expenses (cost reduction), project performance.
 *   New ERP with database migration, cost centers and labor-cost allocation from employee timesheets.
 *   AI-powered automation with n8n and LLM APIs; Power Apps/Power Automate integrated with ERP and SharePoint.
+*   **AI accounts payable (enterprise, in production):** payables used to arrive by email, Teams and WhatsApp and were typed in by hand. Centralized intake (3 channels → 1) in a folder read through the Microsoft 365 API; n8n flow converts PDF/Office with Docling (images go to a multimodal model as fallback); an LLM classifies against a closed list of the active cost centers and chart of accounts pulled from the ERP (it cannot invent a value); a person reviews 100% of entries in a queue; approved payables are posted through the Sienge ERP API. Monthly feedback loop: confirmed classifications go back into the prompt as examples. No accuracy or time-saved numbers were tracked — do not invent them.
+*   **Timesheet and labor-cost allocation system (enterprise, in production):** Power Apps canvas app inside Microsoft Teams where staff log % of time per project; entries stored in a SQL database; two-level approval (staff log, directors approve or send back); approved hours merged with payroll and allocated to redesigned Sienge cost centers; feeds the annual budget, project margin and KPI dashboards. First real labor cost per project at the firm. Diagnosis first: the gap was a missing process, not a missing report.
 
 ### MPB Engineering — Engineer / Commercial Analyst / Project Manager
 *Aug 2011 – Jan 2023*
@@ -96,6 +98,18 @@ Engineer (sanitary & environmental) and former CFO, 15+ years in infrastructure 
 *   **Task:** Modernize internal systems with the existing team.
 *   **Action:** Led the SharePoint Online migration with in-house staff only, built Power Apps/Power Automate tools, integrated SharePoint with the ERP, and later added n8n + LLM automations.
 *   **Result:** Eliminated manual data entry between systems; ~120 hours/month saved (estimate).
+
+### Enterprise AI Accounts Payable (MPB, n8n + Microsoft 365 + Sienge)
+*   **Situation:** Payables arrived through email, Teams and WhatsApp; finance typed every document into the ERP and picked the cost center by hand.
+*   **Task:** Automate intake and classification without letting a model write unchecked data into the ERP.
+*   **Action:** Centralized intake in one Microsoft 365 folder read via API; n8n flow with Docling conversion and multimodal fallback; LLM restricted to a closed list of active cost centers and accounts from the ERP; human review queue for 100% of entries; posting through the Sienge API; monthly feedback loop feeding confirmed examples back into the prompt.
+*   **Result:** One intake channel instead of three; the team moved from typing to reviewing; no invalid cost center can reach the ERP by design. (No numeric gains were tracked — do not quote any.)
+
+### Timesheet and Labor-Cost Allocation (MPB, Power Apps + SQL)
+*   **Situation:** Labor, the firm's largest cost, was not allocated to projects, so contract margins were unknown.
+*   **Task:** Create the process and the tool to cost labor by project.
+*   **Action:** Power Apps canvas app inside Teams, SQL database, director approval flow, merge with payroll and allocation to redesigned Sienge cost centers.
+*   **Result:** First real labor cost per project; feeds the annual budget and KPI dashboards.
 
 ### BIM Methodology Implementation
 *   **Situation:** The design department needed to modernize to stay competitive.

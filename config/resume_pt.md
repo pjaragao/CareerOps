@@ -21,7 +21,7 @@ Engenheiro sanitarista e ambiental com quase 18 anos em projetos de saneamento e
 - **Infraestrutura de TI:** Active Directory, administração do tenant Microsoft 365, SharePoint (local e Online), Power Apps (canvas e model-driven), file server (+30 TB), backup, VPN, redes multiescritório, alta disponibilidade (servidores redundantes, nobreak, links com failover)
 - **Dados e IA:** Python, SQL, PostgreSQL (Supabase, PL/pgSQL, filas PGMQ), SQLite, Redis, FastAPI, Flask, Pandas/NumPy, Next.js/React/Tailwind, Expo/React Native, Turborepo, Typst e LaTeX, APIs do Google Workspace, Power BI, Excel avançado, previsão de séries temporais (TimesFM), modelos estatísticos bayesianos, automação de navegador (Playwright)
 - **Agentes de IA:** agentes autônomos e multiagentes, tool calling, servidores MCP, RAG, memória de agentes, guardrails e aprovação humana, prompt engineering, roteamento entre modelos (Claude, GPT-4o, Gemini), LangChain, Pydantic AI, Hermes Agent, n8n, desenvolvimento assistido por IA com Claude Code
-- **DevOps:** Docker e Docker Compose, Coolify (PaaS self-hosted, deploy por GitOps), Tailscale (zero-trust), Nginx (TLS 1.3), Linux/WSL2, rotinas agendadas e monitoramento
+- **DevOps:** Docker e Docker Compose, Coolify (PaaS, deploy por GitOps), Tailscale (zero-trust), Nginx (TLS 1.3), Linux/WSL2, rotinas agendadas e monitoramento
 
 ---
 
@@ -45,8 +45,8 @@ Empresa com mais de 200 colaboradores; atende prefeituras, companhias estaduais 
 Tipos de projeto: implantação de orçamento e KPIs, migração de ERP, relatórios de BI, automação financeira.
 - Liderança de equipe financeira de 5 pessoas; implantação do orçamento anual com acompanhamento mensal e dos KPIs de metas operacionais.
 - Liderança da segunda implantação de ERP da empresa (2023), começando pelo financeiro e estendida a todos os setores com mapeamento de processos e treinamento das equipes.
-- Relatórios gerenciais em BI por setor, por projeto e das grandes despesas; contabilidade de custos no novo ERP com apropriação de mão de obra pelo registro de horas.
-- Automação de relatórios e documentos com n8n, IA e Power Platform integrados ao ERP e ao SharePoint.
+- Relatórios gerenciais em BI por setor, por projeto e das grandes despesas; app de apontamento de horas em Power Apps canvas no Teams (banco SQL, aprovação pelos diretores), cruzado com a folha e rateado nos centros de custo do ERP: primeiro custo real de mão de obra por projeto.
+- Contas a pagar com IA: entrada única via API do Microsoft 365 no lugar de e-mail, Teams e WhatsApp; n8n com Docling e fallback multimodal; LLM que só escolhe entre os centros de custo e contas ativos do ERP; revisão humana de todo lançamento; lançamento pela API do Sienge; feedback mensal com exemplos confirmados no prompt.
 
 **Engenheiro Sênior — Projetos de Saneamento, Modelagem e Propostas** | ago 2011 – jan 2023
 Tipos de projeto: projetos de saneamento, programa financiado pelo Banco Mundial, viabilidade e modelagem tarifária, análise de concessões, precificação de licitações, implantação de ERP e BIM.
@@ -84,8 +84,8 @@ Como os agentes são construídos: nenhum agente faz o trabalho todo sozinho. Ca
 - **Agentes de WhatsApp:** plataforma multi-tenant (mais de 300 testes) com assistente executivo (94 comandos, 58 skills, 35 módulos Python; Google Agenda, Tasks e Gmail, voos ao vivo, motor de minutas para 7 tipos de contrato com consulta de CNPJ; mais de 22 mil execuções agendadas) e agente de atendimento com persona humanizada, memória persistente e passagem para atendimento humano; Evolution API, SQLite e Redis.
 - **Análise esportiva:** previsão bayesiana (MCMC) e TimesFM sobre dados da NFL, bot editorial automático com 13 publicações semanais (mais de 41 mil execuções, gráficos em Matplotlib/Seaborn) e engine open source da API Sleeper (TypeScript/Python) com RAG sobre uma base de 99 documentos que ela mesma gera.
 - **Inteligência em licitações:** busca, pontuação e resumo executivo de editais da API do PNCP, com extração de requisitos dos termos de referência pelo Gemini 1.5 Pro no Firebase Genkit; Flask e Node.js/TypeScript.
-- **Produtos anteriores:** SaaS de bolões esportivos (monorepo Turborepo, Next.js 15 e app Expo/React Native, Mercado Pago, duas APIs de futebol redundantes, Supabase nuvem e self-hosted) e feed iCalendar da Copa de 2026 (Next.js, RFC 5545).
-- **Plataforma própria:** tudo self-hosted em Docker/Coolify, 48 containers em 21 stacks com rede zero-trust Tailscale (sem portas públicas; Nginx TLS 1.3 em 16 serviços), deploy por GitOps, hub n8n como bancada de protótipos, cofre de senhas, backup diário espelhado no Google Drive e mais de 88 mil execuções de agentes e rotinas.
+- **Produtos anteriores:** SaaS de bolões esportivos (monorepo Turborepo, Next.js 15 e app Expo/React Native, Mercado Pago, duas APIs de futebol redundantes, Supabase) e feed iCalendar da Copa de 2026 (Next.js, RFC 5545).
+- **Plataforma própria:** tudo em produção em Docker/Coolify, 48 containers em 21 stacks com rede zero-trust Tailscale (sem portas públicas; Nginx TLS 1.3 em 16 serviços), deploy por GitOps, hub n8n como bancada de protótipos, cofre de senhas, backup diário espelhado no Google Drive e mais de 88 mil execuções de agentes e rotinas.
 
 ---
 
