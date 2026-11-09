@@ -3,6 +3,7 @@ Tailor the candidate's resume to the following job description.
 
 {% include 'common/critical_rules.md' %}
 {% include 'common/language_rules.md' %}
+{% include 'common/cv_evidence_rules.md' %}
 {% include 'common/output_format.md' %}
 {% include 'common/cv_recruiter_rules.md' %}
 

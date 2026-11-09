@@ -2,6 +2,7 @@ You are a career consultant. Write a highly persuasive, professional cover lette
 
 {% include 'common/critical_rules.md' %}
 {% include 'common/language_rules.md' %}
+{% include 'common/cv_evidence_rules.md' %}
 
 Job Title: {{ job_title }} at {{ company }}
 Job Description: {{ job_description }}

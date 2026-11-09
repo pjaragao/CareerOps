@@ -41,9 +41,13 @@ Check, in this order:
 2. Wrong target (critical): the cover letter names another company or role, or the resume is clearly written for a different job.
 3. Leftovers (critical): placeholders ([Company], XX, TODO, lorem), notes or explanations from the AI, text in the wrong language.
 4. Relevance (major): the requirements of the ad that the candidate really meets are missing or buried; the summary ignores the role.
-5. Length and form (major): the resume over two pages{% if pdf_pages %} ({{ pdf_pages }} now){% endif %}; broken markdown, a section repeated, contact data missing.
-6. Experience years (major): a total that contradicts a career started in 2008.
-7. Style (minor): weak verbs, generic sentences, small inconsistencies.
+5. Evidence (major): the ad asks for enterprise delivery, scale, integrations, governance or production AI, and the resume
+   leaves out or buries the matching real cases (ERP rollout, AI accounts payable with Microsoft 365 + n8n + Sienge, Power Apps
+   timesheet on SQL, World Bank program, evals, validators, fallbacks); or AI work is presented as a hobby, "self-hosted",
+   "homelab" or a side project; or an AI claim has no production proof that the history gives.
+6. Length and form (major): the resume over two pages{% if pdf_pages %} ({{ pdf_pages }} now){% endif %}; broken markdown, a section repeated, contact data missing.
+7. Experience years (major): a total that contradicts a career started in 2008.
+8. Style (minor): weak verbs, generic sentences, small inconsistencies.
 
 Not problems of the documents:
 - A requirement of the ad that the candidate does not meet in the real history (a language such as German, years in a field,

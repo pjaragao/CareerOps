@@ -9,7 +9,7 @@ pjaragaojr@gmail.com | +55 00 00000-0000 | linkedin.com/in/paulojrarj | github.c
 
 ## PROFESSIONAL SUMMARY
 
-Engineer and former CFO who turns operational and financial data into models people decide with, and into the software and AI systems that run on top of them. Fifteen years in infrastructure consulting, from intern to Finance Director: DCF and tariff models for utility concessions, pricing for ~90 tenders a year, budgets, KPIs and BI, and coordination of a World Bank–financed program. Today I build data and AI products end to end: Bayesian forecasting, a financial ERP with 2,000+ automated tests, and LLM agents with guardrails. Used to async work across time zones (full overlap with US Eastern hours) and to explaining numbers to non-technical decision-makers.
+Engineer and former CFO who turns operational and financial data into models people decide with, and into the software and AI systems that run on top of them. Fifteen years in infrastructure consulting, from intern to Finance Director: DCF and tariff models for utility concessions, pricing for ~90 tenders a year, budgets, KPIs and BI, and coordination of a World Bank–financed program. As CFO I led the company-wide ERP rollout and put AI into finance operations: an accounts-payable pipeline (Microsoft 365 API, n8n, an LLM restricted to the ERP's cost centers, human review, Sienge ERP API) and a Power Apps timesheet system on SQL. Today I build and operate data and AI products in production: Bayesian forecasting, a financial ERP with 2,000+ automated tests, and LLM agents gated by evals, deterministic validators and human approval. Used to async work across time zones (full overlap with US Eastern hours) and to explaining numbers to non-technical decision-makers.
 
 ---
 
