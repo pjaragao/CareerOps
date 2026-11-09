@@ -129,6 +129,78 @@ Engineer (sanitary & environmental) and former CFO, 15+ years in infrastructure 
 *   **Action:** Made PostgreSQL the system of record and message bus (transactional SQL functions, outbox/pgmq), documented 8 ADRs, wrote pgTAP tests for RLS, ledger, inventory, HR and fiscal rules, and set up CI/CD with gated production migrations, using Claude Code for implementation.
 *   **Result:** ~95k hand-written lines, 133 migrations and 2,000+ database tests in about five weeks (162 commits since 22 Sep 2026).
 
+> Each case below is tagged **Proves:** with the competencies it demonstrates, so interview prep can pick the right story for the question (evals, observability, failure recovery, deterministic guardrails, enterprise delivery, modeling, domain adaptability). Only the facts written here may be quoted.
+
+### Evals That Gate Model Changes (CentralOps)
+*   **Proves:** automated evaluation suites, observability, cost control, safe model switching.
+*   **Situation:** The ERP's AI features (customer chat, copilot, classification, extraction, vision) ran on several providers, and changing a model risked silent regressions in what the agent promised customers.
+*   **Task:** Make model choice a measured, reversible decision instead of a guess.
+*   **Action:** Per-task model routes in a database table (`ai.model_routes`), each with backup models and a daily USD cap, switchable in the UI without a deploy; every call written to `ai.runs` with tokens, cost, latency and status; an eval suite that runs cases in a sandbox with rollback and scores approval, unfounded promises, correct handoff, latency and cost; the ranking gates any model change.
+*   **Result:** Models are swapped by evidence, with full per-call cost and latency history; an exhausted budget or failing route hands off to a human instead of degrading silently.
+
+### Post-Generation Validator and Autonomy Gate (CentralOps)
+*   **Proves:** deterministic guardrails, brand/compliance safety, human-in-the-loop by policy.
+*   **Situation:** Customer-facing replies could quote prices, installments and stock, offer discounts or make health claims — any of which can create liability.
+*   **Task:** Guarantee that no reply goes out with a number or claim the system did not produce.
+*   **Action:** Rules settle opt-outs, requests for a human, legal topics and formal complaints before any model call; a validator ships a reply only if every price, installment and stock figure came from that run's tool results, and blocks discounts, ID/card numbers and health claims; on failure one retry with the reason, then a draft or a human; auto-send only for allowed intents, minimum confidence, no flags, non-VIP customers, inside Meta's 24 h window and under hourly limits.
+*   **Result:** Autonomy is a policy decided in code, not by the model. **Domain bridge:** the same pattern is what brand governance needs in a content pipeline — banned claims, approved values only, and a human gate for anything off-policy.
+
+### Graceful Degradation Across the Agents (Mr Irrelevant, Lolo, CareerOps)
+*   **Proves:** failure recovery, resilience, operating unattended in production.
+*   **Situation:** Unattended agents depend on LLM providers, Google APIs and a changing LinkedIn UI; any of them fails at some point.
+*   **Task:** Make each failure visible and recoverable, never a silent wrong action.
+*   **Action:** Mr Irrelevant: primary and backup providers read from one config and tried in order, explicit max_tokens and timeouts per task, a JSON cache so a retry never re-calls the model, and if no model answers the original deterministic text is published. Lolo: when Google is disconnected, tasks queue locally instead of being lost. CareerOps: the browser extension acts first, what it cannot finish goes to a Claude Code routine, what is left reaches the user with the question or the screen; a miss raises an error_code with a screenshot.
+*   **Result:** 41,000+ scheduled runs (Mr Irrelevant) and 22,000+ (Lolo) operating unattended; a provider outage degrades to deterministic text or a queue instead of an error, and CareerOps failures surface with a screenshot instead of a wrong click.
+
+### Idempotent Financial Writes from a Chat Agent (Siê Joy Bot)
+*   **Proves:** data integrity, deterministic guardrails, agent acting on an ERP.
+*   **Situation:** In a partners' WhatsApp group, brainstorming, quotes and actual payments are mixed in the same chat, and message retries happen.
+*   **Task:** Book reimbursements in the ERP from chat without duplicates or entries for things that were never paid.
+*   **Action:** Ideas go to a pending list and become entries only on an unambiguous payment message; reimbursement items get deterministic ids (UUID v5) so retries never duplicate; writes go to CentralOps through RPC with edit and cancel; the bot answers only when mentioned or replied to.
+*   **Result:** 11 reimbursements booked from 850 messages, with no duplicate possible by construction.
+
+### Auditable Brokerage-Note Import (Trading Copilot)
+*   **Proves:** reconciliation, financial controls, reversible operations.
+*   **Situation:** Real trading costs, slippage and capital-gains tax depend on brokerage-note PDFs that must match the executions.
+*   **Task:** Import notes without corrupting the position and tax history.
+*   **Action:** Each import shows a preview reconciled against the executions, runs in one transaction per note, and has an undo that restores the previous state; risk, payoff and discipline are computed by rules and statistics, with no language model.
+*   **Result:** 10 notes reconciled with fee allocation and monthly tax slips; any import can be reverted.
+
+### Calibrated Election-Night Forecast (Election Bot)
+*   **Proves:** statistical modeling, evaluation by backtest, honest uncertainty, live operation.
+*   **Situation:** Early in a Brazilian count the raw share is biased by arrival order (South and Center-West count fast, Northeast slowly).
+*   **Task:** Project the final runoff result during the count, with uncertainty people can trust.
+*   **Action:** Per-municipality expectation from the 1st round plus vote transfer; hierarchical log-odds deviation (national → region → state) solved in closed form; residual per state so totals match the TSE exactly; uncertainty floor calibrated by replaying the 2014, 2018 and 2022 runoffs zone by zone in real arrival order; features that helped one year and hurt another were switched off; every TSE file's signature verified.
+*   **Result:** Backtest: 0.28 pp mean error from 5% counted, 90% band held the result at 84% of points, never more than 95% for the eventual loser. 2026 real night: right favourite from 0.04% counted, ≥ 90% from 31% and ≥ 99.5% from 46% — while the raw count still showed the other candidate ahead.
+
+### Signed Per-Job Links and Privacy-First Analytics (CareerOps + portfolio)
+*   **Proves:** security by design, minimal attack surface, measuring outcomes.
+*   **Situation:** Each application should carry its own portfolio link to see which companies actually open it, without exposing the CareerOps backend.
+*   **Task:** Track views per job with no shared secret list and nothing inbound to the private platform.
+*   **Action:** HMAC-signed tokens per job verified statelessly at the edge; events stored in private blob storage; CareerOps pulls and acknowledges them every 5 minutes (outbound only); the job-specific CV PDF is served only to that job's link; view counts surface on the job board and in the WhatsApp summary.
+*   **Result:** Per-company engagement data on every application with zero exposed ports.
+
+### Company-Wide ERP Rollout (MPB, Sienge)
+*   **Proves:** enterprise delivery, change management, process before technology.
+*   **Situation:** A 200+ employee consultancy ran on fragmented legacy systems.
+*   **Task:** Lead the company's second ERP implementation (2023) as Finance Director.
+*   **Action:** Started with finance, then extended it to every department with process mapping and staff training; redesigned cost centers.
+*   **Result:** The ERP became the base for the budget, KPIs, timesheet costing and the AI accounts-payable pipeline.
+
+### Coordinating a World Bank–Financed Urban Program (Lagoas do Norte, Teresina)
+*   **Proves:** large-scale program delivery, multidisciplinary leadership, multilateral standards.
+*   **Situation:** Teresina's (PI) Lagoas do Norte Program combined sewerage, drainage, water, roads, biogas and urban design over ~1,300 ha, financed by the World Bank.
+*   **Task:** Win and then lead the engineering work for the municipality (SEMPLAN).
+*   **Action:** Coordinated the proposal; served as general coordinator and technical lead (Feb 2014 – Jul 2019) for sewerage for 312,560 inhabitants, 28.2 km of drainage, water supply, roads, a 1,000 kW biogas plant, BIM-modeled urban design and the social-environmental-economic program.
+*   **Result:** Led the engineering coordination of the whole contract for over five years, across all disciplines, as the single point of contact for the municipality.
+
+### Keeping the Company's IT Running (MPB)
+*   **Proves:** reliability engineering, operations, high availability.
+*   **Situation:** A multi-office consultancy depended on file servers (30+ TB), the ERP and SharePoint every day.
+*   **Task:** Keep systems available and data safe with a small in-house team.
+*   **Action:** Redundant servers and UPS, failover internet links, backups, multi-office VPN, Active Directory and Microsoft 365 administration; SharePoint 2010 → Online migration with in-house staff only.
+*   **Result:** The same operating discipline now applied to AI systems: backups with checksums and daily off-site copies, no exposed admin ports.
+
 ## 6. Education
 *   **B.Eng., Sanitary & Environmental Engineering** | Federal University of Santa Catarina (UFSC) | Aug 2011
 *   **MBA in Business Management** (executive postgraduate program) | Fundação Getulio Vargas (FGV) | Nov 2015
