@@ -2325,7 +2325,11 @@
                 if (text) messages.push({ from: mine ? 'me' : 'them', text: text.slice(0, 6000), key: (ev.getAttribute('data-event-urn') || '').slice(0, 300) || null });
             });
         });
-        const headline = clean((root.querySelector('.msg-entity-lockup__entity-info, .msg-thread__subtitle, .artdeco-entity-lockup__subtitle') || {}).innerText || '').slice(0, 400);
+        // the lockup also holds the presence ("Status is reachable", "Mobile", "• 2d ago"): only a line that reads as a headline
+        const PRESENCE = /^(status is|active now|mobile|online|offline|reachable|•|\d+\s*[mhdw]( ago)?$|\d+\s*(min|h|d|sem|dias?)\b|1st|2nd|3rd|1º|2º|3º)/i;
+        const headline = ([...root.querySelectorAll('.msg-thread__subtitle, .artdeco-entity-lockup__subtitle, .msg-entity-lockup__entity-info')]
+            .flatMap((el) => clean(el.innerText).split('\n').map((l) => l.replace(/^·\s*/, '').trim()))
+            .find((l) => l.length > 3 && !PRESENCE.test(l) && plain(l) !== plain(them)) || '').slice(0, 400);
         return { name: them || null, headline, profile_url: profile && /\/in\//.test(profile) ? profile.split('?')[0] : null, messages: messages.slice(-30) };
     }
 

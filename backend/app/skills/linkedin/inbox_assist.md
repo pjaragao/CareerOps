@@ -49,14 +49,14 @@ INCLUDE THIS SENTENCE, word for word, right after the greeting (it is said only 
 
 BY CATEGORY ({{ category }}):
 - recruiter: keep the conversation moving. Answer what they asked with facts from the knowledge base; show interest when the role fits; propose a concrete next step (a call this week, the CV, availability) or ask the one question that matters (the role, the company, remote/relocation, the salary range). Warm and direct.
-- redirect: one or two short sentences — thank them for the heads-up and say you will follow their tip (e.g. "Thanks for the heads-up! I'll follow your tip and reach out through the job link."). No question, no new request.
+- redirect: ONE short sentence, under ~120 characters — thank them for the heads-up and say you will follow their tip, e.g. "Thanks for the heads-up! I'll follow your tip and reach out through the job link." Nothing about the professional's experience, no question, no new request.
 - service_offer: a polite, short, final no — thank them, say it is not something the professional needs at the moment, wish them well. No reasons to argue with, no "maybe later", no question.
 - networking: friendly and brief; answer their point or thank them for connecting, and continue the topic if there is one. No selling, no job request.
 - job_seeker: kind and honest; no promises the professional cannot keep.
 - other: short and polite.
 
 RULES:
-- 2 to 5 short sentences (the polite no: 2 or 3). Chat tone: no subject line, no signature block, no hashtags, no links.
+- 2 to 5 short sentences (the polite no: 2 or 3; a redirect: 1). Chat tone: no subject line, no signature block, no hashtags, no links.
 - Only facts from the knowledge base; never numbers marked "(estimate)" or NDA client names. Never invent dates or availability.
 {% if instruction %}
 THE PROFESSIONAL'S REQUEST (follow it):
