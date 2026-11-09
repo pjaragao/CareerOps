@@ -27,6 +27,7 @@ from app.services import content_guard
 log = logging.getLogger("automation")
 
 WRITE_KINDS = ("apply", "comment", "follow", "connect", "reply", "like", "message")
+SCAN_KINDS = ("check", "feed_scan", "follow_scan", "saved_import", "reply_scan", "inbox_scan")   # no target: a newer one replaces an older one
 READ_KINDS = ("search", "check", "feed_scan", "follow_scan", "saved_import", "reply_scan", "thread_read", "inbox_scan")
 # What the system does on its own, without your OK (2026-11-08): liking a reply that needs no answer, turning down a
 # service offer politely. Each one goes straight to the queue ("auto_approved" event), inside the window and the limits.
@@ -736,6 +737,11 @@ class AutomationService:
         done = _one("""UPDATE public.automation_actions SET status = 'done', result = result || %s, finished_at = NOW(), lease_owner = NULL, lease_until = NULL, updated_at = NOW()
                         WHERE id = %s RETURNING *""", (Json(data), action["id"]))
         AutomationService.add_event(action["id"], source, "done", {"dry_run": bool(data.get("dry_run"))})
+        if action["kind"] in SCAN_KINDS and not data.get("dry_run"):
+            # a later scan of the same kind read the page: the older ones stuck on you have nothing left to do
+            _rows("""UPDATE public.automation_actions SET status = 'discarded', error_code = 'superseded',
+                         error_text = 'Uma leitura mais nova do mesmo tipo terminou bem', finished_at = NOW(), lease_owner = NULL, updated_at = NOW()
+                     WHERE kind = %s AND status = 'needs_user' AND id <> %s AND created_at < %s""", (action["kind"], action["id"], action["created_at"]))
         return done
 
     @staticmethod

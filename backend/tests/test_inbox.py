@@ -209,3 +209,17 @@ def test_the_scan_is_answered_at_once_and_the_analysis_goes_on(db, sql, client, 
     assert res.status_code == 200 and res.json() == {"accepted": 1}
     waited = client.post("/api/automation/inbox-items?wait=true", headers=WORKER, json={"items": [OFFER]})
     assert waited.status_code == 200 and "new" in waited.json()
+
+
+def test_a_scan_that_ends_well_closes_the_older_stuck_ones(db, sql):
+    from app.services.automation_service import AutomationService
+    old = sql("""INSERT INTO public.automation_actions (kind, lane, status, title, payload, payload_hash, idempotency_key, created_at, error_code)
+                 VALUES ('inbox_scan', 'linkedin_read', 'needs_user', 'old', '{}', 'h1', 'k-old', NOW() - INTERVAL '1 day', 'unexpected_layout') RETURNING *""")[0]
+    other = sql("""INSERT INTO public.automation_actions (kind, lane, status, title, payload, payload_hash, idempotency_key, created_at)
+                   VALUES ('reply_scan', 'linkedin_read', 'needs_user', 'other', '{}', 'h2', 'k-other', NOW() - INTERVAL '1 day') RETURNING *""")[0]
+    new = sql("""INSERT INTO public.automation_actions (kind, lane, status, title, payload, payload_hash, idempotency_key)
+                 VALUES ('inbox_scan', 'linkedin_read', 'running_ext', 'new', '{}', 'h3', 'k-new') RETURNING *""")[0]
+    AutomationService._finish(new, {}, "extension")
+    status = lambda i: sql("SELECT status, error_code FROM public.automation_actions WHERE id = %s", (i,))[0]
+    assert status(old["id"]) == {"status": "discarded", "error_code": "superseded"} or tuple(status(old["id"]).values()) == ("discarded", "superseded")
+    assert status(other["id"])["status"] == "needs_user"
