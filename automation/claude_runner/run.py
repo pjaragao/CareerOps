@@ -13,7 +13,7 @@ import sys
 import urllib.error
 import urllib.request
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 ENV_FILE = Path(os.environ.get("CAREEROPS_RUNNER_ENV", Path.home() / ".config" / "careerops" / "runner.env"))
 CLAUDE = os.environ.get("CLAUDE_BIN") or shutil.which("claude") or str(Path.home() / ".local" / "bin" / "claude")
@@ -160,6 +160,13 @@ def _same_site(host: str, allowed: set) -> bool:
 LINKEDIN_OFF_TARGET = re.compile(r"/(feed|messaging|mynetwork|settings|psettings|me|notifications)(/|$)")
 
 
+def _is_target(parsed, action: dict) -> bool:
+    """The action's own page (a conversation for a message, a post for a comment) is never "another area"."""
+    target = urlparse(action.get("target_url") or "")
+    norm = lambda p: unquote(p).rstrip("/")
+    return bool(target.path) and norm(parsed.path) == norm(target.path)
+
+
 def audit(calls: list, action: dict) -> list:
     """What the agent did outside its task. Anything here stops the lane until you look. The tool list already refuses the rest:
     a call Claude Code refused did nothing and is only noted (refused_tools); one not known to be refused counts as done."""
@@ -177,7 +184,7 @@ def audit(calls: list, action: dict) -> list:
             parsed = urlparse(url)
             if parsed.scheme not in ("http", "https") or not _same_site(parsed.hostname or "", allowed):
                 flags.append(f"navegou para fora do alvo: {url[:200]}")
-            elif action["lane"] != "ats" and LINKEDIN_OFF_TARGET.search(parsed.path):
+            elif action["lane"] != "ats" and LINKEDIN_OFF_TARGET.search(parsed.path) and not _is_target(parsed, action):
                 flags.append(f"abriu outra área do LinkedIn: {url[:200]}")
         if name.endswith("browser_file_upload"):
             allowed_files = set(((action.get("dossier") or {}).get("files") or {}).values())

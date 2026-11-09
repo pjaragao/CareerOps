@@ -2425,10 +2425,15 @@
     const MSG_SEND = /^(send|enviar)$/i;
     async function managedMessage() {
         const { text } = managedRun.info.payload;
-        const ed = await waitFor(() => [...document.querySelectorAll(MSG_EDITOR)].find((el) => el.offsetParent !== null && !own(el)), 20000);
+        // A slow server Chrome can take more than 20s to draw the thread: wait longer, then accept the late-2026 textbox too
+        const editors = () => [...document.querySelectorAll(MSG_EDITOR)].concat([...threadPane().querySelectorAll('[role="textbox"][contenteditable="true"]')]);
+        const shown = (el) => !own(el) && (el.offsetParent !== null || el.getClientRects().length > 0);
+        const ed = await waitFor(() => editors().find(shown), 45000);
         if (!ed) {
             const page = (document.querySelector('main') || document.body).innerText || '';
-            managedStuck(/can.t message|n[aã]o (é possível|pode) (enviar|mandar)|conversation (was )?deleted/i.test(page) ? 'post_deleted' : 'selector_not_found', 'Caixa de mensagem não encontrada');
+            const all = editors();
+            managedStuck(/can.t message|n[aã]o (é possível|pode) (enviar|mandar)|conversation (was )?deleted/i.test(page) ? 'post_deleted' : 'selector_not_found',
+                `Caixa de mensagem não encontrada (${all.length} caixa(s) na página, ${all.filter(shown).length} visível(is), ${document.readyState})`);
             return;
         }
         await gate();

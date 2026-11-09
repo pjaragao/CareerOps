@@ -122,3 +122,14 @@ def test_a_forbidden_tool_not_known_to_be_refused_still_stops_the_lane():
     lines = stream({"type": "assistant", "message": {"content": [{"type": "tool_use", "id": "t1", "name": "mcp__playwright__browser_run_code_unsafe", "input": {}}]}},
                    {"type": "result", "permission_denials": [{"tool_use_id": "other"}], "structured_output": {"status": "done", "summary": "ok"}})
     assert run.outcome(run.parse_stream(lines), 0, ACTION)["audit_flags"]
+
+
+def test_opening_the_actions_own_conversation_or_post_is_not_off_target():
+    msg = {"id": 3, "kind": "message", "lane": "linkedin_write", "dossier": {},
+           "target_url": "https://www.linkedin.com/messaging/thread/2-ODZlZTBm==/"}
+    assert not run.audit([call("browser_navigate", url="https://www.linkedin.com/messaging/thread/2-ODZlZTBm%3D%3D")], msg)
+    assert run.audit([call("browser_navigate", url="https://www.linkedin.com/messaging/thread/other/")], msg)
+    post = {"id": 4, "kind": "comment", "lane": "linkedin_write", "dossier": {},
+            "target_url": "https://www.linkedin.com/feed/update/urn:li:share:7524/"}
+    assert not run.audit([call("browser_navigate", url="https://www.linkedin.com/feed/update/urn:li:share:7524/")], post)
+    assert run.audit([call("browser_navigate", url="https://www.linkedin.com/feed/")], post)
