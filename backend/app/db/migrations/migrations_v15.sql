@@ -220,7 +220,9 @@ ALTER TABLE public.automation_state ADD COLUMN IF NOT EXISTS saved_import JSONB 
     DEFAULT '{"enabled": true, "day_start": 8, "day_end": 24, "day_every": 1, "night_every": 2}';
 ALTER TABLE public.automation_actions DROP CONSTRAINT IF EXISTS automation_actions_kind_check;
 ALTER TABLE public.automation_actions ADD CONSTRAINT automation_actions_kind_check
-    CHECK (kind IN ('apply', 'comment', 'follow', 'connect', 'search', 'check', 'feed_scan', 'follow_scan', 'saved_import'));
+    -- the kinds of v17 too: this file runs again on every start, after v17 rows exist (it failed there from 2026-11-08 to 11-10)
+    CHECK (kind IN ('apply', 'comment', 'follow', 'connect', 'search', 'check', 'feed_scan', 'follow_scan', 'saved_import',
+                    'reply_scan', 'thread_read', 'reply', 'like', 'inbox_scan', 'message'));
 
 -- Every kind of comment drafted in one AI call ({"tecnico": "...", "elogio": "...", ...}): you pick one, no new call
 ALTER TABLE public.linkedin_engagement ADD COLUMN IF NOT EXISTS comment_variants JSONB;

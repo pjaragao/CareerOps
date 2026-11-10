@@ -44,7 +44,8 @@ MODES = [
     {"id": "remoto-br", "label": "Remoto aceitando Brasil (EUA e Europa)", "location": "Brazil", "geo_id": "106057199", "remote": True, "extra": "",
      "hint": 'Localização "Brazil" + remoto: o LinkedIn mostra vagas de empresas dos EUA e da Europa abertas a quem mora aqui. Com "United States" quase tudo exige autorização de trabalho.',
      "atsTerms": '("LATAM" OR "Latin America" OR "Brazil" OR "anywhere" OR "worldwide")'},
-    {"id": "remoto-latam", "label": "Remoto LATAM / contractor", "location": "Latin America", "remote": True, "extra": "",
+    {"id": "remoto-latam", "label": "Remoto LATAM / contractor", "location": "Latin America", "geo_id": "106057199", "remote": True,
+     "extra": ' AND ("LATAM" OR "Latin America" OR "contractor" OR "Americas")',   # LinkedIn drops the written place: Brazil by id, LATAM by words
      "hint": "Vagas com fuso das Américas, muitas como contractor ou via EOR (Deel, Remote.com). É o caminho mais comum para empresas europeias contratarem do Brasil.",
      "atsTerms": '("LATAM" OR "Latin America" OR "contractor" OR "Deel" OR "EOR")'},
     {"id": "visto-eu", "label": "Mudança para a Europa com visto", "location": "European Union", "geo_id": "91000000", "remote": False, "extra": ' AND ("visa sponsorship" OR relocation)',
@@ -63,7 +64,8 @@ ROTATION = {0: [("financas", "visto-eu"), ("ia", "visto-eu")], 1: [("nicho", "vi
 RECENT_SECONDS = 172800   # f_TPR: the last 48 hours, as in the "Só recentes" switch of the tab
 
 # The place LinkedIn writes on the card/ad, per mode. The search address asks for a place, but LinkedIn often ignores it
-# (seen 2026-11: the place in the address doesn't hold), so the place is checked again on each card and ad.
+# (seen live 2026-11-10: /jobs/search-results/ drops location, f_WT and sortBy; geoId stays), so the place is checked again
+# on each card and ad.
 _LATAM = (r"brazil|brasil|latam|latin america|am[eé]rica latina|south america|americas|argentin|mexic|m[eé]xico|colombi|chile|"
           r"peru|uruguay|paraguay|ecuador|bolivia|costa rica|panam|guatemala|dominican")
 _ANYWHERE = r"worldwide|anywhere|^global$|^remote$|^remoto$"
@@ -72,7 +74,11 @@ _EUROPE = (r"european union|europe|emea|portugal|lisbo|spain|espa[nñ]a|madrid|b
            r"sweden|stockholm|finland|norway|poland|warsaw|czech|prague|switzerland|zurich|united kingdom|\buk\b|london|england|estonia")
 _US = r"united states|estados unidos|\busa?\b|new york|san francisco|seattle|boston|austin|chicago"
 _US_STATE = re.compile(r", [A-Z]{2}\b")   # "Austin, TX": case matters here
-PLACES = {"remoto-br": [_LATAM, _ANYWHERE], "remoto-latam": [_LATAM, _ANYWHERE], "visto-eu": [_EUROPE], "visto-us": [_US]}
+_BR_CITY = (r"s[aã]o paulo|rio de janeiro|belo horizonte|curitiba|florian[oó]polis|porto alegre|recife|bras[ií]lia|campinas|"
+            r"fortaleza|salvador|goi[aâ]nia|\b(SP|RJ|MG|SC|PR|RS|DF|PE|BA|CE|GO)\b")
+_NOT_REMOTE = re.compile(r"\((on-site|hybrid|presencial|h[ií]brido)\)", re.I)
+PLACES = {"remoto-br": [_LATAM, _ANYWHERE, _BR_CITY], "remoto-latam": [_LATAM, _ANYWHERE, _BR_CITY], "visto-eu": [_EUROPE], "visto-us": [_US]}
+REMOTE_MODES = ("remoto-br", "remoto-latam")
 
 _AGO = re.compile(r"(\d+)\s*(min|minute|minuto|hour|hora|day|dia|week|semana|month|m[eê]s|mes)", re.I)
 
@@ -107,6 +113,8 @@ def place_ok(location: Optional[str], mode_id: Optional[str]) -> bool:
     loc = (location or "").strip()
     if not loc or mode_id not in PLACES:
         return True
+    if mode_id in REMOTE_MODES and _NOT_REMOTE.search(loc):   # the address asks for remote (f_WT), but LinkedIn drops it
+        return False
     if mode_id == "visto-us" and _US_STATE.search(loc):
         return True
     return any(re.search(p, loc, re.I) for p in PLACES[mode_id])

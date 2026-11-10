@@ -69,7 +69,9 @@ def test_seeds_update_the_keywords_but_keep_enabled(db, sql):
                                          ("Latin America", "remoto-latam", True), ("Remote", "remoto-br", True), ("", "remoto-br", True),
                                          ("United States (Remote)", "remoto-br", False), ("London, England, United Kingdom", "remoto-latam", False),
                                          ("EMEA", "remoto-br", False), ("Lisbon, Portugal", "visto-eu", True), ("New York, NY", "visto-eu", False),
-                                         ("Austin, TX", "visto-us", True), ("Brazil", "visto-us", False), ("Anywhere", None, True)])
+                                         ("Austin, TX", "visto-us", True), ("Brazil", "visto-us", False), ("Anywhere", None, True),
+                                         ("Greater São Paulo Area (Remote)", "remoto-br", True), ("São Paulo, SP (Hybrid)", "remoto-br", False),
+                                         ("Florianópolis, SC (On-site)", "remoto-latam", False), ("Amsterdam (Hybrid)", "visto-eu", True)])
 def test_place_ok(loc, mode, ok):
     assert place_ok(loc, mode) is ok
 
@@ -242,3 +244,12 @@ def test_a_job_you_already_applied_to_leaves_the_approval_list(db, sql, add_job)
     Auto.expire_stale_proposals()
     assert Auto.inbox()["items"] == []
     assert sql("SELECT status, error_text FROM public.automation_actions WHERE id = %s", (action["id"],))[0]["status"] == "discarded"
+
+
+def test_v15_runs_again_after_v17_rows_exist(db, sql):
+    """Every start applies v15 again: its kind check must take the kinds v17 added (it failed there from 2026-11-08 to 11-10)."""
+    sql("""INSERT INTO public.automation_actions (kind, lane, status, title, payload, payload_hash, idempotency_key)
+           VALUES ('inbox_scan', 'linkedin_read', 'done', 'x', '{}', '', 'k-v17')""")
+    Auto_schema = __import__("app.services.automation_service", fromlist=["ensure_schema"]).ensure_schema
+    Auto_schema()
+    assert sql("SELECT step0 FROM public.automation_limits WHERE kind = 'job_read'")[0]["step0"] == 100
