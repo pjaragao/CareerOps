@@ -246,11 +246,13 @@ const ProposalRow = ({ action, picked, onPick, onDone, setError }: { action: Act
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [text, setText] = useState<string>(action.payload.text || '');
+  const [gone, setGone] = useState(false);   // decided: out of the list at once, before it reloads (a second click got a 404)
   const decide = (call: Promise<unknown>) => {
     setBusy(true);
-    call.then(onDone).catch((e) => setError(errorText(e))).finally(() => setBusy(false));
+    call.then(() => { setGone(true); onDone(); }).catch((e) => setError(errorText(e))).finally(() => setBusy(false));
   };
   const w = what(action);
+  if (gone) return null;
   return (
     <>
       <tr className="jb-row" onClick={() => setOpen(!open)}>
@@ -508,13 +510,15 @@ const NeedsYouDetail = ({ action, onDone, novnc, setError }: { action: Action; o
 const NeedsYouRow = ({ action, picked, onPick, onDone, novnc, setError }: { action: Action; picked: boolean; onPick: (on: boolean) => void; onDone: () => void; novnc?: string; setError: (e: string) => void }) => {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
-  const decide = (call: Promise<unknown>) => { setBusy(true); call.then(onDone).catch((e) => setError(errorText(e))).finally(() => setBusy(false)); };
+  const [gone, setGone] = useState(false);
+  const decide = (call: Promise<unknown>) => { setBusy(true); call.then(() => { setGone(true); onDone(); }).catch((e) => setError(errorText(e))).finally(() => setBusy(false)); };
   const need = needOf(action);
   const w = needsWhat(action);
   const quick = need === 'docs'
     ? { title: 'Pode enviar', run: () => auto.approveDocs(action.id) }
     : need === 'confirm' ? { title: 'Enviar candidatura', run: () => auto.confirmSubmit(action.id) }
     : action.questions?.length ? null : { title: 'Tentar de novo: o sistema repete esta ação agora. Use depois de resolver o problema.', run: () => auto.retry(action.id), icon: <RefreshCw size={15} /> };
+  if (gone) return null;
   return (
     <>
       <tr className="jb-row" onClick={() => setOpen(!open)}>
