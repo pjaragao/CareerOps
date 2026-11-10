@@ -19,7 +19,7 @@ log = logging.getLogger("worker.handlers")
 ARTIFACTS = Path(os.environ.get("ARTIFACTS_DIR", "/app/output/automation"))
 RUN_DIR = Path(os.environ.get("RUN_DIR", "/data/run"))
 # How long an action may take with nothing new, in seconds. Waiting for your click has its own limit.
-DEADLINES = {"apply": 480, "comment": 180, "follow": 120, "connect": 120, "search": 300, "check": 300, "feed_scan": 300, "follow_scan": 180, "saved_import": 600,
+DEADLINES = {"apply": 480, "comment": 180, "follow": 120, "connect": 120, "search": 600, "check": 300, "feed_scan": 300, "follow_scan": 180, "saved_import": 600,
              "reply_scan": 180, "thread_read": 180, "reply": 180, "like": 120, "inbox_scan": 480, "message": 120}
 CONFIRM_TIMEOUT = 1800
 EXTERNAL_FORM_TIMEOUT = 300
