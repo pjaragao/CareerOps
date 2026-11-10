@@ -43,7 +43,7 @@ linkedin:
 jobs:
   markets: [intl]                            # add br to take Brazilian employers again
   min_score: 70                              # below it the job goes to "Descartadas" (recoverable)
-  external_apply: false                      # company sites: true only after the assisted tests of phase F7
+  external_apply: true                       # company sites (on since 2026-11-10, at your request; each one still waits for your OK)
   # Who reads the CV and the cover letter before they go: "agent" (a reviewer AI that sends them back to be redone, up to
   # cv_review_rounds times, and only calls you if they still fail) or "you" (the first 20 on the main account wait for you)
   cv_review: agent
