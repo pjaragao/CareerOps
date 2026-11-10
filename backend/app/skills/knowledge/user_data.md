@@ -15,6 +15,8 @@ Engineer (sanitary & environmental) and former CFO, 15+ years in infrastructure 
 ## 2. Core Competencies
 *   **AI & LLM:** AI agents, tool calling, MCP, prompt engineering, guardrails and prompt-injection defense, human-in-the-loop, knowledge bases, multi-provider routing (OpenRouter, Gemini, Claude, NVIDIA NIM, Ollama), TimesFM forecasting, n8n.
 *   **Software:** Python (FastAPI, Flask, psycopg), TypeScript (Next.js, React, React Native), PostgreSQL (PL/pgSQL, RLS, pgTAP, pgmq), Supabase, Docker, GitHub Actions, Coolify/Traefik.
+*   **Data & BI:** Power BI end to end (data modeling, star schema, DAX, R, reporting); SQL; Python (Pandas, NumPy). Coding history: VBA since the sanitary-engineering years (hydraulic modeling, pump curves, standardized reports generated with the calculations); Python and SQL self-taught from 2018.
+*   **IT infrastructure (since 2016, MPB):** Active Directory, 30+ TB file server, company-wide Microsoft 365 (200+ employees), VPN between offices, 2 redundant servers, UPS, backups, 3 internet links with failover, SharePoint Online migration (2018).
 *   **Finance:** DCF feasibility studies, CAPEX/OPEX, tariff modeling, annual budgeting, KPI design, cost accounting/allocation, proposal pricing, Power BI.
 *   **Engineering & management:** water, wastewater and drainage; municipal sanitation plans; QCBS/LCS public procurement; project management; ERP, SharePoint, Power Platform; BIM; ISO 9001.
 
