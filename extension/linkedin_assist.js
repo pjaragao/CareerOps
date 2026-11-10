@@ -2037,7 +2037,7 @@
             cards.set(id, {
                 id, title, company: rest[0] || '', location: rest[1] || '',
                 easy_apply: /easy apply|candidatura simplificada/i.test(text),
-                posted: (text.match(/(\d+\s*(minutes?|hours?|days?|weeks?|months?)\s*ago|h[aá]\s*\d+\s*(minutos?|horas?|dias?|semanas?|m[eê]s(es)?)|just now|agora mesmo)/i) || [])[0] || '',
+                posted: (text.match(/(\d+\s*(minutes?|hours?|days?|weeks?|months?)\s*ago|h[aá]\s*\d+\s*(minutos?|horas?|dias?|semanas?|m[eê]s(es)?)|\d+\s*(h|d|w|mo)\s+ago|just now|agora mesmo)/i) || [])[0] || '',
             });
         });
         document.querySelectorAll('[data-job-id], a[href*="/jobs/view/"], a[href*="currentJobId="]').forEach((el) => {
@@ -2052,20 +2052,49 @@
                 posted: (box.querySelector('time') || {}).innerText || (text.match(/(\d+\s*(minutes?|hours?|days?|weeks?|months?)\s*ago|h[aá]\s*\d+\s*(minutos?|horas?|dias?|semanas?|m[eê]s(es)?)|just now|agora mesmo)/i) || [])[0] || '',
             });
         });
-        return [...cards.values()].slice(0, 25);
+        return [...cards.values()];
     };
 
+    // The list loads its cards as it scrolls: down to the end of it until no new card comes (at most 8 turns)
+    async function scrollSearchList() {
+        for (let k = 0, before = -1; k < 8; k++) {
+            const now = searchCards();
+            if (now.length === before) break;
+            before = now.length;
+            const last = document.querySelector(`[componentkey="job-card-component-ref-${now[now.length - 1].id}"], [data-job-id="${now[now.length - 1].id}"], [data-occludable-job-id="${now[now.length - 1].id}"]`);
+            if (last) last.scrollIntoView({ block: 'end' }); else window.scrollTo(0, document.body.scrollHeight);
+            await wait(1200 + Math.random() * 600);
+        }
+    }
+
+    // Every page of the results (at most 4, ~100 cards): each card's place and age go to the backend, which leaves out
+    // the older than 48 hours and those off the search's place (the address asks for a place LinkedIn often ignores)
     async function managedSearch() {
         await waitFor(() => searchCards().length, 20000);
         await wait(1500);
-        const cards = searchCards();
+        const all = new Map();
+        let pages = 0;
+        for (; pages < 4; pages++) {
+            await scrollSearchList();
+            const onScreen = searchCards();
+            onScreen.forEach((c) => all.has(c.id) || all.set(c.id, c));
+            const next = onScreen.length && all.size < 100 && savedNextButton();
+            if (!next) { pages++; break; }
+            const first = onScreen[0].id;
+            await gate();
+            next.click();
+            if (!(await waitFor(() => { const now = searchCards(); return now.length && now[0].id !== first; }, 15000))) { pages++; break; }
+        }
+        const cards = [...all.values()].slice(0, 100);
         if (!cards.length) {
             const page = (document.querySelector('main') || document.body).innerText || '';
             if (/no matching jobs|nenhuma vaga|no results|sem resultados/i.test(page)) { await managedRead({ cards: 0, added: 0 }); return; }
             managedStuck('unexpected_layout', 'Lista de vagas não reconhecida');
             return;
         }
-        const seen = await managedApi('POST', '/automation/discovered/unseen', { ids: cards.map((c) => c.id) });
+        const search = managedRun.info.payload.search || null;
+        const seen = await managedApi('POST', '/automation/discovered/unseen', {
+            ids: cards.map((c) => c.id), search, cards: cards.map((c) => ({ id: c.id, location: c.location, posted: c.posted })) });
         if (!seen.ok) { managedStuck('unexpected_layout', errText(seen)); return; }
         const fresh = cards.filter((c) => seen.data.unseen.includes(c.id)).slice(0, Math.max(seen.data.budget, 0));
         const jobs = [];
@@ -2075,8 +2104,9 @@
             if (extra.description) jobs.push({ linkedin_job_id: c.id, title: extra.title || c.title, company: extra.company || c.company, location: extra.location || c.location, description: extra.description, posted: c.posted, easy_apply: c.easy_apply });
             await wait(1500 + Math.random() * 1000);
         }
-        const added = jobs.length ? await managedApi('POST', '/automation/discovered', { jobs, search: managedRun.info.payload.search || null }) : { ok: true, data: { added: 0 } };
-        await managedRead({ cards: cards.length, unseen: fresh.length, added: added.ok ? added.data.added : 0 });
+        const added = jobs.length ? await managedApi('POST', '/automation/discovered', { jobs, search }) : { ok: true, data: { added: 0 } };
+        const skipped = seen.data.skipped || {};
+        await managedRead({ cards: cards.length, pages, unseen: fresh.length, old: skipped.old || 0, off_place: skipped.place || 0, added: added.ok ? added.data.added : 0 });
     }
 
     // Your saved jobs, every page of the list (at most 5): the new ones are read from their public ad and go in as "new",

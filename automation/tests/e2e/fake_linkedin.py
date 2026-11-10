@@ -260,8 +260,11 @@ def messaging_new_page():
 
 def search_results_page():
     """Late 2026: cards without links, keyed by componentkey; the address is rewritten as the page loads, losing the #fragment."""
-    items = "".join(f"""<div role="button" componentkey="job-card-component-ref-{i}"><div>Vaga buscada {i} (Verified job)</div><div>Vaga buscada {i}</div><div>Acme {i}</div><div>Brazil (Remote)</div><div>Posted {i - 300} hours ago</div><div>{'Easy Apply' if i % 2 else ''}</div></div>""" for i in (301, 302, 303))
-    return "Busca", f"<div>3 results</div>{items}", "history.replaceState(null, '', location.pathname + '?currentJobId=301' + location.search.replace('?', '&'));"
+    card = lambda i, place, age: f"""<div role="button" componentkey="job-card-component-ref-{i}"><div>Vaga buscada {i} (Verified job)</div><div>Vaga buscada {i}</div><div>Acme {i}</div><div>{place}</div><div>Posted {age} ago</div><div>{'Easy Apply' if i % 2 else ''}</div></div>"""
+    items = "".join(card(i, "Brazil (Remote)", f"{i - 300} hours") for i in (301, 302, 303))
+    # LinkedIn ignores the place and the 48 hours of the address at times: these two are left out before their ad is read
+    items += card(304, "Brazil (Remote)", "3 days") + card(305, "United States (Remote)", "2 hours")
+    return "Busca", f"<div>5 results</div>{items}", "history.replaceState(null, '', location.pathname + '?currentJobId=301' + location.search.replace('?', '&'));"
 
 
 def search_page():

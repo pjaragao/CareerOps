@@ -29,8 +29,9 @@ GROUPS = [
      "combo": '("forecasting" OR "time series") AND ("data scientist" OR "analyst")'},
     {"id": "ia", "label": "IA aplicada", "remoteOkTag": "ai",
      "titles": ["AI Engineer", "Applied AI Engineer", "LLM Engineer", "AI Agent Developer", "AI Solutions Engineer",
-                "Forward Deployed Engineer", "AI Automation Engineer", "Finance Automation Lead", "Solutions Engineer Fintech"],
-     "combo": '("AI engineer" OR "LLM engineer" OR "applied AI" OR "AI automation")'},
+                "Forward Deployed Engineer", "Forward Deployment Engineer", "AI Automation Engineer", "Finance Automation Lead",
+                "Solutions Engineer Fintech"],
+     "combo": '("AI engineer" OR "LLM engineer" OR "applied AI" OR "AI automation" OR "forward deployed engineer" OR "forward deployment engineer")'},
     {"id": "nicho", "label": "Nicho: infraestrutura", "remoteOkTag": "finance",
      "titles": ["Utility Rate Analyst", "Water Infrastructure Financial Analyst", "Infrastructure Advisory Consultant",
                 "PPP Financial Advisor", "Concessions Financial Advisor", "Climate Finance Analyst", "Sustainable Infrastructure Analyst",
@@ -40,24 +41,38 @@ GROUPS = [
 
 # Where to look: remote jobs that accept someone living in Brazil pass the eligibility check; visa modes are for moving
 MODES = [
-    {"id": "remoto-br", "label": "Remoto aceitando Brasil (EUA e Europa)", "location": "Brazil", "remote": True, "extra": "",
+    {"id": "remoto-br", "label": "Remoto aceitando Brasil (EUA e Europa)", "location": "Brazil", "geo_id": "106057199", "remote": True, "extra": "",
      "hint": 'Localização "Brazil" + remoto: o LinkedIn mostra vagas de empresas dos EUA e da Europa abertas a quem mora aqui. Com "United States" quase tudo exige autorização de trabalho.',
      "atsTerms": '("LATAM" OR "Latin America" OR "Brazil" OR "anywhere" OR "worldwide")'},
     {"id": "remoto-latam", "label": "Remoto LATAM / contractor", "location": "Latin America", "remote": True, "extra": "",
      "hint": "Vagas com fuso das Américas, muitas como contractor ou via EOR (Deel, Remote.com). É o caminho mais comum para empresas europeias contratarem do Brasil.",
      "atsTerms": '("LATAM" OR "Latin America" OR "contractor" OR "Deel" OR "EOR")'},
-    {"id": "visto-eu", "label": "Mudança para a Europa com visto", "location": "European Union", "remote": False, "extra": ' AND ("visa sponsorship" OR relocation)',
+    {"id": "visto-eu", "label": "Mudança para a Europa com visto", "location": "European Union", "geo_id": "91000000", "remote": False, "extra": ' AND ("visa sponsorship" OR relocation)',
      "hint": "Presencial ou híbrido com patrocínio de visto ou relocation. Cidades-alvo: Lisboa, Madri, Amsterdã, Berlim, Dublin.",
      "atsTerms": '("visa sponsorship" OR "relocation") (Lisbon OR Madrid OR Amsterdam OR Berlin OR Dublin)'},
-    {"id": "visto-us", "label": "Mudança para os EUA com visto", "location": "United States", "remote": False, "extra": ' AND "visa sponsorship"',
+    {"id": "visto-us", "label": "Mudança para os EUA com visto", "location": "United States", "geo_id": "103644278", "remote": False, "extra": ' AND "visa sponsorship"',
      "hint": "Poucas vagas e H-1B é por sorteio. Vale para consultorias grandes de infraestrutura; para EB-2 NIW, fale com um advogado.",
      "atsTerms": '("visa sponsorship" OR "H-1B")'},
 ]
 
-# Every day the first group of each kind; in rotation, the visa modes take the place of the last two (see round_for)
-DAILY = [("financas", "remoto-br"), ("nicho", "remoto-br"), ("financas", "remoto-latam"), ("nicho", "remoto-latam"), ("dados", "remoto-br"), ("ia", "remoto-br")]
-ROTATION = {1: [("financas", "visto-eu"), ("nicho", "visto-eu")], 3: [("financas", "visto-us"), ("financas", "visto-eu")]}
+# Every day each group in both remote modes; in rotation, two visa searches are added (see round_for)
+DAILY = [("financas", "remoto-br"), ("ia", "remoto-br"), ("nicho", "remoto-br"), ("dados", "remoto-br"),
+         ("financas", "remoto-latam"), ("ia", "remoto-latam"), ("nicho", "remoto-latam"), ("dados", "remoto-latam")]
+ROTATION = {0: [("financas", "visto-eu"), ("ia", "visto-eu")], 1: [("nicho", "visto-eu"), ("dados", "visto-eu")],
+            2: [("financas", "visto-us"), ("ia", "visto-us")], 3: [("financas", "visto-eu"), ("ia", "visto-eu")]}
 RECENT_SECONDS = 172800   # f_TPR: the last 48 hours, as in the "Só recentes" switch of the tab
+
+# The place LinkedIn writes on the card/ad, per mode. The search address asks for a place, but LinkedIn often ignores it
+# (seen 2026-11: the place in the address doesn't hold), so the place is checked again on each card and ad.
+_LATAM = (r"brazil|brasil|latam|latin america|am[eé]rica latina|south america|americas|argentin|mexic|m[eé]xico|colombi|chile|"
+          r"peru|uruguay|paraguay|ecuador|bolivia|costa rica|panam|guatemala|dominican")
+_ANYWHERE = r"worldwide|anywhere|^global$|^remote$|^remoto$"
+_EUROPE = (r"european union|europe|emea|portugal|lisbo|spain|espa[nñ]a|madrid|barcelona|netherlands|amsterdam|germany|deutschland|"
+           r"berlin|munich|ireland|dublin|france|paris|belgi|brussels|luxembourg|austria|vienna|italy|milan|denmark|copenhagen|"
+           r"sweden|stockholm|finland|norway|poland|warsaw|czech|prague|switzerland|zurich|united kingdom|\buk\b|london|england|estonia")
+_US = r"united states|estados unidos|\busa?\b|new york|san francisco|seattle|boston|austin|chicago"
+_US_STATE = re.compile(r", [A-Z]{2}\b")   # "Austin, TX": case matters here
+PLACES = {"remoto-br": [_LATAM, _ANYWHERE], "remoto-latam": [_LATAM, _ANYWHERE], "visto-eu": [_EUROPE], "visto-us": [_US]}
 
 _AGO = re.compile(r"(\d+)\s*(min|minute|minuto|hour|hora|day|dia|week|semana|month|m[eê]s|mes)", re.I)
 
@@ -69,8 +84,12 @@ def parse_posted(text: Optional[str], at: Optional[datetime] = None) -> Optional
     if re.search(r"just now|agora mesmo|moments? ago", t):
         return at
     m = _AGO.search(t)
-    if not m:
-        return None
+    if not m:   # the short form of the newer cards: "2h ago", "3d", "1w"
+        short = re.search(r"\b(\d+)\s*(h|d|w|mo)\b", t)
+        if not short:
+            return None
+        n, unit = int(short.group(1)), short.group(2)
+        return at - {"h": timedelta(hours=n), "d": timedelta(days=n), "w": timedelta(weeks=n), "mo": timedelta(days=30 * n)}[unit]
     n, unit = int(m.group(1)), m.group(2).lower()
     if unit.startswith(("min",)):
         return at - timedelta(minutes=n)
@@ -83,6 +102,26 @@ def parse_posted(text: Optional[str], at: Optional[datetime] = None) -> Optional
     return at - timedelta(days=30 * n)
 
 
+def place_ok(location: Optional[str], mode_id: Optional[str]) -> bool:
+    """The job's place fits the mode of the search. No place written, or a search without a mode: kept (eligibility reads it)."""
+    loc = (location or "").strip()
+    if not loc or mode_id not in PLACES:
+        return True
+    if mode_id == "visto-us" and _US_STATE.search(loc):
+        return True
+    return any(re.search(p, loc, re.I) for p in PLACES[mode_id])
+
+
+def recent(posted: Optional[str], at: Optional[datetime] = None) -> bool:
+    """Posted in the last 48 hours. When the card doesn't say, kept."""
+    when = parse_posted(posted, at)
+    return when is None or when >= (at or datetime.now(timezone.utc)) - timedelta(seconds=RECENT_SECONDS)
+
+
+def _mode(search_slug: Optional[str]) -> Optional[str]:
+    return (search_slug or "").split(":")[1] if ":" in (search_slug or "") else None
+
+
 class JobSearchService:
     @staticmethod
     def catalog() -> dict:
@@ -90,14 +129,16 @@ class JobSearchService:
 
     @staticmethod
     def ensure_seeds() -> None:
-        """One row per group × mode. Existing rows keep whatever you changed (enabled)."""
+        """One row per group × mode. Titles and places follow the code; existing rows keep whatever you changed (enabled)."""
         for group in GROUPS:
             for mode in MODES:
                 _rows("""
                     INSERT INTO public.job_searches (slug, name, group_id, mode_id, keywords, location, filters)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s) ON CONFLICT (slug) DO NOTHING""",
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name, keywords = EXCLUDED.keywords, location = EXCLUDED.location,
+                                                     filters = EXCLUDED.filters""",
                       (f"{group['id']}:{mode['id']}", f"{group['label']} · {mode['label']}", group["id"], mode["id"],
-                       group["combo"] + mode["extra"], mode["location"], Json({"remote": mode["remote"]})))
+                       group["combo"] + mode["extra"], mode["location"], Json({"remote": mode["remote"], "geo_id": mode.get("geo_id")})))
 
     @staticmethod
     def list_searches() -> List[dict]:
@@ -111,14 +152,17 @@ class JobSearchService:
     def linkedin_url(search: dict) -> str:
         """Newest first, last 48 hours: the same address the tab opens (LinkedIn's search page since late 2026)."""
         params = {"keywords": search["keywords"], "location": search["location"], "sortBy": "DD", "f_TPR": f"r{RECENT_SECONDS}"}
-        if (search.get("filters") or {}).get("remote"):
+        filters = search.get("filters") or {}
+        if filters.get("geo_id"):   # the place by id: LinkedIn ignores the written one more often
+            params["geoId"] = filters["geo_id"]
+        if filters.get("remote"):
             params["f_WT"] = "2"
         return f"https://www.linkedin.com/jobs/search-results/?{urlencode(params)}"   # /jobs/search/ redirects there, adding a salary filter
 
     @staticmethod
     def round_for(day: date) -> List[dict]:
-        """The searches of one round on this day (at most 6)."""
-        pairs = DAILY[:4] + ROTATION.get(day.toordinal() % 4, DAILY[4:])
+        """The searches of one round on this day (at most 10)."""
+        pairs = DAILY + ROTATION.get(day.toordinal() % 4, [])
         slugs = [f"{g}:{m}" for g, m in pairs]
         rows = {r["slug"]: r for r in _rows("SELECT * FROM public.job_searches WHERE slug = ANY(%s) AND enabled", (slugs,))}
         return [rows[s] for s in slugs if s in rows]
@@ -138,26 +182,46 @@ class JobSearchService:
 
     # ── What the search found ────────────────────────────────────────────
     @staticmethod
-    def unseen(ids: List[str]) -> dict:
-        """Which of these LinkedIn job ids are new (rejected and archived ones never come back), and how many ads may still be read today."""
+    def unseen(ids: List[str], cards: Optional[List[dict]] = None, search_slug: Optional[str] = None) -> dict:
+        """Which of these LinkedIn job ids are new (rejected and archived ones never come back), and how many ads may still be read today.
+        With the cards (id, location, posted) of a search, the older than 48 hours and those in a place off the mode are left out
+        before their ad is read: they would only spend the day's reads."""
         known = {r["linkedin_job_id"] for r in _rows("SELECT linkedin_job_id FROM public.job_listings WHERE linkedin_job_id = ANY(%s)", (ids,))}
-        return {"unseen": [i for i in ids if i not in known], "budget": AutomationService.job_read_budget()}
+        by_id = {str(c.get("id")): c for c in cards or []}
+        mode = _mode(search_slug)
+        out, old, place = [], 0, 0
+        for i in ids:
+            if i in known:
+                continue
+            c = by_id.get(i) or {}
+            if not recent(c.get("posted")):
+                old += 1
+            elif not place_ok(c.get("location"), mode):
+                place += 1
+            else:
+                out.append(i)
+        return {"unseen": out, "budget": AutomationService.job_read_budget(), "skipped": {"old": old, "place": place}}
 
     @staticmethod
     def add_discovered(jobs: List[dict], search_slug: Optional[str]) -> int:
-        """New jobs enter as 'discovered'. An id already here is left alone, whatever its status."""
+        """New jobs enter as 'discovered'. An id already here is left alone, whatever its status. A job whose ad shows a place
+        off the search's mode enters already discarded (score 0, the place as the reason): it never reaches the triage, and
+        it does not come back in the next search."""
         added = 0
+        mode = _mode(search_slug)
         for j in jobs:
             job_id = str(j.get("linkedin_job_id") or "").strip()
             if not job_id or not (j.get("description") or "").strip():
                 continue
+            off = not place_ok(j.get("location"), mode)
             row = _one("""
                 INSERT INTO public.job_listings (linkedin_job_id, url, job_title, company, location, description, status, scraped_at,
-                                                 easy_apply, posted_at, search_slug)
-                VALUES (%s, %s, %s, %s, %s, %s, 'discovered', NOW(), %s, %s, %s)
+                                                 easy_apply, posted_at, search_slug, triage_score, triage_reason, triage_outcome)
+                VALUES (%s, %s, %s, %s, %s, %s, 'discovered', NOW(), %s, %s, %s, %s, %s, %s)
                 ON CONFLICT DO NOTHING RETURNING id""",
                        (job_id, f"https://www.linkedin.com/jobs/view/{job_id}/", j.get("title") or "", j.get("company") or "", j.get("location") or "",
-                        j["description"], bool(j.get("easy_apply")), parse_posted(j.get("posted")), search_slug))
+                        j["description"], bool(j.get("easy_apply")), parse_posted(j.get("posted")), search_slug,
+                        0 if off else None, f"Local fora do foco da busca: {j.get('location')}" if off else None, "discarded" if off else None))
             added += bool(row)
         if search_slug:
             _rows("UPDATE public.job_searches SET last_run_at = NOW(), jobs_found = jobs_found + %s WHERE slug = %s", (added, search_slug))

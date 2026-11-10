@@ -360,9 +360,20 @@ class IdsIn(BaseModel):
     ids: List[str] = Field(..., max_length=100)
 
 
+class SearchCard(BaseModel):
+    id: str = Field(..., max_length=50)
+    location: Optional[str] = Field(None, max_length=300)
+    posted: Optional[str] = Field(None, max_length=100)
+
+
+class UnseenIn(IdsIn):
+    cards: List[SearchCard] = Field(default_factory=list, max_length=100)   # a search's cards: the old and off-place ones are left out
+    search: Optional[str] = Field(None, max_length=100)
+
+
 @router.post("/discovered/unseen", dependencies=[Depends(require_worker)])
-async def unseen(req: IdsIn):
-    return JobSearchService.unseen(req.ids)
+async def unseen(req: UnseenIn):
+    return JobSearchService.unseen(req.ids, [c.model_dump() for c in req.cards], req.search)
 
 
 class DiscoveredJob(BaseModel):
@@ -376,7 +387,7 @@ class DiscoveredJob(BaseModel):
 
 
 class DiscoveredIn(BaseModel):
-    jobs: List[DiscoveredJob] = Field(..., max_length=50)
+    jobs: List[DiscoveredJob] = Field(..., max_length=100)
     search: Optional[str] = Field(None, max_length=100)
 
 

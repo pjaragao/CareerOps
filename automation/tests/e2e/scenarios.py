@@ -366,6 +366,9 @@ def main():
     row = wait_status(search, ("done", "needs_user", "escalated", "failed"), 90)
     found = sql("SELECT linkedin_job_id, status, easy_apply, posted_at, resume_markdown FROM public.job_listings WHERE linkedin_job_id IN ('301','302','303') ORDER BY 1")
     check("search reads the list and adds new jobs", row["status"] == "done" and len(found) == 3, f"{row['status']} {row['error_text']} {row['result']} {found}")
+    left_out = sql("SELECT linkedin_job_id FROM public.job_listings WHERE linkedin_job_id IN ('304','305')")
+    check("search leaves out jobs older than 48 h and off the search's place", not left_out and (row["result"] or {}).get("old") == 1
+          and (row["result"] or {}).get("off_place") == 1, f"{left_out} {row['result']}")
     check("found jobs stay discovered, with no documents", all(j["status"] == "discovered" and j["resume_markdown"] is None for j in found))
     check("age and Easy Apply are read from the card", found and found[0]["posted_at"] is not None and found[0]["easy_apply"] is True and found[1]["easy_apply"] is False, str(found))
 

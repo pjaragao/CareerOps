@@ -78,12 +78,12 @@ def question_key(text: str) -> str:
 
 
 def ensure_schema() -> None:
-    """Applies migrations_v15.sql and migrations_v17.sql (replies and inbox) (idempotent)."""
+    """Applies migrations_v15.sql, migrations_v17.sql (replies and inbox) and migrations_v18.sql (higher search limits) (idempotent)."""
     folder = Path(__file__).resolve().parent.parent / "db" / "migrations"
     conn = get_db_connection()
     try:
         with conn.cursor() as cur:
-            for name in ("migrations_v15.sql", "migrations_v17.sql"):
+            for name in ("migrations_v15.sql", "migrations_v17.sql", "migrations_v18.sql"):
                 cur.execute((folder / name).read_text(encoding="utf-8"))
         conn.commit()
     finally:
