@@ -111,18 +111,10 @@ class PortfolioService:
 
     @staticmethod
     def with_link(markdown: str, link: Optional[str], portuguese: bool = False) -> str:
-        """Adds the portfolio link to the contact line of the CV (the line with the e-mail). Nothing else changes.
-        Idempotent: an old portfolio link on that line is replaced, never duplicated."""
-        if not markdown or not link:
-            return markdown
-        label = "Portfólio" if portuguese else "Portfolio"
-        lines = markdown.split("\n")
-        for i, line in enumerate(lines[:15]):
-            if "@" in line and not line.lstrip().startswith("#"):
-                clean = LINK_RE.sub("", line.rstrip())
-                lines[i] = f"{clean} | [{label}]({link})"
-                return "\n".join(lines)
-        return markdown   # no contact line found: leave the CV as it is
+        """The CV with its form fixed: the contact line rebuilt (real phone, LinkedIn/GitHub/portfolio as visible links) and
+        ATS-unsafe characters made plain. The content does not change. Idempotent. See cv_format."""
+        from app.services import cv_format
+        return cv_format.normalize(markdown, link, portuguese)
 
     @staticmethod
     def attach(job_id: int, markdown: Optional[str] = None) -> Optional[str]:

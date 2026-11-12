@@ -59,11 +59,18 @@ class PDFService:
     @staticmethod
     def generate_pdf(markdown_content: str, filename: str) -> bytes:
         html_content = PDFService._markdown_to_html(markdown_content)
-        
+        from app.services import cv_format
+        name_match = re.search(r"^#\s+(.+)$", markdown_content, re.M)
+        who = (name_match.group(1).strip() if name_match else "Paulo José Aragão Jr.").title().replace(" Jr.", " Jr.")
+        pt = cv_format.is_portuguese(markdown_content)
+        doc_title = f"{who} - {'Currículo' if pt else 'Resume'}"
+
         styled_html = f'''<!DOCTYPE html>
-<html>
+<html lang="{'pt-BR' if pt else 'en'}">
 <head>
 <meta charset="UTF-8">
+<title>{doc_title}</title>
+<meta name="author" content="{who}">
 <style>
   @import url("https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600;700&display=swap");
   * {{ margin: 0; padding: 0; box-sizing: border-box; }}
@@ -100,12 +107,12 @@ class PDFService:
     color: #222;
     margin: 8px 0 4px 0;
   }}
-  p {{ margin: 4px 0; text-align: justify; }}
+  p {{ margin: 4px 0; text-align: left; }}
   ul {{ margin: 4px 0 4px 18px; padding: 0; }}
   li {{ margin: 2px 0; padding-left: 2px; }}
   hr {{ border: none; border-top: 1px solid #ccc; margin: 10px 0; }}
   strong {{ font-weight: 600; }}
-  a {{ color: #333; text-decoration: none; }}
+  a {{ color: #1a56b8; text-decoration: underline; }}   /* links must look like links (contact line) */
   @media print {{ body {{ padding: 0.4in 0.5in; }} h2 {{ break-after: avoid; }} }}
 </style>
 </head>

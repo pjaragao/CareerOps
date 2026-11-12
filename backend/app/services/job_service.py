@@ -184,6 +184,8 @@ class JobService:
                 # every CV carries this job's own portfolio link (contact line only; content unchanged)
                 from app.services.portfolio_service import PortfolioService
                 content = PortfolioService.attach(job_id, content)
+                from app.services import cv_format
+                content = cv_format.normalize(content, None) if "[Portf" not in content else content   # attach failed: form only
             
             with conn.cursor() as cur:
                 cur.execute(f"UPDATE public.job_listings SET {column} = %s, updated_at = %s WHERE id = %s", 

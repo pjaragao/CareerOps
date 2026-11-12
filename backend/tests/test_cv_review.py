@@ -37,7 +37,9 @@ def reviewer(monkeypatch):
     monkeypatch.setattr(actions, "generate_resume", generate_resume)
     monkeypatch.setattr(actions, "generate_cover_letter", generate_cover_letter)
     monkeypatch.setattr(ProfileService, "get_resume_base", staticmethod(lambda lang: "BASE"))
-    monkeypatch.setattr(cr, "pdf_pages", lambda md, name="resume.pdf": 2)
+    monkeypatch.setattr(cr, "pdf_pages", lambda md, name="resume.pdf", pdf=None: 2)
+    monkeypatch.setattr(cr, "render_pdf", lambda md, name="resume.pdf": None)
+    monkeypatch.setattr(cr, "ats_issues", lambda resume, pdf, expect_portfolio=False: [])   # the ATS form has its own tests
     return state
 
 

@@ -1,6 +1,7 @@
 """The reviewer that reads the CV and the cover letter before they go, in your place.
 
-First what needs no AI: a forbidden term, a placeholder, an empty document, a PDF over two pages. Then a recruiter AI compares
+First what needs no AI: a forbidden term, a placeholder, an empty document, a PDF over two pages, and the ATS form of the
+resume (contact line, real phone, links that are links, plain characters, standard headings, one date style, a readable text layer). Then a recruiter AI compares
 both documents with the job and with your real history (the base resume and the knowledge base). Anything critical or major
 sends the document back to be redone with the reviewer's instructions, up to cv_review_rounds times. If it still fails, the
 application waits for you with the reviewer's reasons: nothing questionable goes out on its own."""
@@ -27,15 +28,118 @@ def _job(job_id: int) -> dict:
     return _one("SELECT * FROM public.job_listings WHERE id = %s", (job_id,)) or {}
 
 
-def pdf_pages(markdown: str, name: str = "resume.pdf") -> Optional[int]:
-    """The resume as the recruiter gets it. None when the PDF could not be made (the AI review still runs)."""
+def render_pdf(markdown: str, name: str = "resume.pdf") -> Optional[bytes]:
     from app.services.pdf_service import PDFService
     try:
-        pdf = PDFService.generate_pdf(markdown, name)
+        return PDFService.generate_pdf(markdown, name)
     except Exception as e:
         log.info("pdf not rendered for review: %s", e)
         return None
-    return len(re.findall(rb"/Type\s*/Page(?!s)", pdf)) or None
+
+
+def pdf_pages(markdown: str, name: str = "resume.pdf", pdf: Optional[bytes] = None) -> Optional[int]:
+    """The resume as the recruiter gets it. None when the PDF could not be made (the AI review still runs)."""
+    pdf = pdf or render_pdf(markdown, name)
+    return (len(re.findall(rb"/Type\s*/Page(?!s)", pdf)) or None) if pdf else None
+
+
+# ── ATS form (no AI needed) ──────────────────────────────────────────────────────────────────────────────────────
+STANDARD_HEADING = re.compile(
+    r"^(professional summary|summary|profile|objective|skills|technical skills|core competencies|key skills|professional experience|"
+    r"work experience|experience|employment history|education|education & certifications|education and certifications|certifications|"
+    r"languages|projects|publications|"
+    r"resumo profissional|resumo|perfil|compet[eê]ncias( t[eé]cnicas)?|experi[eê]ncia profissional|experi[eê]ncia|forma[cç][aã]o( acad[eê]mica)?|"
+    r"forma[cç][aã]o e certifica[cç][oõ]es|certifica[cç][oõ]es|idiomas|projetos|publica[cç][oõ]es)$", re.I)
+UNSAFE_CHARS = re.compile("[\u2212\u2013\u2014\u2192\u21d2\u2265\u2264\u00d7\u2018\u2019\u201c\u201d\u2026\u00a0\u200b\u2022\u25cf]"
+                          "|[\U0001F000-\U0001FAFF\u2600-\u27BF]")
+DATE_STYLES = {
+    "month-year": re.compile(r"\b(?:jan|feb|fev|mar|apr|abr|may|mai|jun|jul|aug|ago|sep|set|oct|out|nov|dec|dez)[a-z]*\.?\s+\d{4}\b", re.I),
+    "numeric-month": re.compile(r"\b\d{1,2}/\d{4}\b"),
+    "year-only": re.compile(r"(?<![\w/])(?:19|20)\d{2}\s*-\s*(?:(?:19|20)\d{2}|present|presente|atual|current|now)\b", re.I),
+}
+
+
+def pdf_text(pdf: bytes) -> Optional[tuple]:
+    """(text as a parser reads it, link targets in the PDF). None if the PDF cannot be read."""
+    try:
+        import io
+        import pypdf
+        reader = pypdf.PdfReader(io.BytesIO(pdf))
+        text = "\n".join((p.extract_text() or "") for p in reader.pages)
+        uris = []
+        for page in reader.pages:
+            for annot in page.get("/Annots") or []:
+                action = annot.get_object().get("/A")
+                if action and action.get("/URI"):
+                    uris.append(str(action["/URI"]))
+        return text, uris
+    except Exception as e:
+        log.info("pdf text not read for review: %s", e)
+        return None
+
+
+def ats_issues(resume: str, pdf: Optional[bytes], expect_portfolio: bool) -> List[dict]:
+    """The resume as an ATS and a recruiter get it. Each item says what to change, as an instruction to the writer."""
+    from app.services import cv_format
+    issues = []
+
+    def add(severity: str, problem: str, fix: str):
+        issues.append({"doc": "resume", "severity": severity, "problem": f"ATS: {problem}", "fix": fix})
+
+    lines = resume.split("\n")
+    idx = cv_format.contact_line_index(lines)
+    contact = lines[idx] if idx is not None else ""
+    if idx is None:
+        add("major", "sem linha de contato com e-mail no topo", "Add one contact line under the title: e-mail | phone | LinkedIn | GitHub, in plain text.")
+    else:
+        if cv_format.PLACEHOLDER_PHONE_RE.search(contact):
+            add("critical", "o telefone é um modelo (00 00000-0000)", "Write the real phone number from the profile, never zeros.")
+        elif not re.search(r"\+?\d[\d\s()-]{8,}\d", contact):
+            add("major", "a linha de contato não tem telefone", "Add the candidate's phone number to the contact line.")
+        for label, rx, key in (("LinkedIn", cv_format.LINKEDIN_RE, "linkedin.com"), ("GitHub", cv_format.GITHUB_RE, "github.com")):
+            if not rx.search(contact):
+                add("major", f"{label} ausente na linha de contato", f"Add the {label} address to the contact line as a markdown link.")
+            elif not re.search(r"\[[^\]]*" + re.escape(key) + r"[^\]]*\]\(https?://", contact, re.I):
+                add("major", f"{label} é só texto, não é link clicável", f"Write the {label} address as a markdown link: [text](https://...).")
+        if expect_portfolio and not re.search(r"\[[^\]]*portf[^\]]*\]\(https?://", contact, re.I):
+            add("major", "o link do portfólio não está na linha de contato", "Add the portfolio link to the contact line as a markdown link whose text says it is the portfolio.")
+    unsafe = sorted({c for c in UNSAFE_CHARS.findall(resume)})
+    if unsafe:
+        add("major", "caracteres que o ATS lê mal: " + " ".join(unsafe[:8]), "Use plain characters only: '-' for dashes and minus, '->' for arrows, straight quotes, '-' for bullets, no emoji or symbols.")
+    headings = [h.strip() for h in re.findall(r"^##\s+(.+)$", resume, re.M)]
+    odd = [h for h in headings if not STANDARD_HEADING.match(h.strip().strip("*"))]
+    if odd:
+        add("major", "títulos de seção fora do padrão: " + "; ".join(odd[:4]),
+            "Use standard section titles that an ATS recognizes (Professional Summary, Skills, Professional Experience, Education, Languages), one topic per title: never merge Education with Languages or add extra words.")
+    if headings and not any(re.search(r"experi[eê]nc|experience|employment", h, re.I) for h in headings):
+        add("major", "sem seção de experiência com título padrão", "Add a 'Professional Experience' section.")
+    rest, used = resume, []
+    for name, rx in DATE_STYLES.items():   # month-year first: its year must not count again as a year-only date
+        if rx.search(rest):
+            used.append(name)
+            rest = rx.sub(" ", rest)
+    if len(used) > 1:
+        add("major", "estilos de data misturados: " + ", ".join(used), "Write every date as 'Mon YYYY - Mon YYYY' (or 'Mon YYYY - Present'): one style everywhere.")
+    if re.search(r"<\s*(table|img|svg)|^\s*\|.*\|.*\|\s*$\n\s*\|[-: |]+\|", resume, re.M):
+        add("major", "tabela ou imagem no currículo (o ATS perde o conteúdo)", "Remove tables and images: write the content as plain text and bullets.")
+    if pdf:
+        got = pdf_text(pdf)
+        if got is None or len(got[0].strip()) < 200:
+            add("critical", "o PDF não tem texto legível (camada de texto vazia)", "Regenerate the document as selectable text.")
+        else:
+            text, uris = got
+            first = text[:200]
+            if "@" not in text[:600]:
+                add("major", "o e-mail não aparece no início do texto extraído do PDF", "Keep the contact line directly under the title.")
+            if len(text) < 0.6 * len(re.sub(r"[#*`\[\]()]|https?://\S+", "", resume)):
+                add("major", "o PDF perde texto na extração (colunas, caixas ou ícones)", "Use a single-column layout with plain text.")
+            joined = " ".join(uris).lower()
+            for label, key in (("LinkedIn", "linkedin.com"), ("GitHub", "github.com")):
+                if key in contact.lower() and key not in joined:
+                    add("major", f"o link de {label} não ficou clicável no PDF", f"Write the {label} address as a markdown link.")
+            if expect_portfolio and "vercel.app" not in joined:
+                add("major", "o link do portfólio não ficou clicável no PDF", "Write the portfolio address as a markdown link.")
+    return issues
 
 
 def quick_issues(resume: str, cover: str, pages: Optional[int]) -> List[dict]:
@@ -70,8 +174,11 @@ class CvReviewService:
         from app.services.profile_service import ProfileService
         job = _job(job_id)
         resume, cover = job.get("resume_markdown") or "", job.get("cover_letter") or ""
-        pages = pdf_pages(resume) if resume.strip() else None
+        pdf = render_pdf(resume) if resume.strip() else None
+        pages = pdf_pages(resume, pdf=pdf) if resume.strip() else None
         issues = quick_issues(resume, cover, pages)
+        if resume.strip():
+            issues += ats_issues(resume, pdf, expect_portfolio=bool(job.get("portfolio_token")))
         reading = {}
         if resume.strip() and cover.strip():
             lang = get_job_lang(job)

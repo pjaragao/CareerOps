@@ -45,9 +45,20 @@ Check, in this order:
    leaves out or buries the matching real cases (ERP rollout, AI accounts payable with Microsoft 365 + n8n + Sienge, Power Apps
    timesheet on SQL, World Bank program, evals, validators, fallbacks); or AI work is presented as a hobby, "self-hosted",
    "homelab" or a side project; or an AI claim has no production proof that the history gives.
-6. Length and form (major): the resume over two pages{% if pdf_pages %} ({{ pdf_pages }} now){% endif %}; broken markdown, a section repeated, contact data missing.
-7. Experience years (major): a total that contradicts a career started in 2008.
-8. Style (minor): weak verbs, generic sentences, small inconsistencies.
+6. ATS grade (major): the resume must pass an applicant tracking system. Report any of these with the exact fix:
+   - keywords: the ad's exact terms (tools, methods, certifications, acronyms) that the candidate really has must appear verbatim,
+     with the acronym and the spelled-out form once each (e.g. "Retrieval-Augmented Generation (RAG)"), in the summary, skills and
+     the bullets of the roles that used them; a real requirement written only with other words is a miss;
+   - the job title of the ad (or its closest honest equivalent) appears in the headline under the name;
+   - single column, plain text: no table, columns, text box, image, icon, emoji or rating bars; bullets are plain "-";
+   - standard section titles, one topic each (Professional Summary, Skills, Professional Experience, Education, Languages);
+   - every role has employer, title and dates in one style ("Mon YYYY - Mon YYYY" or "- Present") and its bullets start with an
+     action verb; no first-person pronouns; no paragraph longer than four lines;
+   - contact data (name, e-mail, phone, city, LinkedIn, GitHub, portfolio) is in the body, in plain text, with the links as links.
+   The phone, links and special characters are also checked by code before you: do not repeat them unless they are still wrong.
+7. Length and form (major): the resume over two pages{% if pdf_pages %} ({{ pdf_pages }} now){% endif %}; broken markdown, a section repeated, contact data missing.
+8. Experience years (major): a total that contradicts a career started in 2008.
+9. Style (minor): weak verbs, generic sentences, small inconsistencies.
 
 Not problems of the documents:
 - A requirement of the ad that the candidate does not meet in the real history (a language such as German, years in a field,
