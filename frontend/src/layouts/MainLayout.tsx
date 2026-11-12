@@ -1,5 +1,5 @@
 import React from 'react';
-import { NavLink, Outlet } from 'react-router-dom';
+import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { Home, UserCircle, Briefcase, Megaphone, Bot, Settings, Rocket, PanelLeftClose, PanelLeftOpen, Menu, X } from 'lucide-react';
 
 const NAV = [
@@ -44,7 +44,15 @@ const readCollapsed = () => {
   try { return localStorage.getItem('sidebarCollapsed') === '1'; } catch { return false; }
 };
 
+// The browser tab says where you are: "CareerOps · Início"
+const pageName = (path: string) => NAV.find(i => i.path === '/' ? path === '/' : path.startsWith(i.path))?.label;
+
 const MainLayout = () => {
+  const { pathname } = useLocation();
+  React.useEffect(() => {
+    const page = pageName(pathname);
+    document.title = page ? `CareerOps · ${page}` : 'CareerOps';
+  }, [pathname]);
   const [collapsed, setCollapsed] = React.useState(readCollapsed);
   const [mobileOpen, setMobileOpen] = React.useState(false);
   const toggle = () => setCollapsed(c => {
