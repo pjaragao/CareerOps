@@ -43,7 +43,8 @@ def _personal() -> Dict[str, str]:
     """The profile's contact data (live profile in the database); empty when unavailable."""
     try:
         from app.services.profile_service import ProfileService
-        data = (ProfileService.get_profile() or {}).get("data") or {}
+        profile = ProfileService.get_profile() or {}
+        data = profile.get("data") if isinstance(profile.get("data"), dict) else profile   # the profile itself, or wrapped
         return {k: str(v or "").strip() for k, v in (data.get("personal") or {}).items()}
     except Exception:
         return {}
