@@ -8,6 +8,10 @@ ALTER TABLE public.job_listings ADD COLUMN IF NOT EXISTS portfolio_last_view_at 
 ALTER TABLE public.job_listings ADD COLUMN IF NOT EXISTS portfolio_seconds INTEGER NOT NULL DEFAULT 0;
 -- hash of the CV last uploaded to the portfolio (downloadable there only with this job's link)
 ALTER TABLE public.job_listings ADD COLUMN IF NOT EXISTS portfolio_cv_hash TEXT;
+-- The CV PDF lives in Google Drive (uploaded by Lolo); the portfolio only redirects to it and counts the downloads.
+ALTER TABLE public.job_listings ADD COLUMN IF NOT EXISTS portfolio_cv_drive_id TEXT;
+ALTER TABLE public.job_listings ADD COLUMN IF NOT EXISTS portfolio_cv_downloads INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE public.job_listings ADD COLUMN IF NOT EXISTS portfolio_cv_last_download_at TIMESTAMP WITH TIME ZONE;
 
 -- One row per event pulled from the portfolio (event_id is the portfolio's id: pulling twice never counts twice).
 CREATE TABLE IF NOT EXISTS public.portfolio_events (

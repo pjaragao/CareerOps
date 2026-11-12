@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { jobService, Job } from '../services/jobService';
 import {
   Plus, MapPin, Trash2, LayoutDashboard, List as ListIcon, ExternalLink, Rocket, FileText, Mail, MessageSquare,
-  Search, ChevronDown, ChevronLeft, ChevronRight, ArrowUpDown, Check, X, AlertTriangle, Eye, Link2,
+  Search, ChevronDown, ChevronLeft, ChevronRight, ArrowUpDown, Check, X, AlertTriangle, Eye, Link2, Download,
 } from 'lucide-react';
 import JobDetail, { JobTab, JobAction } from '../components/JobDetail';
 import NewJobModal from '../components/NewJobModal';
@@ -142,16 +142,18 @@ const CopyPortfolioLink = ({ job }: { job: Job }) => {
 };
 
 // How many times the company opened this job's portfolio link (pulled from the portfolio every 5 min)
-export const PortfolioViewsBadge = ({ job }: { job: Pick<Job, 'portfolio_views' | 'portfolio_seconds' | 'portfolio_last_view_at'> }) => {
+export const PortfolioViewsBadge = ({ job }: { job: Pick<Job, 'portfolio_views' | 'portfolio_seconds' | 'portfolio_last_view_at' | 'portfolio_cv_downloads'> }) => {
   const n = job.portfolio_views || 0;
-  if (!n) return null;
+  const dl = job.portfolio_cv_downloads || 0;
+  if (!n && !dl) return null;
   const min = Math.round((job.portfolio_seconds || 0) / 60);
   const last = job.portfolio_last_view_at ? new Date(job.portfolio_last_view_at).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '';
-  const tip = `Portfólio aberto ${n}x${min ? ` · ${min} min de leitura` : ''}${last ? ` · último em ${last}` : ''}`;
+  const tip = `Portfólio aberto ${n}x${dl ? ` · CV baixado ${dl}x` : ''}${min ? ` · ${min} min de leitura` : ''}${last ? ` · último em ${last}` : ''}`;
+  const chip = { display: 'inline-flex', alignItems: 'center', gap: 3, flexShrink: 0, padding: '1px 6px', borderRadius: 6, fontSize: '0.66rem', fontWeight: 800 } as const;
   return (
-    <span title={tip} style={{ display: 'inline-flex', alignItems: 'center', gap: 3, flexShrink: 0, padding: '1px 6px', borderRadius: 6, fontSize: '0.66rem',
-      fontWeight: 800, color: '#7cc4ff', background: '#7cc4ff1f', border: '1px solid #7cc4ff55' }}>
-      <Eye size={10} /> {n}
+    <span title={tip} style={{ display: 'inline-flex', gap: 4, flexShrink: 0 }}>
+      <span style={{ ...chip, color: '#7cc4ff', background: '#7cc4ff1f', border: '1px solid #7cc4ff55' }}><Eye size={10} /> {n}</span>
+      {dl > 0 && <span style={{ ...chip, color: '#4ade80', background: '#4ade801f', border: '1px solid #4ade8055' }}><Download size={10} /> {dl}</span>}
     </span>
   );
 };
@@ -434,7 +436,7 @@ const JobBoard = () => {
                         className="card-hover" style={{ padding: '0.8rem', borderRadius: 12, cursor: 'grab', background: 'rgba(30,30,42,.6)', border: '1px solid var(--border)', borderLeft: `3px solid ${col.color}` }}>
                         <div style={{ fontWeight: 700, fontSize: '0.84rem', color: '#fff', marginBottom: 2 }}>{job.job_title}</div>
                         {(job.eligibility_status === 'blocked' || job.eligibility_status === 'warning') && <div style={{ marginBottom: 4 }}><EligibilityBadge job={job} /></div>}
-                        {(job.portfolio_views || 0) > 0 && <div style={{ marginBottom: 4 }}><PortfolioViewsBadge job={job} /></div>}
+                        {((job.portfolio_views || 0) > 0 || (job.portfolio_cv_downloads || 0) > 0) && <div style={{ marginBottom: 4 }}><PortfolioViewsBadge job={job} /></div>}
                         <div style={{ fontSize: '0.74rem', color: 'var(--accent-light)', marginBottom: 8 }}>{job.company}</div>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6 }}>
                           <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 4, minWidth: 0, overflow: 'hidden', whiteSpace: 'nowrap' }}><MapPin size={11} /> {job.location || 'Remoto'}</span>

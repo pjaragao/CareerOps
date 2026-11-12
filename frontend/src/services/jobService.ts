@@ -30,6 +30,8 @@ export interface Job {
   portfolio_views?: number;
   portfolio_seconds?: number;
   portfolio_last_view_at?: string | null;
+  portfolio_cv_downloads?: number;
+  portfolio_cv_last_download_at?: string | null;
 }
 
 export interface EligibilityIssue {

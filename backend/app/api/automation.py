@@ -659,6 +659,39 @@ async def bot_ack(req: AckIn):
     return {"acked": BotService.ack(req.ids)}
 
 
+# Job CVs go to Google Drive through Lolo (it holds the Google access); the portfolio only redirects to the file.
+@router.get("/bot/portfolio/cv-queue", dependencies=[Depends(require_bot)])
+async def bot_cv_queue(limit: int = Query(15, ge=1, le=30)):
+    from app.services.portfolio_service import PortfolioService
+    return {"items": PortfolioService.cv_queue(limit)}
+
+
+@router.get("/bot/portfolio/cv/{job_id}", dependencies=[Depends(require_bot)])
+async def bot_cv_pdf(job_id: int):
+    from fastapi.responses import Response
+    from app.services.portfolio_service import PortfolioService
+    got = PortfolioService.cv_pdf(job_id)
+    if not got:
+        raise HTTPException(status_code=404, detail="Sem CV com o link do portfólio")
+    name, pdf, digest = got
+    return Response(content=pdf, media_type="application/pdf", headers={"X-CV-Name": name, "X-CV-Hash": digest})
+
+
+class CvDoneIn(BaseModel):
+    drive_id: str = Field(..., min_length=10, max_length=80)
+    hash: str = Field(..., min_length=64, max_length=64)
+
+
+@router.post("/bot/portfolio/cv/{job_id}/done", dependencies=[Depends(require_bot)])
+async def bot_cv_done(job_id: int, req: CvDoneIn):
+    from app.services.portfolio_service import PortfolioService
+    try:
+        ok = PortfolioService.cv_done(job_id, req.drive_id, req.hash)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return _found({"ok": True} if ok else None)
+
+
 @router.get("/bot/summary", dependencies=[Depends(require_decider)])
 async def bot_summary():
     """The short summary for the good morning and when you ask: what waits for you, and the link."""

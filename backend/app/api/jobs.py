@@ -43,7 +43,8 @@ async def job_portfolio(job_id: int):
     events = _q("""SELECT event, details, location, device, occurred_at FROM public.portfolio_events
                    WHERE job_id = %s ORDER BY occurred_at DESC LIMIT 30""", (job_id,))
     return {"url": PortfolioService.link_for(job), "views": job.get("portfolio_views") or 0,
-            "seconds": job.get("portfolio_seconds") or 0, "last_view_at": job.get("portfolio_last_view_at"), "events": events}
+            "seconds": job.get("portfolio_seconds") or 0, "cv_downloads": job.get("portfolio_cv_downloads") or 0,
+            "cv_last_download_at": job.get("portfolio_cv_last_download_at"), "last_view_at": job.get("portfolio_last_view_at"), "events": events}
 
 @router.get("/linkedin/{linkedin_job_id}")
 async def job_by_linkedin_id(linkedin_job_id: str):

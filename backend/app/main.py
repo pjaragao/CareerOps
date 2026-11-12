@@ -105,16 +105,19 @@ async def _email_monitor():
 
 
 async def _portfolio_pull():
-    """Every 5 min: brings home the portfolio views recorded on Vercel and uploads changed job CVs
-    (outbound calls only; nothing on the homelab is exposed)."""
+    """Brings home the portfolio events (views, reading time, CV downloads). Outbound calls only; nothing on the
+    homelab is exposed. Hourly and only 07:00-23:00 (Sao Paulo): the free Vercel plan has a small request quota,
+    so an empty poll every 5 minutes is wasteful. Job CVs are not handled here: Lolo puts them on Google Drive."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
     from app.services.portfolio_service import PortfolioService
     while True:
         try:
-            await asyncio.to_thread(PortfolioService.pull)
-            await asyncio.to_thread(PortfolioService.sync_cvs)
+            if 7 <= datetime.now(ZoneInfo("America/Sao_Paulo")).hour < 23:
+                await asyncio.to_thread(PortfolioService.pull)
         except Exception as e:
             logging.getLogger("portfolio").warning("portfolio pull failed: %s", e)
-        await asyncio.sleep(300)
+        await asyncio.sleep(3600)
 
 
 @app.on_event("startup")

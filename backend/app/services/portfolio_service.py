@@ -4,9 +4,12 @@ Each job gets its own signed link to the portfolio (pjaragao-portfolio.vercel.ap
 pjr-<company slug>-<job id>-<sig>, sig = HMAC-SHA256(PORTFOLIO_TOKEN_SECRET, "<slug>:<job id>")[:16]; the
 portfolio checks it with the same secret, so it needs no list of tokens and never calls the homelab.
 
-The portfolio writes one small event per visit to a private Vercel Blob store. `pull` (every few minutes,
-from main.py) reads them over GET /api/events, stores them in public.portfolio_events, updates the counters
-on the job and acknowledges them, which deletes them on the portfolio side. Nothing on the homelab is exposed.
+The portfolio keeps one small event per visit (Redis, or a private Blob store as fallback). `pull` (hourly,
+daytime only, from main.py) reads them over GET /api/events, stores them in public.portfolio_events, updates
+the counters on the job (visits, reading time, CV downloads) and acknowledges them. Nothing on the homelab is exposed.
+
+The job CV PDF is stored in Google Drive by Lolo (see cv_queue / cv_done); the portfolio only keeps the Drive
+file id per job, redirects /cv.pdf to it and counts the download.
 
 Settings come from the environment first, then from public.portfolio_settings:
 PORTFOLIO_URL, PORTFOLIO_TOKEN_SECRET, PORTFOLIO_PULL_TOKEN.
@@ -151,42 +154,53 @@ class PortfolioService:
 
     # ── Job CV on the portfolio ────────────────────────────────────────────
     @staticmethod
-    def _put_pdf(job_id: int, name: str, pdf: bytes) -> dict:
-        from urllib.parse import quote
-        req = urllib.request.Request(
-            f"{PortfolioService.base_url()}/api/cv?jobId={int(job_id)}&name={quote(name)}", data=pdf, method="PUT",
-            headers={"Authorization": f"Bearer {_setting('PORTFOLIO_PULL_TOKEN')}", "Content-Type": "application/pdf", "User-Agent": "careerops"})
-        with urllib.request.urlopen(req, timeout=60) as r:
-            return json.loads(r.read().decode())
+    def cv_queue(limit: int = 15) -> List[dict]:
+        """Jobs whose CV changed since it went to Drive (or never went). Lolo uploads them, then calls cv_done."""
+        from app.api.actions import _pdf_name
+        out = []
+        rows = _q("""SELECT id, company, language, job_title, resume_markdown, portfolio_cv_hash, portfolio_cv_drive_id
+                       FROM public.job_listings WHERE portfolio_token IS NOT NULL AND resume_markdown LIKE '%%[Portf%%'
+                       ORDER BY updated_at DESC NULLS LAST""")
+        for job in rows:
+            digest = hashlib.sha256(job["resume_markdown"].encode()).hexdigest()
+            if digest == job.get("portfolio_cv_hash") and job.get("portfolio_cv_drive_id"):
+                continue
+            out.append({"id": job["id"], "name": _pdf_name(job, "resume"), "hash": digest,
+                        "drive_id": job.get("portfolio_cv_drive_id")})
+            if len(out) >= limit:
+                break
+        return out
 
     @staticmethod
-    def sync_cvs(limit: int = 20) -> int:
-        """Uploads the PDF of each job CV that carries a portfolio link and changed since the last upload.
-        Whoever opens that job's link can download exactly that CV; other links never see it."""
-        if not _setting("PORTFOLIO_PULL_TOKEN"):
-            return 0
+    def cv_pdf(job_id: int) -> Optional[tuple]:
+        """(name, pdf bytes, hash) of the job's CV, after the content guard. None if the job has no CV with the link."""
         from app.api.actions import _pdf_name
         from app.services import content_guard
         from app.services.pdf_service import PDFService
-        sent = 0
-        rows = _q("""SELECT id, company, language, job_title, resume_markdown, portfolio_cv_hash FROM public.job_listings
-                      WHERE portfolio_token IS NOT NULL AND resume_markdown LIKE '%%[Portf%%' ORDER BY updated_at DESC NULLS LAST""")
-        for job in rows:
-            digest = hashlib.sha256(job["resume_markdown"].encode()).hexdigest()
-            if digest == job.get("portfolio_cv_hash"):
-                continue
-            try:
-                content_guard.ensure_clean(job["resume_markdown"], "O CV")
-                name = _pdf_name(job, "resume")
-                pdf = PDFService.generate_pdf(job["resume_markdown"], name)
-                if PortfolioService._put_pdf(job["id"], name, pdf).get("ok"):
-                    _q("UPDATE public.job_listings SET portfolio_cv_hash = %s WHERE id = %s", (digest, job["id"]), fetch=False)
-                    sent += 1
-            except Exception as e:
-                log.warning("portfolio CV upload for job %s failed: %s", job["id"], e)
-            if sent >= limit:
-                break
-        return sent
+        rows = _q("""SELECT id, company, language, job_title, resume_markdown FROM public.job_listings
+                      WHERE id = %s AND portfolio_token IS NOT NULL AND resume_markdown LIKE '%%[Portf%%'""", (job_id,))
+        if not rows:
+            return None
+        job = rows[0]
+        content_guard.ensure_clean(job["resume_markdown"], "O CV")
+        name = _pdf_name(job, "resume")
+        return name, PDFService.generate_pdf(job["resume_markdown"], name), hashlib.sha256(job["resume_markdown"].encode()).hexdigest()
+
+    @staticmethod
+    def cv_done(job_id: int, drive_id: str, digest: str) -> bool:
+        """Lolo uploaded the CV to Drive: save the file id and tell the portfolio where this job's CV is."""
+        if not re.fullmatch(r"[A-Za-z0-9_-]{10,80}", drive_id or ""):
+            raise ValueError("drive_id inválido")
+        rows = _q("""UPDATE public.job_listings SET portfolio_cv_drive_id = %s, portfolio_cv_hash = %s
+                      WHERE id = %s RETURNING id""", (drive_id, digest, job_id))
+        if not rows:
+            return False
+        try:
+            PortfolioService._call("/api/cv-link", {"links": {str(job_id): drive_id}})
+        except Exception as e:
+            log.warning("portfolio cv-link for job %s failed: %s", job_id, e)
+            _q("UPDATE public.job_listings SET portfolio_cv_hash = NULL WHERE id = %s", (job_id,), fetch=False)   # retried
+        return True
 
     # ── Views ──────────────────────────────────────────────────────────────
     @staticmethod
@@ -213,7 +227,7 @@ class PortfolioService:
                 break
             for e in events:
                 stored += PortfolioService._store(e)
-            PortfolioService._call("/api/events/ack", {"pathnames": [e["pathname"] for e in events if e.get("pathname")]})
+            PortfolioService._call("/api/events/ack", {"count": len(events), "pathnames": [e["pathname"] for e in events if e.get("pathname")]})
             if len(events) < 200:
                 break
         return stored
@@ -234,6 +248,10 @@ class PortfolioService:
                 _q("""UPDATE public.job_listings SET portfolio_views = portfolio_views + 1,
                           portfolio_last_view_at = GREATEST(COALESCE(portfolio_last_view_at, %s), %s) WHERE id = %s""",
                    (e.get("at"), e.get("at"), job_id), fetch=False)
+            elif e.get("event") == "cv_download":
+                _q("""UPDATE public.job_listings SET portfolio_cv_downloads = portfolio_cv_downloads + 1,
+                          portfolio_cv_last_download_at = GREATEST(COALESCE(portfolio_cv_last_download_at, %s), %s) WHERE id = %s""",
+                   (e.get("at"), e.get("at"), job_id), fetch=False)
             elif e.get("event") == "duration":
                 sec = int((e.get("data") or {}).get("seconds") or 0)
                 if 0 < sec < 6 * 3600:
@@ -243,10 +261,11 @@ class PortfolioService:
     @staticmethod
     def news() -> List[dict]:
         """Views not told to you yet, grouped by job (for the Lolo summary)."""
-        return _q("""SELECT e.job_id, COALESCE(j.company, e.company) AS company, j.job_title, COUNT(*) AS views,
+        return _q("""SELECT e.job_id, COALESCE(j.company, e.company) AS company, j.job_title,
+                            COUNT(*) FILTER (WHERE e.event = 'pageview') AS views, COUNT(*) FILTER (WHERE e.event = 'cv_download') AS downloads,
                             MAX(e.occurred_at) AS last_at, (ARRAY_AGG(e.location ORDER BY e.occurred_at DESC))[1] AS location
                        FROM public.portfolio_events e LEFT JOIN public.job_listings j ON j.id = e.job_id
-                      WHERE e.notified_at IS NULL AND e.event = 'pageview'
+                      WHERE e.notified_at IS NULL AND e.event IN ('pageview', 'cv_download')
                       GROUP BY e.job_id, COALESCE(j.company, e.company), j.job_title ORDER BY MAX(e.occurred_at) DESC""")
 
     @staticmethod
@@ -259,11 +278,14 @@ class PortfolioService:
         if not items:
             return ""
         total = sum(int(i["views"]) for i in items)
+        downloads = sum(int(i.get("downloads") or 0) for i in items)
         parts = []
         for i in items[:5]:
             who = i.get("company") or "?"
             what = f" — {i['job_title']}" if i.get("job_title") else ""
             where = f" ({i['location']})" if i.get("location") and i["location"] != "desconhecido" else ""
-            parts.append(f"• {who}{what}: {i['views']}x{where}")
+            dl = f" · baixou o CV {i['downloads']}x" if int(i.get("downloads") or 0) else ""
+            parts.append(f"• {who}{what}: {i['views']}x{where}{dl}")
         more = f"\n• +{len(items) - 5} outra(s)" if len(items) > 5 else ""
-        return f"👀 *Portfólio*: {total} visualização(ões) nova(s)\n" + "\n".join(parts) + more
+        head = f"{total} visualização(ões) nova(s)" + (f" e {downloads} download(s) do CV" if downloads else "")
+        return f"👀 *Portfólio*: {head}\n" + "\n".join(parts) + more
