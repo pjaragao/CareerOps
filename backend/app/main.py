@@ -69,6 +69,18 @@ async def _auto_drafts():
             logging.getLogger("linkedin_copilot").warning("auto draft failed: %s", e)
 
 
+async def _saved_comments():
+    """Every 5 min: a comment for each post saved with the 📌, to approve in the Automação tab (not while the autopilot is off)."""
+    from app.services.automation_service import AutomationService
+    while True:
+        await asyncio.sleep(300)
+        try:
+            if AutomationService.state().get("mode") != "off":
+                await LinkedInCopilotService.draft_saved_comments()
+        except Exception as e:
+            logging.getLogger("linkedin_copilot").warning("saved-post comments failed: %s", e)
+
+
 async def _automation():
     """Every minute: the books of the Autopilot queue. While it is off, nothing else happens."""
     from app.services.automation_service import AutomationService
@@ -140,6 +152,7 @@ async def start_scheduler():
     app.state.linkedin_scheduler = asyncio.create_task(_publish_scheduled_posts())
     app.state.job_pipeline = asyncio.create_task(_job_pipeline())
     app.state.linkedin_drafts = asyncio.create_task(_auto_drafts())
+    app.state.saved_comments = asyncio.create_task(_saved_comments())
 
 @app.get("/")
 async def root():

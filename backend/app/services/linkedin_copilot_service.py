@@ -379,6 +379,26 @@ class LinkedInCopilotService:
         return posts[0] if posts else None
 
     @staticmethod
+    async def draft_saved_comments(limit: int = 3, days: int = 3) -> int:
+        """Scheduler tick: posts you saved with the 📌 (they have a link, and you did not comment on them yet) get a comment
+        drafted here in the backend; it then waits for your OK in the Automação tab (AutomationService.sync_proposals).
+        Browsing LinkedIn is untouched: the 📌 still only saves the theme. Each post is drafted once (an engagement row exists after)."""
+        rows = _rows("""
+            SELECT i.* FROM public.linkedin_inspirations i
+             WHERE i.post_url IS NOT NULL AND i.note IS NULL AND i.created_at >= NOW() - make_interval(days => %s)
+               AND NOT EXISTS (SELECT 1 FROM public.linkedin_engagement e WHERE e.post_url = i.post_url)
+             ORDER BY i.created_at LIMIT %s""", (days, limit))
+        done = 0
+        for r in rows:
+            try:   # the instruction keeps the AI from skipping a post you chose yourself
+                await LinkedInCopilotService.add_engagement(r["post_text"], r["post_url"], r["author_name"], r["author_headline"],
+                                                            instruction="O Paulo salvou este post para comentar.", regenerate=True)
+                done += 1
+            except Exception as e:
+                log.warning("comment for saved post %s not drafted: %s", r["id"], e)
+        return done
+
+    @staticmethod
     def delete_inspiration(item_id: int) -> Optional[dict]:
         return _one("DELETE FROM public.linkedin_inspirations WHERE id = %s RETURNING id", (item_id,))
 
