@@ -231,3 +231,21 @@ def test_resolve_before_user_handles_closed_external_answers_and_keeps_captcha(d
     Auto.claim("linkedin_write", "w1")
     Auto.escalate(ap["id"], "captcha", "Please complete Cloudflare Turnstile CAPTCHA")
     assert _one("SELECT status, error_code FROM public.automation_actions WHERE id = %s", (ap["id"],))["status"] == "needs_user"
+
+    # 6. Hydrogen connection errors auto-retry; read scans retry once then discard instead of needs_user
+    ats_conn = _seed_ats_action(sql, "https://jobs.ashbyhq.com/acme/conn")
+    Auto.claim("ats", "w1")
+    Auto.escalate(ats_conn["id"], "external_form_unfinished", "0 fields")
+    c_conn = Auto.claude_claim("r1")["action"]
+    Auto.claude_result(ats_conn["id"], c_conn["run_id"], "failed", "Hydrogen execution error: <urlopen error [Errno 111] Connection refused>")
+    conn_row = _one("SELECT status, error_code FROM public.automation_actions WHERE id = %s", (ats_conn["id"],))
+    assert (conn_row["status"], conn_row["error_code"]) == ("escalated", "auto_retry")
+
+    scan = Auto.create_action("reply_scan", "reply-test", "Respostas", "https://www.linkedin.com/notifications/", {}, status="queued")
+    Auto.claim("linkedin_read", "w1")
+    Auto.escalate(scan["id"], "unexpected_layout", "Página de notificações não reconhecida")
+    assert _one("SELECT status FROM public.automation_actions WHERE id = %s", (scan["id"],))["status"] == "queued"
+    sql("UPDATE public.automation_actions SET scheduled_for = NOW() WHERE id = %s", (scan["id"],))
+    Auto.claim("linkedin_read", "w1")
+    Auto.escalate(scan["id"], "unexpected_layout", "Página de notificações não reconhecida")
+    assert _one("SELECT status, error_code FROM public.automation_actions WHERE id = %s", (scan["id"],)) == {"status": "discarded", "error_code": "superseded"}

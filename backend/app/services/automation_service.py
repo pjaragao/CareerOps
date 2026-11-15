@@ -55,8 +55,9 @@ CLOSED_JOB_RE = re.compile(
 QUOTA_RE = re.compile(r"502:?\s*bad gateway|cota .* esgotada|quota reached|weekly limit|hydrogen upstream failed", re.I)
 TRANSIENT_RE = re.compile(
     r"502:?\s*bad gateway|cota .* esgotada|quota reached|weekly limit|hydrogen upstream failed|"
-    r"timed out|timeouterror|timeout\s+\d+ms|127\.0\.0\.1:9222|connect_timeout|econnrefused|503 service unavailable|"
-    r"request not processed|connectionreseterror|without a valid status payload|"
+    r"hydrogen execution error|remote end closed connection|connection refused|"
+    r"timed out|timeouterror|timeout\s+\d+ms|127\.0\.0\.1:922[23]|connect_timeout|econnrefused|503 service unavailable|"
+    r"request not processed|connectionreseterror|without a valid status payload|err_aborted|frame was detached|"
     r"tentei usar uma ferramenta|tool_call|careerops-apply-copilot|step limit|65 steps",
     re.I,
 )
@@ -929,6 +930,11 @@ class AutomationService:
             return AutomationService._discard(action, "job_closed", text)
         claude_lanes = set((config().get("claude") or {}).get("lanes") or [])
         retry_status = "escalated" if action.get("lane") in claude_lanes else "queued"
+        if action.get("kind") in READ_KINDS or action.get("lane") == "linkedin_read":
+            if action.get("attempts", 0) < 2:
+                AutomationService.add_event(action["id"], "triage", "auto_retry_read", {"source": source})
+                return AutomationService._reschedule_retry(action["id"], "queued", 600, "auto_retry", text)
+            return AutomationService._discard(action, "superseded", text)
 
         if (
             action.get("kind") == "apply"
