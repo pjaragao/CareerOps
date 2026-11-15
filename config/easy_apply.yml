@@ -15,7 +15,17 @@ work_authorization:
   needs_sponsorship_elsewhere: true          # US, EU, UK and any country other than Brazil
   willing_to_relocate: [Europe, United States]
   open_to_remote: true
-  notice_period: ""                          # e.g. "2 weeks" — empty = the assistant leaves it for you
+  notice_period: "3 weeks"                   # transition window (~21 days / 3 weeks)
+
+screening_defaults:
+  previously_employed_at_company: false
+  relatives_at_company: false
+  government_official_history: false
+  non_compete_restrictions: false
+  valid_driver_license: true
+  willing_to_provide_references: true
+  consent_privacy_policy_and_terms: true
+  consent_background_check: true
 
 languages:
   Portuguese: native
@@ -24,6 +34,8 @@ languages:
 
 self_identification:                         # only what you chose to share; other demographic questions are left for you
   gender: Male                               # Masculino
+  disability: "No, I do not have a disability"
+  veteran: "No (not a protected veteran)"
 
 salary_expectation:                          # floors, gross. Answered as written (never by the AI); any other currency is asked once
   brazil_brl_monthly: 30000                  # PJ

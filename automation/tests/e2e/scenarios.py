@@ -129,7 +129,7 @@ def main():
     print("test account, dry run")
     set_state(mode="dry_run", account_kind="test")
     row = wait_status(follow, ("done", "needs_user", "escalated"), 90)
-    check("dry run walks to the final click", row["status"] == "done" and row["result"].get("dry_run"), str(row)[:400])
+    check("dry run walks to the final click", row["status"] == "done" and row["result"].get("dry_run"), f"{row['status']} {row.get('error_code')} {row.get('error_text')} {str(row.get('result'))[:200]}")
     check("dry run does not follow", "acme" not in fake_state()["following"])
 
     save_answer("Notice period", "30 days")
@@ -463,6 +463,57 @@ def main():
     check("the form was filled from your data", bool(filled) and filled[0]["data"].get("filled", 0) >= 1, str(filled))
     STATE_FOR_CLAUDE["external"] = external
 
+    print("a closed external job")
+    add_job("403")
+    closed_ext = approve_job("403")
+    row = wait_status(closed_ext, ("discarded", "needs_user", "escalated", "done"), 180)
+    check("closed external job is automatically discarded", row["status"] == "discarded" and row["error_code"] == "job_closed", f"{row.get('lane')} {row['status']} {row['error_code']} {row['error_text']}")
+
+
+def cross_domain_ats_scenario():
+    print("a 0-field landing page redirecting cross-domain")
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "claude_runner"))
+    import run
+    set_state(mode="live", account_kind="main", allow_final_submit=True)
+    add_job("402")
+    landing = approve_job("402")
+    t0 = time.monotonic()
+    row = wait_status(landing, ("escalated", "needs_user", "done"), 150)
+    elapsed = time.monotonic() - t0
+    check("0-field external landing page escalates rapidly without 300s timeout", row["status"] == "escalated" and elapsed < 120, f"{row['status']} {row['error_code']} ({elapsed:.1f}s)")
+    if row["status"] != "escalated":
+        return
+    claimed_402 = call("POST", "/automation/escalated/claim", {"runner": "e2e"}, WORKER)["action"]
+    check("landing-page action claims cleanly", claimed_402 and claimed_402["id"] == landing, str(claimed_402)[:300])
+    acct = call("POST", "/automation/site-accounts", {"domain": "jobs.ashbyhq.com"}, WORKER)
+    check("site-accounts endpoint issues persistent password", bool(acct.get("password")), str(acct))
+    call("POST", "/automation/email/verification/ingest", {
+        "message_id": "e2e-otp-402",
+        "sender": "no-reply@ashbyhq.com",
+        "subject": "Verification code",
+        "body": "Enter verification code 849201 to continue",
+    }, WORKER)
+    otp_lookup = call("POST", "/automation/email/verification", {"query_hint": "ashbyhq", "since_seconds": 600}, WORKER)
+    check("email verification endpoint retrieves OTP", otp_lookup.get("found") and otp_lookup.get("code") == "849201", str(otp_lookup))
+    nav_audit = run.audit([
+        {"name": "mcp__playwright__browser_navigate", "input": {"url": "https://jobs.ashbyhq.com/apply/402"}},
+        {"name": "mcp__careerops__check_email", "input": {"domain": "jobs.ashbyhq.com"}},
+        {"name": "mcp__careerops__site_account", "input": {"op": "get_or_create", "domain": "jobs.ashbyhq.com"}},
+    ], claimed_402)
+    check("cross-domain ATS navigation and helper tools pass audit", nav_audit == [], str(nav_audit))
+    mcp = Mcp(MCP_ATS)
+    snap402 = mcp.call("browser_navigate", url="https://jobs.ashbyhq.com/apply/402")
+    if "[ref=" not in snap402:
+        snap402 = mcp.call("browser_snapshot")
+    btn402 = ref_of(snap402, "Submit application")
+    check("cross-domain Ashby page opens with submit button", bool(btn402), snap402[:400])
+    if btn402:
+        mcp.call("browser_click", target=btn402, element="Submit application")
+        time.sleep(2)
+    call("POST", f"/automation/actions/{landing}/claude-result", {"run_id": claimed_402["run_id"], "status": "done", "summary": "Enviada cross-domain"}, WORKER)
+    row402 = wait_status(landing, ("done", "needs_user"), 120)
+    check("cross-domain ATS submission succeeds without halting ats lane", row402["status"] == "done" and "402" in fake_state()["ats_sent"] and "ats" not in (call("GET", "/automation/status")["state"].get("halted_lanes") or []), f"{row402['status']} {fake_state()['ats_sent']}")
+
 
 class Mcp:
     """The browser tools, called the way the agent calls them: everything of the routine except the model."""
@@ -636,6 +687,7 @@ if __name__ == "__main__":
             claude_scenario()
         else:
             routine_without_model()
+        cross_domain_ats_scenario()
         crash_scenario()
     except urllib.error.HTTPError as e:
         print("HTTP error:", e.code, e.read()[:500])

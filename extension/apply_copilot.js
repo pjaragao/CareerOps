@@ -11,8 +11,10 @@
         try { chrome.runtime.sendMessage(msg, (res) => { void chrome.runtime.lastError; resolve(res); }); } catch (e) { resolve(null); }
     });
     const marker = !inFrame && location.hash.match(/careerops-apply=(\d+)/);
+    const runMatch = !inFrame && location.hash.match(/careerops-run=(\d+)\.[\w-]+/);
     // on LinkedIn the job's own id goes with it: Auto Apply runs on that job only, not on pages visited later in the tab
     const started = marker ? send({ action: 'applyStart', jobId: Number(marker[1]),
+        managedAction: runMatch ? Number(runMatch[1]) : null,
         linkedinJobId: (location.pathname.match(/\/jobs\/view\/(\d+)/) || [])[1] || new URLSearchParams(location.search).get('currentJobId') }) : Promise.resolve();
     if (location.hostname.endsWith('linkedin.com')) return;   // LinkedIn: linkedin_assist.js drives Easy Apply
 
@@ -495,6 +497,16 @@
     // fields are filled here; this script never submits. What is left goes to the Claude routine, with the form open.
     let managedAction = null;
     let managedReported = false;
+    const CLOSED_JOB_RE = /\b(?:no longer accepting applications|not currently accepting applications|this job (?:is )?(?:no longer|not) available|job posting (?:has )?(?:expired|been removed)|page you are trying to access has expired|position has been filled|cette offre n['’]est plus disponible|vaga encerrada|job id provided may not be valid)\b/i;
+    function isClosedJobPage() {
+        const text = ((document.body && document.body.innerText) || '').slice(0, 6000);
+        return CLOSED_JOB_RE.test(text);
+    }
+    function managedEscalate(code, text) {
+        if (!managedAction || managedReported || !jobId) return;
+        managedReported = true;
+        backend('POST', `/automation/actions/${managedAction}/escalate`, { code, text, source: 'extension' });
+    }
     function managedFilled(filled, pending) {
         if (!managedAction || managedReported || !jobId) return;
         managedReported = true;
@@ -513,16 +525,45 @@
         const pending = await send({ action: 'applyPending' });
         if (!pending) return;
         jobId = pending.jobId;
+        if (!managedAction && pending.managedAction && careeropsManaged) managedAction = Number(pending.managedAction);
         await wait(1500);   // let the application form render
         if (inFrame && collect().length < 3) return;   // only frames that hold the form get a panel
-        if (!inFrame && collect().length < 2 && document.querySelector('iframe')) {
-            await wait(2500);
-            if (collect().length < 2 && [...document.querySelectorAll('iframe')].some((f) => f.offsetHeight > 300)) return;   // the form is in a frame: its panel runs there
+        if (!inFrame && collect().length < 2) {
+            if (document.querySelector('iframe')) {
+                await wait(2500);
+                if (collect().length < 2 && [...document.querySelectorAll('iframe')].some((f) => f.offsetHeight > 300)) {
+                    if (managedAction) {
+                        await wait(15000);
+                        const st = await backend('GET', `/automation/actions/${managedAction}/run`);
+                        if (st && st.ok && st.data && st.data.status === 'running_ext') {
+                            managedFilled(collect().length, []);
+                        }
+                    }
+                    return;   // the form is in a frame: its panel runs there
+                }
+            }
+            for (let i = 0; i < 3 && !collect().length; i++) await wait(1200);
+            if (!collect().length && managedAction) {
+                if (isClosedJobPage()) {
+                    managedEscalate('job_closed', 'A página informa que a vaga foi encerrada.');
+                    return;
+                }
+                const res = await backend('POST', `/jobs/${jobId}/auto-apply/prepare`, {});
+                prep = res.ok ? res.data : { job: {} };
+                panel(prep.job || {});
+                await attachFiles(false);
+                managedFilled(0, []);
+                return;
+            }
         }
         const res = await backend('POST', `/jobs/${jobId}/auto-apply/prepare`, {});
         prep = res.ok ? res.data : { job: {} };
         panel(prep.job || {});
-        if (!res.ok) { status(errText(res)); return; }
+        if (!res.ok) {
+            status(errText(res));
+            if (managedAction) managedEscalate('step_stuck', errText(res));
+            return;
+        }
         await fillPage(false);
         observer.observe(document.body, { childList: true, subtree: true });
     })();

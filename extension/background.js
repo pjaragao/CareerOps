@@ -293,7 +293,7 @@ chrome.tabs.onCreated.addListener(async (tab) => {
     const now = Date.now();
     const handedOff = from.handoffAt && now - from.handoffAt < HANDOFF_WINDOW;
     const companySite = !from.linkedinJobId && now - from.at < SITE_WINDOW;
-    if (handedOff || companySite) await setApplyTab(tab.id, { jobId: from.jobId, at: now, via: 'opener' });
+    if (handedOff || companySite) await setApplyTab(tab.id, { jobId: from.jobId, at: now, via: 'opener', managedAction: from.managedAction || null });
 });
 chrome.tabs.onRemoved.addListener((tabId) => { setApplyTab(tabId, null); });
 
@@ -318,7 +318,7 @@ async function backendFile(path) {
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     const tabId = sender.tab && sender.tab.id;
     if (request.action === 'applyStart') {
-        setApplyTab(tabId, { jobId: request.jobId, at: Date.now(), linkedinJobId: request.linkedinJobId || null })
+        setApplyTab(tabId, { jobId: request.jobId, at: Date.now(), linkedinJobId: request.linkedinJobId || null, managedAction: request.managedAction || null })
             .then(() => sendResponse({ ok: true }));
         return true;
     }

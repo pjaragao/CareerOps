@@ -2,7 +2,7 @@
 import re
 import unicodedata
 from urllib.parse import unquote, urlparse
-from typing import Tuple
+from typing import Optional, Tuple
 
 from playwright.async_api import Error as PlaywrightError
 
@@ -10,8 +10,21 @@ APPLIED = re.compile(r"\bapplied \d|\bapplied\b.{0,20}\bago\b|application submit
                      r"voc[eê] se candidatou", re.I)
 FOLLOWING = re.compile(r"^\s*(following|seguindo)\b", re.I)
 PENDING = re.compile(r"^\s*(pending|pendente)\b", re.I)
-EXTERNAL_SENT = re.compile(r"thank you for (applying|your application|your interest)|thanks for applying|application (has been |was )?(received|submitted|sent)|"
-                           r"we (have )?received your application|obrigad[oa] por se candidatar|candidatura (foi )?(recebida|enviada)|recebemos sua candidatura", re.I)
+EXTERNAL_SENT = re.compile(
+    r"thank(?:s| you)[,!.\s]+(?:so much )?(?:for (?:applying|your application|your interest|submitting)|your application)|"
+    r"application (?:has been |was |is )?(?:successfully |already |now )?(received|submitted|sent|completed|registered|under review)|"
+    r"application (confirmation|submitted|complete)|"
+    r"successfully (?:applied|submitted)|"
+    r"submission (?:has been |was )?(?:successfully )?(received|completed|confirmed)|"
+    r"you(?: have|'ve)? (?:successfully )?applied|"
+    r"we (?:have |will |'ll )?(?:received|review) your application|"
+    r"obrigad[oa] por se candidatar|candidatura (?:foi |conclu[ií]da|enviada(?: com sucesso)?)|"
+    r"candidatura (?:foi )?(?:recebida|enviada)(?:\s+com sucesso)?|recebemos sua candidatura|"
+    r"gracias por (?:tu )?(?:postulaci[oó]n|aplicar|postular)|(?:tu )?solicitud (?:ha sido |fue )?enviada|"
+    r"candidature (?:bien )?(?:envoy[eé]e|re[çc]ue|enregistr[eé]e)|"
+    r"(?:vielen )?dank f[üu]r ihre bewerbung|bewerbung (?:ist )?(?:erfolgreich )?eingegangen",
+    re.I,
+)
 
 
 def normalize(text: str) -> str:
@@ -58,13 +71,42 @@ async def _main_text(page) -> str:
     return await page.evaluate("() => (document.querySelector('main') || document.body).innerText || ''")
 
 
+async def _external_sent_url(target_page) -> Optional[str]:
+    """Checks target_page main body and child frames for external application confirmation text."""
+    try:
+        if external_sent_in(await _main_text(target_page)):
+            return getattr(target_page, "url", "")
+    except Exception:
+        pass
+    for frame in getattr(target_page, "frames", ()):
+        if frame == getattr(target_page, "main_frame", None):
+            continue
+        try:
+            frame_text = await frame.evaluate("() => document.body ? document.body.innerText : ''")
+            if external_sent_in(frame_text or ""):
+                return getattr(frame, "url", "") or getattr(target_page, "url", "")
+        except Exception:
+            pass
+    return None
+
+
 async def prove(page, action: dict) -> Tuple[bool, dict]:
     """Opens the target again and looks. Returns (proof, evidence). The page is left there for a screenshot."""
     kind = action["kind"]
     url = action["target_url"]
     if action["lane"] == "ats":   # the form's own page, kept open: the address may have moved on after sending
-        text = await _main_text(page)
-        return external_sent_in(text), {"url": page.url}
+        found_url = await _external_sent_url(page)
+        if found_url is not None:
+            return True, {"url": found_url}
+        ctx = getattr(page, "context", None)
+        if ctx is not None:
+            for other in reversed(list(getattr(ctx, "pages", ()))):
+                if other is page or (hasattr(other, "is_closed") and other.is_closed()):
+                    continue
+                found_url = await _external_sent_url(other)
+                if found_url is not None:
+                    return True, {"url": found_url}
+        return False, {"url": page.url}
     await page.goto(url, wait_until="domcontentloaded", timeout=45000)
     await page.wait_for_timeout(3500)
     if kind == "apply":

@@ -663,10 +663,35 @@ class LinkedInCopilotService:
 
     @staticmethod
     def _facts() -> dict:
-        """config/easy_apply.yml, with the years counted from career_start_year so they don't go stale."""
+        """config/easy_apply.yml overlaid with live personal data and saved answers, with years counted from career_start_year."""
         import yaml
+        from app.services.cv_format import PLACEHOLDER_PHONE_RE, _personal
         path = settings.CONFIG_DIR / "easy_apply.yml"
         data = (yaml.safe_load(path.read_text(encoding="utf-8")) or {}) if path.exists() else {}
+        personal = _personal()
+        contact = data.setdefault("contact", {})
+        if personal:
+            for key in ("name", "email", "linkedin", "github", "portfolio"):
+                if personal.get(key):
+                    contact[key] = personal[key]
+            if personal.get("location"):
+                contact["city"] = personal["location"]
+            raw_phone = str(contact.get("phone") or "").strip()
+            if personal.get("phone") and (not raw_phone or PLACEHOLDER_PHONE_RE.search(raw_phone)):
+                contact["phone"] = personal["phone"]
+        name_parts = str(contact.get("name") or "").strip().split()
+        if name_parts:
+            contact.setdefault("first_name", name_parts[0])
+            if len(name_parts) > 1:
+                contact.setdefault("last_name", " ".join(name_parts[1:]))
+        try:
+            from app.services.automation_service import AutomationService
+            for label, target_key in (("Street Address", "street_address"), ("Zip/Postal Code", "zip_code")):
+                ans = AutomationService.known_answer(label, "text")
+                if ans:
+                    contact.setdefault(target_key, ans)
+        except Exception:
+            pass
         start = data.get("career_start_year")
         if start:
             years = data.setdefault("years_of_experience", {})

@@ -21,7 +21,7 @@ log = logging.getLogger("worker")
 
 WORKER_ID = os.environ.get("WORKER_ID", "automation-1")
 IDLE_SECONDS = {"off": 60, "halted": 30, "outside_window": 120, "gap": 30, "empty": 20, "lane_busy": 15, "max_windows": 15}
-ATS_IDLE_SECONDS = 600
+ATS_IDLE_SECONDS = 1800
 ARTIFACT_DAYS = 30
 
 

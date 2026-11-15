@@ -11,7 +11,72 @@ from playwright.async_api import BrowserContext, Page, async_playwright
 
 log = logging.getLogger("worker.browser")
 
+import asyncio
+import os
+import shutil
+import signal
+import subprocess
+from pathlib import Path
+
 PROFILES = {"linkedin": {"dir": "/data/profiles/linkedin", "port": 9222}, "ats": {"dir": "/data/profiles/ats", "port": 9223}}
+MCP_PORTS = {
+    "linkedin": {"port": 8931, "cdp": 9222, "blocked": ""},
+    "ats": {"port": 8932, "cdp": 9223, "blocked": "https://www.linkedin.com;https://linkedin.com"},
+}
+
+
+async def _stop_mcp(name: str) -> None:
+    """Terminates any running playwright-mcp instance bound to the named lane's port."""
+    cfg = MCP_PORTS.get(name)
+    if not cfg or not Path("/data/run").is_dir():
+        return
+    needle = f"--port {cfg['port']}"
+    killed = []
+    proc_dir = Path("/proc")
+    if proc_dir.is_dir():
+        for entry in proc_dir.iterdir():
+            if not entry.name.isdigit():
+                continue
+            try:
+                raw = (entry / "cmdline").read_bytes().replace(b"\x00", b" ").decode("utf-8", "ignore")
+            except OSError:
+                continue
+            if "playwright-mcp" in raw and needle in raw:
+                pid = int(entry.name)
+                try:
+                    os.kill(pid, signal.SIGTERM)
+                    killed.append(pid)
+                except OSError:
+                    pass
+    if killed:
+        await asyncio.sleep(0.4)
+        for pid in killed:
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except OSError:
+                pass
+
+
+async def _restart_mcp(name: str) -> None:
+    """Replaces any stale playwright-mcp with a fresh instance pointing at the live CDP port."""
+    cfg = MCP_PORTS.get(name)
+    if not cfg or not Path("/data/run").is_dir() or not shutil.which("playwright-mcp"):
+        return
+    await _stop_mcp(name)
+    cmd = [
+        "playwright-mcp",
+        "--cdp-endpoint", f"http://127.0.0.1:{cfg['cdp']}",
+        "--host", "0.0.0.0",
+        "--port", str(cfg["port"]),
+        "--allowed-hosts", "*",
+        "--allow-unrestricted-file-access",
+    ]
+    if cfg["blocked"]:
+        cmd.extend(["--blocked-origins", cfg["blocked"]])
+    log_path = Path(f"/data/run/mcp-{name}.log")
+    with open(log_path, "ab") as log_file:
+        subprocess.Popen(cmd, cwd="/data/run", stdout=log_file, stderr=subprocess.STDOUT, start_new_session=True)
+    await asyncio.sleep(0.4)
 EXTENSION = os.environ.get("EXTENSION_DIR", "/app/extension")
 BROWSER_MODE = os.environ.get("BROWSER_MODE", "xvfb")   # xvfb (visible through noVNC) | headless
 
@@ -44,6 +109,7 @@ class Browsers:
                 ignore_https_errors=bool(os.environ.get("BROWSER_IGNORE_HTTPS_ERRORS")), locale="pt-BR")
             await self._configure_extension(context)
             self.contexts[name] = context
+            await _restart_mcp(name)
             log.info("browser %s started (%s)", name, BROWSER_MODE)
             return context
 
@@ -66,6 +132,7 @@ class Browsers:
     async def close_browser(self, name: str) -> None:
         async with self.lock:
             context = self.contexts.pop(name, None)
+        await _stop_mcp(name)
         if context:
             await context.close()
             log.info("browser %s closed", name)

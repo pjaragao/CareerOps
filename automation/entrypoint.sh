@@ -37,8 +37,9 @@ cd /data/run
 # No --allowed-origins on the LinkedIn one: it applies to the whole browser and would cut the extension off from the backend,
 # and it is no security boundary anyway. What holds the agent to its target: the tool list, and run.py auditing every navigation.
 # The company-site one may refuse LinkedIn outright, on top of having no session there.
-playwright-mcp --cdp-endpoint http://127.0.0.1:9222 --host 0.0.0.0 --port 8931 --allowed-hosts '*' >/dev/null 2>&1 &
+playwright-mcp --cdp-endpoint http://127.0.0.1:9222 --host 0.0.0.0 --port 8931 --allowed-hosts '*' --allow-unrestricted-file-access >/dev/null 2>&1 &
 playwright-mcp --cdp-endpoint http://127.0.0.1:9223 --host 0.0.0.0 --port 8932 --allowed-hosts '*' \
+    --allow-unrestricted-file-access \
     --blocked-origins 'https://www.linkedin.com;https://linkedin.com' >/dev/null 2>&1 &
 
 cd /app

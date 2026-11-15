@@ -108,7 +108,17 @@ class Runner:
         if stop and action["lane"] != "ats":
             await self.report_stop(page, action, stop, "Página de verificação do LinkedIn")
             return
-        shot = await self.artifact(page, action["id"], "proof" if proof else "no-proof")
+        shot_page = page
+        if action["lane"] == "ats" and (not getattr(page, "url", "") or page.url == "about:blank"):
+            ctx = getattr(page, "context", None)
+            if ctx is not None:
+                target_url = evidence.get("url")
+                candidates = [
+                    p for p in reversed(list(getattr(ctx, "pages", ())))
+                    if not (hasattr(p, "is_closed") and p.is_closed()) and getattr(p, "url", "") and p.url != "about:blank"
+                ]
+                shot_page = next((p for p in candidates if target_url and p.url == target_url), candidates[0] if candidates else page)
+        shot = await self.artifact(shot_page, action["id"], "proof" if proof else "no-proof")
         await self.api.post(f"/automation/actions/{action['id']}/verify", {"proof": proof, "evidence": {**evidence, "screenshot": shot}})
 
     async def handle(self, action: dict) -> None:
@@ -132,6 +142,8 @@ class Runner:
             response = await self.open(page, action)
             stop = await self.stop_sign(page, response.status if response else None)
             if stop:
+                if action["lane"] == "ats" and stop in ("account_required", "email_verification"):
+                    self.kept[action["id"]] = page
                 await self.report_stop(page, action, stop)
                 return
             await self.keep_marker(page, action)
@@ -219,6 +231,8 @@ class Runner:
                 return
             stop = await self.stop_sign(page)
             if stop:
+                if action["lane"] == "ats" and stop in ("account_required", "email_verification"):
+                    self.kept[action["id"]] = page
                 await self.report_stop(page, action, stop)
                 return
             await clicks.serve(page, action, status, clicked)

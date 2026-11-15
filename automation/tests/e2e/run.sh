@@ -55,10 +55,10 @@ cp -r "$ROOT/config/." "$CONFIG/"
 import re, sys
 p = sys.argv[1]; t = open(p, encoding="utf-8").read()
 t = re.sub(r"window: \{start_hour: \d+, end_hour: \d+\}", "window: {start_hour: 0, end_hour: 24}", t)
-t = re.sub(r"(reply_scan_hours|inbox_scan_hours): \[[\d, ]*\]", r"\1: []", t)   # the scenarios start these themselves
-t = t.replace("write_gap_minutes: [5, 20]", "write_gap_minutes: [0, 0]")
-t = t.replace("search_hours: [9, 15]", "search_hours: []").replace("check_hours: [7, 19]", "check_hours: []").replace("feed_scan_hours: [10, 16]", "feed_scan_hours: []").replace("follow_scan_hours: [11]", "follow_scan_hours: []")
-t = t.replace("external_apply: false", "external_apply: true")
+t = re.sub(r"((?:reply_scan|inbox_scan|search|check|feed_scan|follow_scan)_hours): \[[\d, ]*\]", r"\1: []", t)   # the scenarios start these themselves
+t = re.sub(r"write_gap_minutes:\s*\[[\d, ]*\]", "write_gap_minutes: [0, 0]", t)
+t = re.sub(r"cv_review:\s*\S+", "cv_review: you", t)
+t = re.sub(r"external_apply:\s*\S+", "external_apply: true", t)
 open(p, "w", encoding="utf-8").write(t)
 EOF
 docker run -d --name "$FAKE" --network "$NET" --memory 128m -p 127.0.0.1:18443:8443 -v "$E2E:/e2e:ro" careerops-automation:e2e python /e2e/fake_linkedin.py 8443 >/dev/null
@@ -75,7 +75,7 @@ docker run -d --init --name "$WORKER" --network "$NET" --memory 2500m --shm-size
     -v $NAME-output:/app/output \
     -e CAREEROPS_API_BASE="http://$BACKEND:8000/api" -e CAREEROPS_WORKER_TOKEN=e2e-worker -e VNC_PASSWORD=e2e \
     -e BROWSER_IGNORE_HTTPS_ERRORS=1 -e BROWSER_MODE="${BROWSER_MODE:-xvfb}" \
-    -e "BROWSER_EXTRA_ARGS=--host-resolver-rules=MAP www.linkedin.com $FAKE:8443,MAP fake-ats.example $FAKE:8443|--ignore-certificate-errors" \
+    -e "BROWSER_EXTRA_ARGS=--host-resolver-rules=MAP www.linkedin.com $FAKE:8443,MAP fake-ats.example $FAKE:8443,MAP jobs.ashbyhq.com $FAKE:8443|--ignore-certificate-errors" \
     careerops-automation:e2e >/dev/null
 
 echo "== scenarios"

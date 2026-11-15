@@ -175,7 +175,7 @@ def test_fit_pages_cuts_until_two_pages():
 def test_too_long_after_the_rounds_the_reviewer_cuts_it_itself(db, add_job, reviewer, sql, monkeypatch):
     job = add_job(status="new")
     sql("UPDATE public.job_listings SET resume_markdown = %s, cover_letter = 'Carta' WHERE id = %s", (CV3, job["id"]))
-    monkeypatch.setattr(cr, "pdf_pages", lambda md, name="resume.pdf": 3 if md.count("\n- ") > 5 else 2)
+    monkeypatch.setattr(cr, "pdf_pages", lambda md, name="resume.pdf", pdf=None: 3 if md.count("\n- ") > 5 else 2)
     reviewer["readings"] = [LONG, LONG, LONG, CLEAN]
     verdict = asyncio.run(CvReviewService.run(job["id"], rounds=2))
     assert verdict["approved"] and verdict.get("trimmed")

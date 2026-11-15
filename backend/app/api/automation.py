@@ -552,7 +552,7 @@ async def claude_claim(req: ClaudeClaimIn):
 
 class ClaudeResultIn(BaseModel):
     run_id: int
-    status: Literal["done", "needs_user", "failed"]
+    status: Literal["done", "needs_user", "failed", "job_closed", "already_applied"]
     summary: str = Field("", max_length=3000)
     questions: list = []
     audit_flags: list = []
@@ -563,6 +563,49 @@ class ClaudeResultIn(BaseModel):
 @router.post("/actions/{action_id}/claude-result", dependencies=[Depends(require_worker)])
 async def claude_result(action_id: int, req: ClaudeResultIn):
     return _found(Auto.claude_result(action_id, req.run_id, req.status, req.summary, req.questions, req.audit_flags, req.cost_usd, req.transcript))
+
+
+class SiteAccountIn(BaseModel):
+    domain: str = Field(..., min_length=3, max_length=500)
+    email: Optional[str] = Field(None, max_length=255)
+    password: Optional[str] = Field(None, max_length=255)
+    status: Optional[str] = Field(None, max_length=40)
+    notes: Optional[str] = Field(None, max_length=1000)
+
+
+@router.post("/site-accounts", dependencies=[Depends(require_worker)])
+async def site_account(req: SiteAccountIn):
+    from app.services.ats_auth_service import AtsAuthService
+    if req.status or req.password or req.notes is not None:
+        return AtsAuthService.update_account(req.domain, req.status, req.password, req.email, req.notes)
+    return AtsAuthService.get_or_create_account(req.domain, req.email)
+
+
+class VerificationLookupIn(BaseModel):
+    query_hint: str = Field("", max_length=300)
+    since_seconds: int = Field(900, ge=60, le=86400)
+    wait_seconds: int = Field(0, ge=0, le=90)
+
+
+@router.post("/email/verification", dependencies=[Depends(require_worker)])
+async def email_verification(req: VerificationLookupIn):
+    import asyncio
+    from app.services.ats_auth_service import AtsAuthService
+    return await asyncio.to_thread(AtsAuthService.find_verification, req.query_hint, req.since_seconds, req.wait_seconds)
+
+
+class VerificationIngestIn(BaseModel):
+    message_id: str = Field(..., min_length=1, max_length=500)
+    sender: str = Field("", max_length=500)
+    subject: str = Field("", max_length=1000)
+    body: str = Field("", max_length=20000)
+
+
+@router.post("/email/verification/ingest", dependencies=[Depends(require_any)])
+async def email_verification_ingest(req: VerificationIngestIn):
+    from app.services.ats_auth_service import AtsAuthService
+    row = AtsAuthService.ingest_verification_email(req.message_id, req.sender, req.subject, req.body)
+    return {"ok": True, "code": row.get("code"), "links": row.get("links")}
 
 
 # ── Answers by email ─────────────────────────────────────────────────────

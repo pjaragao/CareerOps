@@ -78,12 +78,12 @@ def question_key(text: str) -> str:
 
 
 def ensure_schema() -> None:
-    """Applies migrations_v15.sql, migrations_v17.sql (replies and inbox) and migrations_v18.sql (higher search limits) (idempotent)."""
+    """Applies migrations_v15.sql through migrations_v19.sql (idempotent)."""
     folder = Path(__file__).resolve().parent.parent / "db" / "migrations"
     conn = get_db_connection()
     try:
         with conn.cursor() as cur:
-            for name in ("migrations_v15.sql", "migrations_v17.sql", "migrations_v18.sql"):
+            for name in ("migrations_v15.sql", "migrations_v17.sql", "migrations_v18.sql", "migrations_v19.sql"):
                 cur.execute((folder / name).read_text(encoding="utf-8"))
         conn.commit()
     finally:
@@ -443,9 +443,16 @@ class AutomationService:
 
     @staticmethod
     def known_answer(label: str, field_type: str) -> Optional[str]:
-        """The answer you already gave to this question in another form."""
+        """The answer you already gave to this question in another form (exact type first, then any compatible type)."""
+        key = question_key(label)
+        if not key:
+            return None
         row = _one("SELECT answer FROM public.automation_answers WHERE question_norm = %s AND field_type = %s",
-                   (question_key(label), field_type))
+                   (key, field_type))
+        if row:
+            return row["answer"]
+        row = _one("SELECT answer FROM public.automation_answers WHERE question_norm = %s ORDER BY updated_at DESC LIMIT 1",
+                   (key,))
         return row["answer"] if row else None
 
     @staticmethod
@@ -714,7 +721,8 @@ class AutomationService:
         if (action["result"] or {}).get("executed"):   # it may have gone out: nobody clicks again, you look
             return AutomationService._to_user(action_id, code, f"Pode já ter sido enviado, confira antes de repetir. {text}".strip(), questions)
         lanes = (config().get("claude") or {}).get("lanes") or []
-        if code in CLAUDE_CODES and action["claude_attempts"] < 1 and action["lane"] in lanes:
+        ats_auth_code = action["lane"] == "ats" and code in ("account_required", "email_verification")
+        if (code in CLAUDE_CODES or ats_auth_code) and action["claude_attempts"] < 1 and action["lane"] in lanes:
             return _one("""UPDATE public.automation_actions SET status = 'escalated', error_code = %s, error_text = %s, lease_owner = NULL, updated_at = NOW()
                             WHERE id = %s RETURNING *""", (code, text, action_id))
         return AutomationService._to_user(action_id, code, text, questions)
@@ -840,13 +848,21 @@ class AutomationService:
                             "saved_answers": [{"question": a["question"], "answer": a["answer"]} for a in AutomationService.answers_list()],
                             "resume_markdown": job.get("resume_markdown") or "",
                             "files": {"resume": f"{folder}/{_pdf_name(job, 'resume')}", "cover_letter": f"{folder}/{_pdf_name(job, 'cover')}"}})
+            if action.get("lane") == "ats":
+                try:
+                    from app.services.ats_auth_service import AtsAuthService
+                    email = ((dossier.get("facts") or {}).get("contact") or {}).get("email") or "pjaragaojr@gmail.com"
+                    dossier["site_account"] = AtsAuthService.get_or_create_account(action.get("target_url") or "", email=email)
+                except Exception as e:
+                    log.warning("site_account lookup failed: %s", e)
         return dossier
 
     @staticmethod
     def claude_result(action_id: int, run_id: int, status: str, summary: str = "", questions: Optional[list] = None,
                       audit_flags: Optional[list] = None, cost_usd: Optional[float] = None, transcript: Optional[dict] = None) -> Optional[dict]:
         _rows("UPDATE public.automation_runs SET finished_at = NOW(), ok = %s, cost_usd = %s, summary = %s WHERE id = %s",
-              (status == "done" and not audit_flags, cost_usd, Json({"summary": summary, "audit_flags": audit_flags or [], **(transcript or {})}), run_id))
+              (status in ("done", "job_closed", "already_applied") and not audit_flags, cost_usd,
+               Json({"summary": summary, "audit_flags": audit_flags or [], **(transcript or {})}), run_id))
         action = _one("SELECT * FROM public.automation_actions WHERE id = %s AND status = 'running_claude'", (action_id,))
         if not action:
             return None
@@ -859,6 +875,8 @@ class AutomationService:
             return _one("""UPDATE public.automation_actions SET status = 'unknown_outcome', scheduled_for = NULL, lease_owner = NULL,
                                   result = result || %s, updated_at = NOW() WHERE id = %s RETURNING *""",
                         (Json({"executed": True, "claude_summary": summary, "executed_at": now().isoformat()}), action_id))
+        if status in ("job_closed", "already_applied"):
+            return AutomationService.escalate(action_id, status, summary or status, [], "claude")
         return AutomationService._to_user(action_id, "claude_stopped", summary or "O Claude não conseguiu concluir", questions)
 
     @staticmethod

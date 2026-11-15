@@ -166,7 +166,7 @@ class AgyShimProvider(OpenAICompatibleProvider):
         return "gemini-flash-latest"
 
     # When the chosen model fails (quota used up, upstream error), the next one is tried
-    FALLBACKS = ("gemini-3.8-flash-high", "gemini-flash-latest")
+    FALLBACKS = ("gemini-4-hydrogen-low", "gemini-3.8-flash-high", "gemini-flash-latest")
 
     def generate_text(self, prompt: str, model: Optional[str] = None, temperature: float = 0.7) -> str:
         chain = [self._model(model)] + [m for m in self.FALLBACKS if m != self._model(model)]

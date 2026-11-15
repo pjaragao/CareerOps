@@ -9,6 +9,7 @@ import os
 import re
 import shutil
 import subprocess
+import argparse
 import sys
 import urllib.error
 import urllib.request
@@ -23,11 +24,31 @@ TIMEOUT_SECONDS = 480
 RUN_ROOT = Path("/tmp/careerops-run")
 MAX_BUDGET_USD = "1.00"
 
+import contextlib
+import time
+
+_RUNNER_DIR = str(Path(__file__).resolve().parent)
+if _RUNNER_DIR not in sys.path:
+    sys.path.insert(0, _RUNNER_DIR)
+
+import ats_helpers  # noqa: E402
+import hydrogen_agent  # noqa: E402
+
 TOOLS = ["browser_snapshot", "browser_navigate", "browser_click", "browser_type", "browser_select_option", "browser_file_upload",
          "browser_wait_for", "browser_take_screenshot", "browser_tabs", "browser_press_key", "browser_hover", "browser_find"]
 ALLOWED_TOOLS = [f"mcp__playwright__{t}" for t in TOOLS]
+ATS_EXTRA_TOOLS = ["mcp__careerops__check_email", "mcp__careerops__site_account"]
 # Claude Code's own plumbing, not actions: loading a tool's definition, and the final answer in the --json-schema format
 HARNESS_TOOLS = {"ToolSearch", "StructuredOutput"}
+
+ATS_RULES = """External ATS rules:
+- If the page is a job description/landing page, click Apply / Candidatar-se and follow into the ATS form or newly opened tab.
+- If the role is closed, expired, filled, or no longer accepting applications, return status "job_closed".
+- If the portal says you already applied, return status "already_applied".
+- If login or registration is required, call mcp__careerops__site_account(op="get_or_create", domain=<host>) first and use the candidate dossier email + returned password. If an existing account needs a password reset, trigger reset, call mcp__careerops__check_email(domain=<host>), and save the new password with op="update".
+- If email OTP, security code, or confirmation link is requested, call mcp__careerops__check_email(domain=<host>) to fetch it and enter the code or open the verification link.
+- NEVER solve, click through, or bypass any CAPTCHA, Cloudflare Turnstile, or anti-bot challenge; immediately return status "needs_user".
+- Do NOT navigate back to linkedin.com when handling an external ATS task."""
 # Also refused by name: whatever a settings file may have allowed. Each run also hides every other tool the browser server
 # offers (server_tools), so a tool added or renamed in a new version never reaches the model (2026-11-05: browser_run_code
 # became browser_run_code_unsafe and was offered, then refused only by the permission mode).
@@ -39,7 +60,7 @@ DENIED_TOOLS = ["Bash", "Read", "Write", "Edit", "NotebookEdit", "WebFetch", "We
 RESULT_SCHEMA = {
     "type": "object",
     "properties": {
-        "status": {"type": "string", "enum": ["done", "needs_user"]},
+        "status": {"type": "string", "enum": ["done", "needs_user", "job_closed", "already_applied"]},
         "summary": {"type": "string"},
         "questions": {"type": "array", "items": {"type": "object", "properties": {"label": {"type": "string"}, "type": {"type": "string"}, "options": {"type": "array", "items": {"type": "string"}}}, "required": ["label"]}},
     },
@@ -86,9 +107,13 @@ def load_env() -> dict:
     return env
 
 
-def api(env: dict, path: str, body: dict) -> dict:
-    req = urllib.request.Request(env["CAREEROPS_API_BASE"].rstrip("/") + path, data=json.dumps(body).encode("utf-8"), method="POST",
-                                 headers={"Content-Type": "application/json", "X-CareerOps-Token": env["CAREEROPS_WORKER_TOKEN"]})
+def api(env: dict, path: str, body=None, method: str = "") -> dict:
+    http_method = method or ("POST" if body is not None else "GET")
+    data = json.dumps(body).encode("utf-8") if body is not None else None
+    headers = {"X-CareerOps-Token": env["CAREEROPS_WORKER_TOKEN"]}
+    if data is not None:
+        headers["Content-Type"] = "application/json"
+    req = urllib.request.Request(env["CAREEROPS_API_BASE"].rstrip("/") + path, data=data, method=http_method, headers=headers)
     with urllib.request.urlopen(req, timeout=30) as res:
         return json.loads(res.read().decode("utf-8"))
 
@@ -115,10 +140,11 @@ def server_tools(port) -> list:
         return []
 
 
-def build_command(prompt: str, mcp_config: Path, offered: list = ()) -> list:
+def build_command(prompt: str, mcp_config: Path, offered: list = (), extra_tools: list = ()) -> list:
     hidden = DENIED_TOOLS + [f"mcp__playwright__{t}" for t in offered if t not in TOOLS and f"mcp__playwright__{t}" not in DENIED_TOOLS]
+    allowed = list(ALLOWED_TOOLS) + list(extra_tools or ())
     return [CLAUDE, "-p", prompt, "--model", "sonnet", "--effort", "low", "--permission-mode", "dontAsk",
-            "--strict-mcp-config", "--mcp-config", str(mcp_config), "--allowedTools", ",".join(ALLOWED_TOOLS),
+            "--strict-mcp-config", "--mcp-config", str(mcp_config), "--allowedTools", ",".join(allowed),
             "--disallowedTools", ",".join(hidden), "--output-format", "stream-json", "--verbose",
             "--json-schema", json.dumps(RESULT_SCHEMA), "--max-budget-usd", MAX_BUDGET_USD, "--no-session-persistence"]
 
@@ -144,11 +170,7 @@ def parse_stream(lines: list) -> dict:
 
 
 def allowed_hosts(action: dict) -> set:
-    host = urlparse(action.get("target_url") or "").hostname
-    hosts = {host} if host else set()
-    if action["lane"] != "ats":
-        hosts |= {"www.linkedin.com", "linkedin.com"}
-    return hosts
+    return ats_helpers.allowed_hosts_for_action(action)
 
 
 def _same_site(host: str, allowed: set) -> bool:
@@ -172,19 +194,25 @@ def audit(calls: list, action: dict) -> list:
     a call Claude Code refused did nothing and is only noted (refused_tools); one not known to be refused counts as done."""
     flags = []
     allowed = allowed_hosts(action)
+    allowed_names = set(ALLOWED_TOOLS) | (set(ATS_EXTRA_TOOLS) if action.get("lane") == "ats" else set())
     for call in calls:
         name = call.get("name") or ""
         if name in HARNESS_TOOLS or call.get("refused"):
             continue
-        if name not in ALLOWED_TOOLS:
+        if name not in allowed_names:
             flags.append(f"ferramenta não permitida: {name}")
             continue
         if name.endswith("browser_navigate"):
             url = (call["input"].get("url") or "")
             parsed = urlparse(url)
-            if parsed.scheme not in ("http", "https") or not _same_site(parsed.hostname or "", allowed):
+            host = parsed.hostname or ""
+            lane = action.get("lane", "")
+            host_ok = ats_helpers.is_host_allowed(host, lane, allowed) if lane == "ats" else _same_site(host, allowed)
+            if lane == "ats" and not host_ok and _same_site(host, allowed) and not any(host == b or host.endswith("." + b) for b in ats_helpers.BLOCKED_ON_ATS_SUFFIXES):
+                host_ok = True
+            if parsed.scheme not in ("http", "https") or not host_ok:
                 flags.append(f"navegou para fora do alvo: {url[:200]}")
-            elif action["lane"] != "ats" and LINKEDIN_OFF_TARGET.search(parsed.path) and not _is_target(parsed, action):
+            elif lane != "ats" and LINKEDIN_OFF_TARGET.search(parsed.path) and not _is_target(parsed, action):
                 flags.append(f"abriu outra área do LinkedIn: {url[:200]}")
         if name.endswith("browser_file_upload"):
             allowed_files = set(((action.get("dossier") or {}).get("files") or {}).values())
@@ -201,8 +229,13 @@ def refused_tools(calls: list) -> list:
 def outcome(parsed: dict, returncode: int, action: dict) -> dict:
     """The result to report. A run that did not end cleanly is never "done"."""
     final = parsed["final"] or {}
+    pw_tools = [c.get("name") for c in parsed["calls"] if str(c.get("name") or "").startswith("mcp__playwright__")][:300]
+    helper_tools = [c.get("name") for c in parsed["calls"] if not str(c.get("name") or "").startswith("mcp__playwright__") and c.get("name") not in HARNESS_TOOLS][:100]
+    transcript = {"tools": pw_tools, "refused": refused_tools(parsed["calls"])}
+    if helper_tools:
+        transcript["helper_tools"] = helper_tools
     result = {"status": "needs_user", "summary": "", "questions": [], "audit_flags": audit(parsed["calls"], action),
-              "cost_usd": final.get("total_cost_usd"), "transcript": {"tools": [c.get("name") for c in parsed["calls"]][:300], "refused": refused_tools(parsed["calls"])}}
+              "cost_usd": final.get("total_cost_usd"), "transcript": transcript}
     if returncode != 0 or final.get("is_error") or not final:
         result["status"] = "failed"
         result["summary"] = f"A execução do Claude terminou com erro: {str(final.get('result') or returncode)[:500]}"
@@ -213,7 +246,7 @@ def outcome(parsed: dict, returncode: int, action: dict) -> dict:
             answer = json.loads(final.get("result") or "")
         except (ValueError, TypeError):
             answer = {}
-    if answer.get("status") in ("done", "needs_user"):
+    if answer.get("status") in ("done", "needs_user", "job_closed", "already_applied"):
         result.update({"status": answer["status"], "summary": str(answer.get("summary") or "")[:2500], "questions": answer.get("questions") or []})
     else:
         result["summary"] = "O Claude não devolveu um resultado reconhecível"
@@ -223,45 +256,139 @@ def outcome(parsed: dict, returncode: int, action: dict) -> dict:
     return result
 
 
-def run_once(env: dict) -> int:
-    claimed = api(env, "/automation/escalated/claim", {"runner": os.uname().nodename})
-    action = claimed.get("action")
-    if not action:
-        print(f"nothing to do ({claimed.get('reason')})")
-        return 0
+def _run_action(action: dict, env: dict) -> tuple:
     dossier = action["dossier"]
     prompt = PROMPT.format(task=TASKS.get(action["kind"], action["kind"]), why=dossier.get("why_stuck") or "não informado",
                            dossier=json.dumps(dossier, ensure_ascii=False, indent=1, default=str))
+    if action.get("lane") == "ats":
+        prompt += "\n\n" + ATS_RULES
     port = env.get("CAREEROPS_MCP_PORT_ATS", 8932) if action["lane"] == "ats" else env.get("CAREEROPS_MCP_PORT_LINKEDIN", 8931)
+    mcp_url = f"http://127.0.0.1:{port}/mcp"
+    if not ats_helpers.probe_mcp_http(mcp_url, timeout=8):
+        time.sleep(2)
+        ats_helpers.probe_mcp_http(mcp_url, timeout=8)
+
+    provider = (env.get("CAREEROPS_RUNNER_PROVIDER") or "auto").lower()
+    if provider == "hydrogen":
+        try:
+            res, tr = hydrogen_agent.run_hydrogen_agent(action, prompt, mcp_url, TOOLS, env)
+            return {**res, "audit_flags": [], "cost_usd": None, "transcript": tr}, len(tr.get("tools") or [])
+        except Exception as exc:
+            return {
+                "status": "failed",
+                "summary": f"Hydrogen execution error: {exc}"[:2500],
+                "questions": [],
+                "audit_flags": [],
+                "cost_usd": None,
+                "transcript": {"error": str(exc)[:500]},
+            }, 0
+
     # An empty folder: no CLAUDE.md, no project settings, nothing to read
     folder = RUN_ROOT / str(action["id"])
     shutil.rmtree(folder, ignore_errors=True)
     folder.mkdir(parents=True, mode=0o700)
+    is_ats = action.get("lane") == "ats"
+    extra = ATS_EXTRA_TOOLS if is_ats else ()
+    ctx = ats_helpers.CareerOpsMcpServer(env) if is_ats else contextlib.nullcontext()
     try:
-        mcp_config = folder / "mcp.json"
-        mcp_config.write_text(json.dumps({"mcpServers": {"playwright": {"type": "http", "url": f"http://127.0.0.1:{port}/mcp"}}}), encoding="utf-8")
-        clean_env = {k: v for k, v in env.items() if not k.startswith("CAREEROPS_")}
-        try:
-            done = subprocess.run(build_command(prompt, mcp_config, server_tools(port)), cwd=folder, env=clean_env, capture_output=True, text=True, timeout=TIMEOUT_SECONDS)
-            parsed, code = parse_stream(done.stdout.splitlines()), done.returncode
-        except subprocess.TimeoutExpired as e:
-            out = e.stdout.decode("utf-8", "replace") if isinstance(e.stdout, bytes) else (e.stdout or "")
-            parsed, code = parse_stream(out.splitlines()), 124
+        with ctx as cop_mcp:
+            servers = {"playwright": {"type": "http", "url": mcp_url}}
+            if cop_mcp is not None:
+                servers["careerops"] = {"type": "http", "url": cop_mcp.url}
+            mcp_config = folder / "mcp.json"
+            mcp_config.write_text(json.dumps({"mcpServers": servers}), encoding="utf-8")
+            clean_env = {k: v for k, v in env.items() if not k.startswith("CAREEROPS_")}
+            try:
+                done = subprocess.run(build_command(prompt, mcp_config, server_tools(port), extra_tools=extra),
+                                      cwd=folder, env=clean_env, capture_output=True, text=True, timeout=TIMEOUT_SECONDS)
+                parsed, code = parse_stream(done.stdout.splitlines()), done.returncode
+            except subprocess.TimeoutExpired as e:
+                out = e.stdout.decode("utf-8", "replace") if isinstance(e.stdout, bytes) else (e.stdout or "")
+                parsed, code = parse_stream(out.splitlines()), 124
+            except FileNotFoundError:
+                parsed, code = {"calls": [], "final": None}, 127
     finally:
         shutil.rmtree(folder, ignore_errors=True)
+
     result = outcome(parsed, code, action)
+    tool_count = len(parsed["calls"])
+    runtime_cfg = ats_helpers.load_runtime_env(env)
+    can_hydrogen = (
+        not result["audit_flags"]
+        and env.get("CAREEROPS_HYDROGEN_FALLBACK", "1") != "0"
+        and bool(runtime_cfg.get("AGY_SHIM_TOKEN") or env.get("CAREEROPS_HYDROGEN_TOKEN"))
+    )
+    if can_hydrogen and (result["status"] == "failed" or result["summary"].startswith("O Claude não devolveu")):
+        try:
+            h_res, h_tr = hydrogen_agent.run_hydrogen_agent(action, prompt, mcp_url, TOOLS, env)
+            result = {**h_res, "audit_flags": [], "cost_usd": result.get("cost_usd"), "transcript": h_tr}
+            tool_count += len(h_tr.get("tools") or [])
+        except Exception as exc:
+            result["summary"] = (result["summary"] + f"\nHydrogen fallback failed: {exc}")[:2500]
+    return result, tool_count
+
+
+def _wait_for_worker_verify(env: dict, action_id: int, timeout: int = 35) -> None:
+    """Wait until the worker completes post-submit verification before advancing to the next batch item."""
+    import time
+    deadline = time.monotonic() + timeout
+    for _ in range(max(1, (timeout + 1) // 2)):
+        try:
+            info = api(env, f"/automation/actions/{action_id}/run")
+            if info.get("status") != "unknown_outcome":
+                return
+        except Exception:
+            pass
+        if time.monotonic() >= deadline:
+            break
+        time.sleep(2)
+
+
+def _claim_and_run(env: dict, wait_verify: bool = False):
+    claimed = api(env, "/automation/escalated/claim", {"runner": os.uname().nodename})
+    action = claimed.get("action")
+    if not action:
+        print(f"nothing to do ({claimed.get('reason')})")
+        return None
+    try:
+        result, tool_count = _run_action(action, env)
+    except Exception as exc:
+        result, tool_count = {
+            "status": "failed",
+            "summary": f"Runner execution error: {exc}"[:2500],
+            "questions": [],
+            "audit_flags": [],
+            "cost_usd": None,
+            "transcript": {"error": str(exc)[:500]},
+        }, 0
     api(env, f"/automation/actions/{action['id']}/claude-result", {"run_id": action["run_id"], **result})
-    print(f"action {action['id']}: {result['status']} ({len(parsed['calls'])} tool calls, flags: {len(result['audit_flags'])})")
+    print(f"action {action['id']}: {result['status']} ({tool_count} tool calls, flags: {len(result['audit_flags'])})")
+    if wait_verify and result.get("status") == "done":
+        _wait_for_worker_verify(env, action["id"])
     return 0
 
 
-def main() -> int:
-    env = load_env()
+def run_once(env: dict) -> int:
+    _claim_and_run(env)
+    return 0
+
+
+def main(argv=None) -> int:
+    parser = argparse.ArgumentParser(description="CareerOps escalated automation runner")
+    parser.add_argument("--batch", type=int, default=1, help="Max escalated actions to process per invocation")
+    parser.add_argument("--provider", choices=("auto", "claude", "hydrogen"), default=None)
+    args, _ = parser.parse_known_args(argv)
+    env = ats_helpers.load_runtime_env(load_env())
+    if args.provider:
+        env["CAREEROPS_RUNNER_PROVIDER"] = args.provider
     if not env.get("CAREEROPS_API_BASE") or not env.get("CAREEROPS_WORKER_TOKEN"):
         print(f"CAREEROPS_API_BASE / CAREEROPS_WORKER_TOKEN missing ({ENV_FILE})", file=sys.stderr)
         return 2
     try:
-        return run_once(env)
+        for _ in range(max(1, args.batch)):
+            if _claim_and_run(env, wait_verify=True) is None:
+                break
+        return 0
     except urllib.error.URLError as e:
         print(f"backend unreachable: {e}", file=sys.stderr)
         return 1
