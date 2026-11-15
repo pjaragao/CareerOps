@@ -34,7 +34,7 @@ STRIP_SUBDOMAINS = ("www.", "jobs.", "careers.", "apply.", "app.", "applicants."
 OTP_CONTEXT_RE = re.compile(
     r"(?:security\s+code|verification\s+code|verify\s+your\s+email|one[- ]time\s+(?:code|passcode|pin)|"
     r"c[oó]digo\s+(?:de\s+)?(?:seguran[cç]a|verifica[cç][aã]o|acesso|confirma[cç][aã]o)|passcode|\botp\b|pin\b)"
-    r"[^\w\n]{0,40}[:\-]?\s*\n*\s*([A-Za-z0-9]{4,10})\b",
+    r"(?:[^\w\n]{0,40}|[^:\n]{0,80}[:\-])\s*\n*\s*([A-Za-z0-9]{4,10})\b",
     re.I,
 )
 OTP_FALLBACK_DIGIT_RE = re.compile(r"(?:^|\s)(\d{6,8})(?:\s|$|<|\.)")

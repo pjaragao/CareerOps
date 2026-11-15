@@ -13,7 +13,7 @@ import ats_helpers
 
 
 VALID_STATUSES = {"done", "needs_user", "job_closed", "already_applied"}
-MAX_STEPS = 40
+MAX_STEPS = 65
 DEFAULT_AGY_URL = "http://172.26.0.1:8787/v1"
 DEFAULT_MODELS = ("gemini-4-hydrogen-low", "gemini-4-hydrogen-medium", "gemini-3.8-flash-high", "gemini-flash-latest")
 
@@ -114,12 +114,66 @@ def _to_openai_tool(name: str, description: str, schema: Dict[str, Any]) -> Dict
     }
 
 
+def _summarize_tool_round(call: Dict[str, Any]) -> str:
+    fn = call.get("function") or {}
+    name = str(fn.get("name") or "")
+    raw_args = fn.get("arguments")
+    hint = ""
+    try:
+        args = raw_args if isinstance(raw_args, dict) else json.loads(raw_args or "{}")
+        if isinstance(args, dict):
+            parts = []
+            for key in ("op", "domain", "url", "element", "target", "action", "text", "paths"):
+                val = args.get(key)
+                if val not in (None, "", []):
+                    sval = str(val)
+                    if key == "text" and len(sval) > 30:
+                        sval = sval[:27] + "..."
+                    parts.append(f"{key}={sval[:60]}")
+            hint = ", ".join(parts[:3])
+    except (ValueError, TypeError):
+        hint = str(raw_args or "")[:60]
+    return f"- {name}({hint})"
+
+
 def _trim_messages(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Keeps system/user messages and only the latest 2 bulky tool outputs in full."""
-    tool_indices = [i for i, m in enumerate(messages) if m.get("role") == "tool"]
+    """Keeps system/dossier messages, inserts a checkpoint past 10 tool rounds, and keeps latest 2 snapshots in full."""
+    if len(messages) <= 2:
+        return list(messages)
+
+    head = list(messages[:2])
+    conv = list(messages[2:])
+    tc_indices = [
+        i for i, m in enumerate(conv)
+        if m.get("role") == "assistant" and m.get("tool_calls")
+    ]
+
+    checkpoint_msgs: List[Dict[str, Any]] = []
+    if len(tc_indices) > 10:
+        split_idx = tc_indices[-8]
+        summary_lines: List[str] = []
+        for m in conv[:split_idx]:
+            if m.get("role") == "assistant" and m.get("tool_calls"):
+                for call in m["tool_calls"]:
+                    summary_lines.append(_summarize_tool_round(call))
+        summary_text = "\n".join(summary_lines[-24:])[:1800]
+        if summary_text:
+            checkpoint_msgs.append({
+                "role": "user",
+                "content": (
+                    "Progress checkpoint — earlier steps already executed on this page:\n"
+                    f"{summary_text}\n"
+                    "Continue from the latest browser state below and finish submitting the application."
+                ),
+            })
+        kept = conv[split_idx:]
+    else:
+        kept = conv
+
+    tool_indices = [i for i, m in enumerate(kept) if m.get("role") == "tool"]
     keep_full = set(tool_indices[-2:])
-    trimmed: List[Dict[str, Any]] = []
-    for i, m in enumerate(messages):
+    trimmed: List[Dict[str, Any]] = head + checkpoint_msgs
+    for i, m in enumerate(kept):
         if m.get("role") != "tool" or i in keep_full:
             content = str(m.get("content") or "")
             if m.get("role") == "tool" and len(content) > 16000:
@@ -152,6 +206,53 @@ def _extract_final_json(text: str) -> Optional[Dict[str, Any]]:
     if isinstance(parsed, dict) and parsed.get("status") in VALID_STATUSES:
         return parsed
     return None
+
+
+def _extract_inline_tool_call(text: str) -> Optional[Dict[str, Any]]:
+    """Recovers a leaked `TOOL_CALL {...}` line when trailing text prevents agy_shim from parsing it."""
+    if not text:
+        return None
+    m = re.search(r"TOOL_CALL\s*(\{)", text)
+    if not m:
+        return None
+    try:
+        obj, _ = json.JSONDecoder().raw_decode(text[m.start(1):])
+    except ValueError:
+        return None
+    if isinstance(obj, dict) and isinstance(obj.get("name"), str) and obj["name"].strip():
+        args = obj.get("arguments")
+        return {
+            "name": obj["name"].strip(),
+            "arguments": args if isinstance(args, dict) else {},
+        }
+    return None
+
+
+def _ensure_target_tab(
+    mcp: McpHttpClient,
+    offered_names: set,
+    action: Dict[str, Any],
+    lane: str,
+    seeded_hosts: set,
+) -> None:
+    """Navigates to action['target_url'] if the active browser tab belongs to another job/site."""
+    if "browser_tabs" not in offered_names or "browser_navigate" not in offered_names:
+        return
+    target_url = str(action.get("target_url") or "").strip()
+    parsed = urllib.parse.urlparse(target_url)
+    target_host = (parsed.hostname or "").lower().rstrip(".")
+    if not target_url or not target_host or not ats_helpers.is_host_allowed(target_host, lane, seeded_hosts):
+        return
+    tabs_out, _ = mcp.call_tool("browser_tabs", {"action": "list"})
+    active_lines = [ln for ln in (tabs_out or "").splitlines() if "(current)" in ln.lower() or "(active)" in ln.lower()]
+    haystack = ("\n".join(active_lines) if active_lines else (tabs_out or "")).lower()
+    path_segs = [s for s in parsed.path.split("/") if s]
+    first_seg = path_segs[0].lower() if path_segs else ""
+    first_seg_unq = urllib.parse.unquote(first_seg).lower()
+    host_ok = target_host in haystack
+    path_ok = (not first_seg) or (first_seg in haystack) or (first_seg_unq in haystack)
+    if not (host_ok and path_ok):
+        mcp.call_tool("browser_navigate", {"url": target_url})
 
 
 def _chat_completion(base_url: str, token: str, model: str, messages: List[Dict[str, Any]], tools: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -229,6 +330,8 @@ def run_hydrogen_agent(
 
     with McpHttpClient(mcp_url) as mcp:
         offered = mcp.list_tools()
+        offered_names = {t.get("name") for t in offered}
+        _ensure_target_tab(mcp, offered_names, action, lane, seeded_hosts)
         openai_tools = [
             _to_openai_tool(t["name"], t.get("description", ""), t.get("inputSchema") or {})
             for t in offered
@@ -290,15 +393,35 @@ def run_hydrogen_agent(
                 last_text = content
 
             if not calls:
-                final_answer = _extract_final_json(content)
-                if final_answer or step >= MAX_STEPS - 2:
-                    break
-                messages.append({"role": "assistant", "content": content})
-                messages.append({
-                    "role": "user",
-                    "content": 'Return strictly valid JSON: {"status": "done"|"needs_user"|"job_closed"|"already_applied", "summary": "...", "questions": []}',
-                })
-                continue
+                inline = _extract_inline_tool_call(content)
+                if inline:
+                    calls = [{
+                        "id": f"inline-{step}",
+                        "type": "function",
+                        "function": {
+                            "name": inline["name"],
+                            "arguments": json.dumps(inline["arguments"], ensure_ascii=False),
+                        },
+                    }]
+                else:
+                    final_answer = _extract_final_json(content)
+                    if final_answer or step >= MAX_STEPS - 2:
+                        break
+                    messages.append({"role": "assistant", "content": content})
+                    if content.strip().startswith("⚠️") or "TOOL_CALL" in content:
+                        messages.append({
+                            "role": "user",
+                            "content": (
+                                "Use ONLY the listed tool names (one TOOL_CALL JSON line with no trailing text), "
+                                'or if finished/blocked return strictly valid JSON: {"status": "done"|"needs_user"|"job_closed"|"already_applied", "summary": "...", "questions": []}'
+                            ),
+                        })
+                    else:
+                        messages.append({
+                            "role": "user",
+                            "content": 'Return strictly valid JSON: {"status": "done"|"needs_user"|"job_closed"|"already_applied", "summary": "...", "questions": []}',
+                        })
+                    continue
 
             messages.append({"role": "assistant", "content": content or None, "tool_calls": calls})
             for call in calls:
@@ -357,6 +480,11 @@ def run_hydrogen_agent(
     if violations:
         return {"status": "failed", "summary": f"Hydrogen audit stopped the run: {violations[0]}", "questions": []}, transcript
     if not final_answer:
+        if last_text.strip().startswith("⚠️") or "TOOL_CALL" in last_text:
+            last_text = (
+                f"Reached step limit ({turns} turns, {len(tool_calls_log)} tool calls) "
+                "before final submission; form partially filled on page."
+            )
         return {"status": "needs_user", "summary": (last_text or "Hydrogen finished without a valid status payload.")[:2500], "questions": []}, transcript
     return {
         "status": final_answer["status"],

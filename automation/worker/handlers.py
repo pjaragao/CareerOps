@@ -217,6 +217,7 @@ class Runner:
             # the form stays open for the Claude routine; also when the routine was quicker than this loop and already sent it
             # (unknown_outcome): the page that proves it is this one, and the check that follows picks it up from self.kept
             if status in ("escalated", "running_claude", "unknown_outcome") and action["lane"] == "ats":
+                await self._remove_copilot_overlay(page)
                 self.kept[action_id] = page
                 return
             if status == "awaiting_confirm":
@@ -232,6 +233,7 @@ class Runner:
             stop = await self.stop_sign(page)
             if stop:
                 if action["lane"] == "ats" and stop in ("account_required", "email_verification"):
+                    await self._remove_copilot_overlay(page)
                     self.kept[action["id"]] = page
                 await self.report_stop(page, action, stop)
                 return
@@ -249,6 +251,7 @@ class Runner:
                 return
             if action["lane"] == "ats" and now - form_since > EXTERNAL_FORM_TIMEOUT:
                 await self.report_stop(page, action, "external_form_unfinished", "O preenchimento não terminou a tempo")
+                await self._remove_copilot_overlay(page)
                 self.kept[action_id] = page
                 return
             if now - started > DEADLINES.get(action["kind"], 300):
@@ -263,6 +266,14 @@ class Runner:
             await asyncio.sleep(1)
             if await clicks.serve(page, action, "verifying", clicked):
                 end = time.monotonic() + VERIFY_SETTLE_SECONDS
+
+    async def _remove_copilot_overlay(self, page: Page) -> None:
+        """Removes the copilot overlay from all frames before handing the tab to Playwright MCP."""
+        for frame in page.frames:
+            try:
+                await frame.evaluate("document.getElementById('careerops-apply-copilot')?.remove()")
+            except Exception:
+                pass
 
     async def release_kept(self) -> None:
         """Forms the Claude routine already handled, or that left the queue."""

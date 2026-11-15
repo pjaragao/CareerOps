@@ -395,3 +395,126 @@ def test_claim_and_run_handles_exception_and_waits_for_verify(monkeypatch):
     finally:
         srv.shutdown()
         srv.server_close()
+
+
+def test_ats_sibling_subdomain_allowlist_and_cctld():
+    bain_action = {"lane": "ats", "target_url": "https://www.bain.com/careers/find-a-role/position/?jobid=102641", "dossier": {}}
+    bain_hosts = ats_helpers.allowed_hosts_for_action(bain_action)
+    assert ats_helpers.is_host_allowed("careers.bain.com", "ats", bain_hosts) is True
+    assert ats_helpers.is_host_allowed("evil.com", "ats", bain_hosts) is False
+    assert ats_helpers.is_host_allowed("www.linkedin.com", "ats", bain_hosts) is False
+
+    cap_action = {"lane": "ats", "target_url": "https://www.capgemini.com/jobs/123", "dossier": {"job": {"url": "https://www.linkedin.com/jobs/view/999"}}}
+    cap_hosts = ats_helpers.allowed_hosts_for_action(cap_action)
+    assert ats_helpers.is_host_allowed("careers.capgemini.com", "ats", cap_hosts) is True
+    assert "linkedin.com" not in cap_hosts
+
+    br_action = {"lane": "ats", "target_url": "https://vagas.acme.com.br/job/1", "dossier": {}}
+    br_hosts = ats_helpers.allowed_hosts_for_action(br_action)
+    assert ats_helpers.is_host_allowed("apply.acme.com.br", "ats", br_hosts) is True
+    assert ats_helpers.is_host_allowed("evil.com.br", "ats", br_hosts) is False
+
+
+def test_hydrogen_trim_messages_inserts_checkpoint_after_10_tool_rounds():
+    msgs = [
+        {"role": "system", "content": "System rules"},
+        {"role": "user", "content": "DOSSIER payload"},
+    ]
+    for i in range(22):
+        msgs.append({
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [{"id": f"tc-{i}", "type": "function", "function": {"name": "browser_click", "arguments": json.dumps({"element": f"btn-{i}"})}}],
+        })
+        msgs.append({"role": "tool", "tool_call_id": f"tc-{i}", "content": f"snap-{i} " + ("x" * 1000)})
+
+    trimmed = hydrogen_agent._trim_messages(msgs)
+    assert trimmed[0]["content"] == "System rules"
+    assert trimmed[1]["content"] == "DOSSIER payload"
+    last_user_idx = max(i for i, m in enumerate(trimmed) if m.get("role") == "user")
+    assert "Progress checkpoint" in trimmed[last_user_idx]["content"]
+    assert "btn-0" in trimmed[last_user_idx]["content"]
+    tc_after_user = sum(1 for m in trimmed[last_user_idx + 1:] if m.get("role") == "assistant" and m.get("tool_calls"))
+    assert tc_after_user <= 10
+    assert tc_after_user == 8
+    tool_outputs = [m["content"] for m in trimmed if m.get("role") == "tool"]
+    assert len([c for c in tool_outputs if "...[earlier snapshot compressed]..." in c]) == 6
+    assert "snap-21" in tool_outputs[-1]
+
+
+def test_hydrogen_extract_inline_tool_call():
+    leaked = 'TOOL_CALL {"name": "browser_click", "arguments": {"target": "f3e136", "element": "Country"}}Commonly used: Brazil.'
+    parsed = hydrogen_agent._extract_inline_tool_call(leaked)
+    assert parsed == {
+        "name": "browser_click",
+        "arguments": {"target": "f3e136", "element": "Country"},
+    }
+    assert hydrogen_agent._extract_inline_tool_call('{"status": "done"}') is None
+
+
+def test_hydrogen_ensure_target_tab_navigates_away_from_stale_tab():
+    calls = []
+
+    class StubMcp:
+        def __init__(self, current_url):
+            self.current_url = current_url
+
+        def call_tool(self, name, args):
+            calls.append((name, args))
+            if name == "browser_tabs":
+                return f"### Open tabs\n- 0: (current) [Old] ({self.current_url})", False
+            return "ok", False
+
+    flowgen_action = {
+        "lane": "ats",
+        "target_url": "https://jobs.ashbyhq.com/FlowGen%20Labs/abc/application",
+        "dossier": {},
+    }
+    hosts = ats_helpers.allowed_hosts_for_action(flowgen_action)
+
+    # Different Ashby customer path -> must navigate to target_url
+    calls.clear()
+    hydrogen_agent._ensure_target_tab(
+        StubMcp("https://jobs.ashbyhq.com/reflectionai/123/application"),
+        {"browser_tabs", "browser_navigate"},
+        flowgen_action,
+        "ats",
+        hosts,
+    )
+    assert calls == [
+        ("browser_tabs", {"action": "list"}),
+        ("browser_navigate", {"url": flowgen_action["target_url"]}),
+    ]
+
+    # Same Ashby customer path (decoded space or encoded) -> stay on tab
+    calls.clear()
+    hydrogen_agent._ensure_target_tab(
+        StubMcp("https://jobs.ashbyhq.com/FlowGen%20Labs/abc/application"),
+        {"browser_tabs", "browser_navigate"},
+        flowgen_action,
+        "ats",
+        hosts,
+    )
+    assert calls == [("browser_tabs", {"action": "list"})]
+
+
+def test_extract_verification_text_greenhouse_and_mixed_codes():
+    code, link = ats_helpers.extract_verification_text(
+        "Security code for your application to Bot Auto",
+        "Copy and paste this code into the security code field on your application: 17985286 After you enter the code, resubmit your application.",
+    )
+    assert code == "17985286"
+    assert link == ""
+
+    code_alpha, _ = ats_helpers.extract_verification_text(
+        "Security code for your application to ExampleCo",
+        "Copy and paste this code into the security code field on your application: aB3dE9fG",
+    )
+    assert code_alpha == "aB3dE9fG"
+
+    code_fallback, _ = ats_helpers.extract_verification_text(
+        "Verify your identity",
+        "Please verify your application using:\n\n47368198\n\nValid for 15 minutes.",
+    )
+    assert code_fallback == "47368198"
+

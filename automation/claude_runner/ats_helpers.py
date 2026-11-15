@@ -117,6 +117,11 @@ _URL_RE = re.compile(r"https?://[^\s<>\"')]+", re.I)
 
 OTP_PATTERNS = (
     re.compile(
+        r"(?:security\s+code|verification\s+code|confirmation\s+code|access\s+code|paste\s+this\s+code|c[oó]digo)"
+        r"[^:\n]{0,80}:\s*([A-Za-z0-9]{4,10})\b",
+        re.I,
+    ),
+    re.compile(
         r"(?:security\s+code|verification\s+code|confirmation\s+code|access\s+code|"
         r"one[- ]time\s+(?:code|passcode|password)|passcode|otp|c[oó]digo(?:\s+de\s+(?:verifica[çc][aã]o|acesso|seguran[çc]a))?)"
         r"[^a-z0-9]{0,24}([A-Z0-9]{4,10})\b",
@@ -125,6 +130,7 @@ OTP_PATTERNS = (
     re.compile(r"\b(\d{6,8})\b\s+(?:is your|é o seu)\s+(?:code|c[oó]digo)", re.I),
     re.compile(r"(?:enter|use|type|digite|informe)[^.\n]{0,40}\b([A-Z0-9]{6,8})\b", re.I),
 )
+_OTP_DIGIT_FALLBACK_RE = re.compile(r"(?:^|[\s:>])(\d{6,8})(?=[\s.<]|$)")
 LINK_KEYWORDS = (
     "verify", "confirm", "activate", "magic", "login", "sign-in", "signin",
     "reset", "password", "token=", "code=", "auth", "verify-email", "challenge",
@@ -169,14 +175,39 @@ def load_runtime_env(base_env: Optional[Dict[str, str]] = None) -> Dict[str, str
     return merged
 
 
+_SECOND_LEVEL_TLDS = {"com", "co", "org", "net", "edu", "gov", "ac", "ne", "or"}
+
+
+def _registrable_domain(host: str) -> str:
+    """Returns the registrable base domain (handling 2-label ccTLDs like .com.br / .co.uk)."""
+    clean = host.lower().strip(".")
+    parts = [p for p in clean.split(".") if p]
+    if len(parts) >= 3 and len(parts[-1]) == 2 and parts[-2] in _SECOND_LEVEL_TLDS:
+        return ".".join(parts[-3:])
+    if len(parts) >= 2:
+        return ".".join(parts[-2:])
+    return clean
+
+
 def allowed_hosts_for_action(action: Dict[str, Any]) -> set:
     """Computes initially seeded allowed hostnames for the run's action."""
     hosts = set()
+    lane = action.get("lane")
     for raw_url in (action.get("target_url"), ((action.get("dossier") or {}).get("job") or {}).get("url")):
         host = urllib.parse.urlparse(str(raw_url or "")).hostname
-        if host:
-            hosts.add(host.lower())
-    if action.get("lane") == "ats":
+        if not host:
+            continue
+        lower = host.lower().rstrip(".")
+        if lane == "ats":
+            if any(lower == b or lower.endswith("." + b) for b in BLOCKED_ON_ATS_SUFFIXES):
+                continue
+            hosts.add(lower)
+            reg = _registrable_domain(lower)
+            if reg:
+                hosts.add(reg)
+        else:
+            hosts.add(lower)
+    if lane == "ats":
         hosts |= set(KNOWN_ATS_EXACT_HOSTS)
     else:
         hosts |= {"www.linkedin.com", "linkedin.com"}
@@ -191,7 +222,7 @@ def is_host_allowed(hostname: Optional[str], lane: str, seeded_hosts: Iterable[s
     if lane == "ats":
         if any(host == b or host.endswith("." + b) for b in BLOCKED_ON_ATS_SUFFIXES):
             return False
-        if host in seeded_hosts:
+        if any(host == s or host.endswith("." + s) for s in seeded_hosts):
             return True
         return any(host == suf.lstrip(".") or host.endswith(suf) for suf in KNOWN_ATS_SUFFIXES)
     return host in seeded_hosts
@@ -213,13 +244,21 @@ def extract_verification_text(subject: str, body_text: str) -> Tuple[str, str]:
     """Deterministically extracts OTP code and verification/reset URL from email text."""
     combined = f"{subject}\n{body_text}"
     code = ""
-    for pat in OTP_PATTERNS:
+    for idx, pat in enumerate(OTP_PATTERNS):
         m = pat.search(combined)
         if m:
             candidate = m.group(1).strip()
-            if any(c.isdigit() for c in candidate) or (candidate.isupper() and len(candidate) >= 6):
+            has_digit = any(c.isdigit() for c in candidate)
+            is_code_alpha = len(candidate) >= 6 and (
+                candidate.isupper() or (idx == 0 and not candidate.istitle())
+            )
+            if has_digit or is_code_alpha:
                 code = candidate
                 break
+    if not code and any(kw in combined.lower() for kw in ("code", "código", "codigo", "verify", "verificação", "verificacao")):
+        m = _OTP_DIGIT_FALLBACK_RE.search(combined)
+        if m:
+            code = m.group(1).strip()
     link = ""
     for url in _URL_RE.findall(combined):
         cleaned = url.rstrip(".,;:)")
@@ -414,6 +453,9 @@ def check_email_verification(domain: str, query: str = "", since_minutes: int = 
         links = list(db_res.get("links") or [])
         return {**db_res, "link": links[0] if links else "", "links": links}
     gmail_hits = _search_gmail(domain, query, since_minutes, cfg)
+    if not gmail_hits and cfg.get("CAREEROPS_ENV_FILES") != "" and (env or {}).get("CAREEROPS_ENV_FILES") != "":
+        time.sleep(4)
+        gmail_hits = _search_gmail(domain, query, since_minutes, cfg)
     if gmail_hits:
         best = gmail_hits[0]
         return {

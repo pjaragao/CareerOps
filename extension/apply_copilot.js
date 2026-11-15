@@ -45,7 +45,8 @@
     function panel(job) {
         const host = document.createElement('div');
         host.id = 'careerops-apply-copilot';
-        host.style.cssText = 'position:fixed;right:16px;bottom:16px;z-index:2147483647';
+        host.style.cssText = 'position:fixed;right:16px;bottom:16px;z-index:2147483647'
+            + (managedAction ? ';pointer-events:none;opacity:0.2' : '');
         root = host.attachShadow({ mode: 'open' });
         root.innerHTML = `<style>
             .box{font:13px/1.45 system-ui,sans-serif;width:330px;background:#fff;color:#222;border:1px solid #6c5ce7;border-radius:12px;box-shadow:0 8px 28px rgba(0,0,0,.25);padding:12px}
@@ -502,14 +503,20 @@
         const text = ((document.body && document.body.innerText) || '').slice(0, 6000);
         return CLOSED_JOB_RE.test(text);
     }
+    function removePanel() {
+        const el = document.getElementById('careerops-apply-copilot');
+        if (el) el.remove();
+    }
     function managedEscalate(code, text) {
         if (!managedAction || managedReported || !jobId) return;
         managedReported = true;
+        removePanel();
         backend('POST', `/automation/actions/${managedAction}/escalate`, { code, text, source: 'extension' });
     }
     function managedFilled(filled, pending) {
         if (!managedAction || managedReported || !jobId) return;
         managedReported = true;
+        removePanel();
         backend('POST', `/automation/actions/${managedAction}/events`, { source: 'extension', event: 'external_form_filled', data: { filled, pending: pending.slice(0, 40) } })
             .then(() => backend('POST', `/automation/actions/${managedAction}/escalate`, { code: 'external_form_unfinished', text: `${filled} campo(s) preenchido(s). Falta conferir, avançar e enviar.` }));
     }
