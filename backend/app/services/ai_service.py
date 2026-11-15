@@ -202,7 +202,36 @@ class AgyShimProvider(OpenAICompatibleProvider):
                     pass
         return {"error": "AGY answer was not valid JSON", "raw_text": raw[:500]}
 
+class ClaudeShimProvider(AgyShimProvider):
+    """Documents (CV, cover letter, CV review) on Claude Sonnet 5.5 medium through the Claude CLI shim
+    (automation/claude_shim/claude_shim.py on the host). If the shim fails, the AGY chain answers instead."""
+    MODEL = "claude-sonnet-5-5-medium"
+
+    def __init__(self, token: str, base_url: str, agy_provider: "AgyShimProvider"):
+        super().__init__(token, base_url, self.MODEL)
+        self.agy = agy_provider
+
+    def _model(self, model: Optional[str]) -> str:
+        return self.MODEL
+
+    def generate_text(self, prompt: str, model: Optional[str] = None, temperature: float = 0.7) -> str:
+        text = OpenAICompatibleProvider.generate_text(self, prompt, model=self.MODEL, temperature=temperature)
+        if not text.startswith("Error:"):
+            return text
+        logging.getLogger("ai").warning("Claude shim failed, falling back to AGY: %s", text[:160])
+        return self.agy.generate_text(prompt, temperature=temperature)
+
+
 class AIService:
+    @staticmethod
+    def get_document_provider(model_key: Optional[str] = None) -> AIProvider:
+        """Provider for the skills that write documents: Claude CLI (Sonnet medium) unless CLAUDE_SHIM_URL=off."""
+        base = AIService.get_provider(model_key)
+        url = os.getenv("CLAUDE_SHIM_URL", "http://172.26.0.1:8788/v1")   # "off" turns it off
+        if not url or url.lower() == "off" or not isinstance(base, AgyShimProvider):
+            return base
+        return ClaudeShimProvider(os.getenv("CLAUDE_SHIM_TOKEN") or os.getenv("AGY_SHIM_TOKEN", ""), url, base)
+
     @staticmethod
     def get_provider(model_key: Optional[str] = None) -> AIProvider:
         from app.services.settings_service import SettingsService

@@ -1,0 +1,18 @@
+# systemd USER unit: Claude CLI shim for the CareerOps backend (CV / cover letter / CV review on Sonnet 5.5 medium).
+# Install: cp claude-shim.service ~/.config/systemd/user/ && systemctl --user daemon-reload && systemctl --user enable --now claude-shim
+[Unit]
+Description=Claude CLI OpenAI-compatible shim for CareerOps documents
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/paulojr/linkedin_resume/automation/claude_shim
+Environment=PATH=/home/paulojr/.local/bin:/usr/local/bin:/usr/bin:/bin
+EnvironmentFile=/home/paulojr/linkedin_resume/linkedin-jobs/.env
+ExecStart=/usr/bin/python3 /home/paulojr/linkedin_resume/automation/claude_shim/claude_shim.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

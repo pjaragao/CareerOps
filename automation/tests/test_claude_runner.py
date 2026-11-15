@@ -15,10 +15,15 @@ def call(tool, **kw):
     return {"name": f"mcp__playwright__{tool}", "input": kw}
 
 
+def test_models_chain_is_haiku_then_sonnet_low():
+    assert run._claude_models() == [("claude-haiku-5-5", ""), ("claude-sonnet-5-5", "low")]
+    assert "--effort" not in run.build_command("p", Path("/tmp/mcp.json"), model="claude-haiku-5-5", effort="")
+
+
 def test_command_has_the_model_and_no_way_out():
     cmd = run.build_command("p", Path("/tmp/mcp.json"))
     joined = " ".join(cmd)
-    assert cmd[cmd.index("--model") + 1] == "sonnet" and cmd[cmd.index("--effort") + 1] == "low"
+    assert cmd[cmd.index("--model") + 1] == "claude-sonnet-5-5" and cmd[cmd.index("--effort") + 1] == "low"
     assert "--strict-mcp-config" in cmd and "--no-session-persistence" in cmd and "--bare" not in cmd
     allowed = cmd[cmd.index("--allowedTools") + 1].split(",")
     assert all(t.startswith("mcp__playwright__") for t in allowed)

@@ -746,7 +746,7 @@ class LinkedInCopilotService:
         pay = facts.get("salary_expectation") or {}
         floors = {"USD": (pay.get("abroad_usd_monthly"), pay.get("abroad_usd_yearly")),
                   "EUR": (pay.get("abroad_eur_monthly"), pay.get("abroad_eur_yearly")),
-                  "BRL": (pay.get("brazil_brl_monthly"), None)}
+                  "BRL": (pay.get("brazil_brl_monthly"), pay.get("brazil_brl_yearly"))}
         currency = s._salary_currency(label, job)
         if field.get("type") != "number":
             currency = currency or "USD"   # the answer names its currency: foreign employers are the default

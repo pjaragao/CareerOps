@@ -13,7 +13,7 @@ work_authorization:
   citizenship: Brazilian (no other citizenship)
   authorized_to_work: [Brazil]
   needs_sponsorship_elsewhere: true          # US, EU, UK and any country other than Brazil
-  willing_to_relocate: [Europe, United States]
+  willing_to_relocate: [Brazil (any city, e.g. São Paulo), Europe, United States]   # needs time to move
   open_to_remote: true
   notice_period: "3 weeks"                   # transition window (~21 days / 3 weeks)
 
@@ -38,11 +38,36 @@ self_identification:                         # only what you chose to share; oth
   veteran: "No (not a protected veteran)"
 
 salary_expectation:                          # floors, gross. Answered as written (never by the AI); any other currency is asked once
-  brazil_brl_monthly: 30000                  # PJ
+  brazil_brl_monthly: 35000                  # PJ (updated 2026-11-15)
+  brazil_brl_yearly: 420000                  # monthly x 12
   abroad_usd_monthly: 7000
   abroad_usd_yearly: 84000
   abroad_eur_monthly: 6200
   abroad_eur_yearly: 74400
+
+# Permanent decisions of the candidate (2026-11-15). The agent uses them as written; a form that asks something here is NOT a
+# reason to stop. Free text where Yes/No is not offered must say the candidate needs to relocate / needs time to move.
+standing_answers:
+  over_18_minimum_working_age: "Yes"
+  criminal_conviction_or_pending_charges: "No"
+  currently_a_student: "No"
+  willing_to_relocate_any_city_or_country: "Yes, I need some time to organize the move"
+  hybrid_or_on_site_days_per_week_any_city: "Yes (3 or 4 days is fine); in a text field write that I need to relocate and need some time for the move"
+  address: {state: "SC (Santa Catarina)", neighborhood: "Centro", city: "Florianópolis"}
+  how_did_you_hear_about_us: "LinkedIn"
+  country_list_without_brazil: "choose Other / Outro; never pick a country the candidate does not live in"
+  available_start_date: "today + 14 days (dd/mm/yyyy computed from today's date)"
+  talent_pool_data_retention_consent: "Yes"
+  candidate_nda_and_eeo_attestation_signature: "Yes (sign with the full name)"
+  race_ethnicity: "Hispanic or Latino"
+  veteran_status: "No"
+  gender: "Male"
+  customer_account_with_the_hiring_company_or_its_brands: "No"
+  works_with_a_named_third_party_firm_or_person_of_the_company: "No"
+  used_the_company_product_in_the_last_6_months: "No"
+  optional_free_text_like_favorite_aspect: "leave blank"
+  institution_missing_from_the_list: "pick Other and type the full name (e.g. Universidade Federal de Santa Catarina)"
+  why_do_you_want_to_work_here_and_other_open_motivation_questions: "call mcp__careerops__write_answer (Claude Sonnet High) with the job context and paste the text as returned; no approval needed"
 
 # total_professional and engineering_sanitation_water_infrastructure are counted from this year (career start)
 career_start_year: 2008

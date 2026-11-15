@@ -19,10 +19,8 @@ DEFAULT_MODELS = (
     "gemini-4-hydrogen-low",
     "gemini-4-hydrogen-medium",
     "gemini-4-argon-low",
-    "claude-sonnet-5-5-low",
     "gemini-3.8-flash-high",
     "gemini-4-argon-medium",
-    "claude-sonnet-5-5-medium",
     "gemini-flash-latest",
 )
 

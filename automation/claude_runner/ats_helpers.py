@@ -8,6 +8,9 @@ import fcntl
 import json
 import os
 import re
+import shutil
+import subprocess
+import tempfile
 import threading
 import time
 import urllib.error
@@ -578,6 +581,42 @@ def probe_mcp_http(url: str, timeout: int = 8) -> bool:
         return False
 
 
+FORBIDDEN_TEXT_RE = re.compile(r"res[ií]duos?\s+s[oó]lidos?|solid\s+waste", re.I)   # NDA: never in any text
+
+
+def write_answer(question: str, context: Dict[str, Any], env: Dict[str, str]) -> Dict[str, Any]:
+    """An open motivation answer ("Why do you want to work at X?") written by Claude Sonnet 5.5 at HIGH effort through the Claude
+    CLI, from the job and the candidate's resume. Sent as returned, no approval (the candidate's decision of 2026-11-15)."""
+    job = (context or {}).get("job") or {}
+    resume = str((context or {}).get("resume_markdown") or "")[:9000]
+    facts = json.dumps((context or {}).get("facts") or {}, ensure_ascii=False, default=str)[:3000]
+    prompt = (
+        "Write the answer to ONE application-form question, in first person, as the candidate.\n"
+        "Tone: between informal and formal, warm, with real enthusiasm. Concrete (the company, the role, what the candidate would bring), "
+        "no clichés, no flattery, no bullet lists. 90-170 words unless the form limits the length (obey the limit).\n"
+        "Write in the language of the question. Use ONLY facts from the resume and facts below; never invent employers, numbers or "
+        "tools. Never mention solid waste / resíduos sólidos. Output only the answer text, nothing else.\n\n"
+        f"QUESTION: {question}\nJOB: {job.get('job_title') or ''} at {job.get('company') or ''} ({job.get('location') or ''})\n"
+        f"JOB URL: {job.get('url') or ''}\n\nCANDIDATE FACTS:\n{facts}\n\nRESUME:\n{resume}\n"
+    )
+    cmd = [os.environ.get("CLAUDE_BIN") or shutil.which("claude") or str(Path.home() / ".local" / "bin" / "claude"),
+           "-p", prompt, "--model", "claude-sonnet-5-5", "--effort", "high", "--tools", "", "--no-session-persistence",
+           "--output-format", "json"]
+    clean_env = {k: v for k, v in os.environ.items() if not k.startswith("CAREEROPS_")}
+    with tempfile.TemporaryDirectory(prefix="write-answer-") as cwd:
+        done = subprocess.run(cmd, cwd=cwd, env=clean_env, capture_output=True, text=True, timeout=300)
+    try:
+        data = json.loads(done.stdout)
+    except ValueError:
+        return {"error": f"claude exit {done.returncode}"}
+    text = str(data.get("result") or "").strip()
+    if data.get("is_error") or not text:
+        return {"error": "empty answer"}
+    if FORBIDDEN_TEXT_RE.search(text):
+        return {"error": "the draft mentioned a forbidden term; call again"}
+    return {"text": text}
+
+
 class CareerOpsMcpServer:
     """Ephemeral localhost Streamable HTTP MCP server exposing email & credential tools."""
 
@@ -593,6 +632,15 @@ class CareerOpsMcpServer:
                     "since_minutes": {"type": "integer", "description": "Look back window in minutes (default 20)"},
                 },
                 "required": ["domain"],
+            },
+        },
+        {
+            "name": "write_answer",
+            "description": "Write an open motivation answer (e.g. 'Why do you want to work at X?', 'Why are you interested in us?') for the form. Uses the job and the resume; returns {text} to paste as is, no approval needed.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {"question": {"type": "string", "description": "The exact question, with any length limit"}},
+                "required": ["question"],
             },
         },
         {
@@ -612,8 +660,10 @@ class CareerOpsMcpServer:
         },
     ]
 
-    def __init__(self, env: Dict[str, str], on_tool_call: Optional[Callable[[str, Dict[str, Any]], None]] = None):
+    def __init__(self, env: Dict[str, str], on_tool_call: Optional[Callable[[str, Dict[str, Any]], None]] = None,
+                 context: Optional[Dict[str, Any]] = None):
         self.env = env
+        self.context = context or {}
         self.on_tool_call = on_tool_call
         self._server: Optional[HTTPServer] = None
         self._thread: Optional[threading.Thread] = None
@@ -629,6 +679,8 @@ class CareerOpsMcpServer:
                 since_minutes=int(args.get("since_minutes") or 20),
                 env=self.env,
             )
+        if name == "write_answer":
+            return write_answer(str(args.get("question") or ""), self.context, self.env)
         if name == "site_account":
             return manage_site_account(
                 op=str(args.get("op") or "get"),

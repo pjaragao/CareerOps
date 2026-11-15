@@ -119,7 +119,7 @@ def _deterministic_answer(question: str) -> Optional[str]:
         if "eur" in text or "€" in text:
             return "74400"
         if "brl" in text or "r$" in text:
-            return "30000"
+            return "420000" if re.search(r"year|annual|anual|ano", text) else "35000"
         if "month" in text or "mensal" in text:
             return "7000"
         if "hour" in text or "hora" in text:

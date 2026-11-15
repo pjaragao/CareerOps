@@ -1,3 +1,4 @@
+import re
 import yaml
 import asyncio
 import os
@@ -65,7 +66,22 @@ class ProfileService:
     def get_resume_base(lang: str = "en") -> str:
         """Master CV: "en" = abroad (data, finance, modeling), "pt" = Brazil (engineering, sanitation, modeling)."""
         path = ProfileService._resume_file(lang)
-        return path.read_text(encoding="utf-8") if path.exists() else ""
+        text = path.read_text(encoding="utf-8") if path.exists() else ""
+        return ProfileService.with_real_phone(text)
+
+    PLACEHOLDER_PHONE_RE = re.compile(r"(?:\+\s*55\s*)?\(?\b00\)?\s*0{5}-?0{4}\b")
+
+    @staticmethod
+    def with_real_phone(text: str) -> str:
+        """The files in config/ are public placeholders (the repository is public): the real phone lives in the live
+        profile (database) and goes in here, so the writer and the reviewer never see the zeroed number."""
+        if not text or not ProfileService.PLACEHOLDER_PHONE_RE.search(text):
+            return text
+        from app.services.cv_format import _personal
+        phone = (_personal().get("phone") or "").strip()
+        if not phone or ProfileService.PLACEHOLDER_PHONE_RE.search(phone):
+            return text
+        return ProfileService.PLACEHOLDER_PHONE_RE.sub(lambda _m: phone, text)
 
     @staticmethod
     def save_resume_base(content: str, lang: str = "en"):
