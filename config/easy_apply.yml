@@ -67,6 +67,7 @@ standing_answers:
   used_the_company_product_in_the_last_6_months: "No"
   optional_free_text_like_favorite_aspect: "leave blank"
   institution_missing_from_the_list: "pick Other and type the full name (e.g. Universidade Federal de Santa Catarina)"
+  dealbreakers_culture_or_environment_that_would_make_you_leave: "A culture of blame or office politics where people protect themselves instead of solving the problem; slow, bureaucratic environments where decisions take weeks and little ships; low ownership, lots of meetings and little real work; teams that do not value quality or honest feedback. I do my best work in fast, curious, high-trust teams where people own outcomes, ship often and talk straight. (Paste in the language of the question.)"
   why_do_you_want_to_work_here_and_other_open_motivation_questions: "call mcp__careerops__write_answer (Claude Sonnet High) with the job context and paste the text as returned; no approval needed"
 
 # total_professional and engineering_sanitation_water_infrastructure are counted from this year (career start)

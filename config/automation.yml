@@ -51,7 +51,7 @@ jobs:
   resume_max_chars: 4800                     # the first version already fits two pages (the approved ones: 4,300–5,500)
 
 claude:
-  per_day: 300
+  per_day: 1000
   lanes: [linkedin_write, ats]               # remove linkedin_write for less risk: that fallback becomes "Precisa de você"
 
 # A test account only comments on / invites these (exact URLs); anything else stops before the final click
