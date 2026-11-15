@@ -152,3 +152,82 @@ def test_copilot_facts_overlays_profile_phone_and_address(db, sql, monkeypatch):
     assert facts["contact"]["last_name"] == "Roberto Test"
     assert facts["contact"]["street_address"] == "Rua Exemplo 100"
     assert facts["contact"]["zip_code"] == "88015-000"
+
+
+def test_quota_502_auto_retries_and_notifies_lolobot_once(db, sql):
+    db["jobs"]["external_apply"] = True
+    _seed_ats_action(sql, "https://jobs.ashbyhq.com/acme/q1")
+    _seed_ats_action(sql, "https://jobs.ashbyhq.com/acme/q2")
+
+    id1 = Auto.claim("ats", "w1")["action"]["id"]
+    Auto.escalate(id1, "external_form_unfinished", "0 fields")
+    c1 = Auto.claude_claim("r1")["action"]
+    assert c1 and c1["id"] == id1
+    Auto.claude_result(id1, c1["run_id"], "failed", "HTTP Error 502: Bad Gateway - agy: cota do modelo esgotada. Resets in 10m")
+
+    id2 = Auto.claim("ats", "w1")["action"]["id"]
+    Auto.escalate(id2, "external_form_unfinished", "0 fields")
+    c2 = Auto.claude_claim("r1")["action"]
+    assert c2 and c2["id"] == id2
+    Auto.claude_result(id2, c2["run_id"], "failed", "HTTP Error 502: Bad Gateway - quota reached. Resets in 10m")
+
+    r1 = _one("SELECT status, error_code, scheduled_for FROM public.automation_actions WHERE id = %s", (id1,))
+    r2 = _one("SELECT status, error_code, scheduled_for FROM public.automation_actions WHERE id = %s", (id2,))
+    assert r1["status"] == "escalated" and r1["error_code"] == "auto_retry"
+    assert r2["status"] == "escalated" and r2["error_code"] == "auto_retry"
+    assert Auto.claude_claim("r1")["action"] is None
+    notices = sql("SELECT * FROM public.bot_notifications WHERE dedupe_key LIKE %s", ("quota_retry:%",))
+    assert len(notices) == 1
+
+
+def test_resolve_before_user_handles_closed_external_answers_and_keeps_captcha(db, sql, add_job, monkeypatch):
+    from app.services.ai_service import AIService
+    db["jobs"]["external_apply"] = True
+
+    # 1. Closed job is discarded rather than sent to user
+    ats_closed = _seed_ats_action(sql, "https://jobs.ashbyhq.com/acme/closed2")
+    Auto.claim("ats", "w1")
+    Auto.escalate(ats_closed["id"], "unexpected_layout", "This job is no longer available")
+    assert _one("SELECT status, error_code FROM public.automation_actions WHERE id = %s", (ats_closed["id"],))["status"] == "discarded"
+
+    # 2. External manual redirect on linkedin_write moves to ats queued
+    li_ext = sql(
+        """INSERT INTO public.automation_actions (kind, lane, status, target_url, title, rank, payload, payload_hash, idempotency_key, approved_at)
+           VALUES ('apply', 'linkedin_write', 'queued', 'https://www.linkedin.com/jobs/view/999/', 'Ext', 10, '{}', %s, %s, NOW())
+           RETURNING *""",
+        (EMPTY_PAYLOAD_HASH, uuid.uuid4().hex),
+    )[0]
+    Auto.claim("linkedin_write", "w1")
+    Auto.escalate(li_ext["id"], "external_manual", "Candidatura no site da empresa: https://boards.greenhouse.io/acme/jobs/77")
+    li_row = _one("SELECT lane, status, target_url FROM public.automation_actions WHERE id = %s", (li_ext["id"],))
+    assert (li_row["lane"], li_row["status"]) == ("ats", "queued")
+    assert "boards.greenhouse.io" in li_row["target_url"]
+
+    # 3. Deterministic screening questions are saved and auto-requeued
+    job = add_job("301")
+    ap = Auto.propose_job(job)
+    sql("UPDATE public.automation_actions SET status = 'queued' WHERE id = %s", (ap["id"],))
+    Auto.claim("linkedin_write", "w1")
+    Auto.escalate(ap["id"], "unknown_required_question", "Perguntas obrigatórias", [{"label": "What is your notice period?"}, {"label": "Do you have a valid driver's license?"}])
+    ap_row = _one("SELECT status, error_code FROM public.automation_actions WHERE id = %s", (ap["id"],))
+    assert ap_row["status"] == "queued" and ap_row["error_code"] == "auto_answered"
+    assert Auto.known_answer("What is your notice period?", "text") == "3 weeks"
+    assert Auto.known_answer("Do you have a valid driver's license?", "text") == "Yes"
+
+    # 4. AI fallback answers custom derivable question and requeues; unanswerable stays needs_user
+    class StubProvider:
+        def generate_json(self, prompt, model=None, temperature=0.1):
+            return {"can_answer": True, "answers": [{"question": "How many years of Terraform?", "answer": "4"}]}
+
+    monkeypatch.setattr(AIService, "get_provider", staticmethod(lambda key=None: StubProvider()))
+    sql("UPDATE public.automation_actions SET scheduled_for = NOW() WHERE id = %s", (ap["id"],))
+    Auto.claim("linkedin_write", "w1")
+    Auto.escalate(ap["id"], "unknown_required_question", "Falta pergunta", [{"label": "How many years of Terraform?"}])
+    assert Auto.known_answer("How many years of Terraform?", "text") == "4"
+    assert _one("SELECT status FROM public.automation_actions WHERE id = %s", (ap["id"],))["status"] == "queued"
+
+    # 5. Real CAPTCHA strictly remains needs_user (never bypassed)
+    sql("UPDATE public.automation_actions SET scheduled_for = NOW() WHERE id = %s", (ap["id"],))
+    Auto.claim("linkedin_write", "w1")
+    Auto.escalate(ap["id"], "captcha", "Please complete Cloudflare Turnstile CAPTCHA")
+    assert _one("SELECT status, error_code FROM public.automation_actions WHERE id = %s", (ap["id"],))["status"] == "needs_user"

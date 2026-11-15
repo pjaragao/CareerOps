@@ -41,6 +41,98 @@ OPEN = ("proposed", "approved", "review_docs", "queued", "unknown_outcome", "esc
 CLAUDE_CODES = {"selector_not_found", "step_stuck", "unexpected_layout", "external_form_unfinished"}
 HALT_CODES = {"checkpoint", "restriction_notice", "session_expired", "rate_limited"}
 DISCARD_CODES = {"job_closed", "already_applied", "post_deleted", "already_following", "already_connected", "already_pending", "already_liked"}
+
+CAPTCHA_RE = re.compile(
+    r"captcha|recaptcha|hcaptcha|cloudflare|turnstile|anti[- ]?bot|n[aã]o sou um rob[oô]|"
+    r"no es un robot|human verification|verify you are human|puzzle|security check",
+    re.I,
+)
+CLOSED_JOB_RE = re.compile(
+    r"no longer available|n['’]?est plus disponible|has expired|not accepting applications|"
+    r"no apply or easy apply|no longer accepting applications|vaga.*encerrada|position.*closed|job.*closed",
+    re.I,
+)
+QUOTA_RE = re.compile(r"502:?\s*bad gateway|cota .* esgotada|quota reached|weekly limit|hydrogen upstream failed", re.I)
+TRANSIENT_RE = re.compile(
+    r"502:?\s*bad gateway|cota .* esgotada|quota reached|weekly limit|hydrogen upstream failed|"
+    r"timed out|timeouterror|timeout\s+\d+ms|127\.0\.0\.1:9222|connect_timeout|econnrefused|503 service unavailable|"
+    r"request not processed|connectionreseterror|without a valid status payload|"
+    r"tentei usar uma ferramenta|tool_call|careerops-apply-copilot|step limit|65 steps",
+    re.I,
+)
+RESET_IN_RE = re.compile(r"resets?\s+in\s+(?:(\d+)\s*h)?\s*(?:(\d+)\s*m)?", re.I)
+ATS_AUTH_RETRY_RE = re.compile(
+    r"sign in|log in|\blogin\b|create an account|criar conta|account required|"
+    r"email verification|verification code|c[oó]digo de verifica[cç][aã]o|verify.*email",
+    re.I,
+)
+URL_EXTRACT_RE = re.compile(r"https?://[^\s<>\"')\]}]+", re.I)
+
+
+def _deterministic_answer(question: str) -> Optional[str]:
+    """Fast deterministic fallback for recurring ATS/Easy Apply screening questions."""
+    raw = (question or "").strip()
+    if not raw:
+        return None
+    tail = raw.split(" › ")[-1].lower()
+    low = raw.lower()
+    text = f"{low}\n{tail}"
+    if re.search(r"notice\s*period|aviso\s*pr[eé]vio|per[ií]odo de aviso|incorporaci[oó]n|how\s+soon\s+can\s+you\s+start|earliest\s+start", text):
+        return "21" if re.search(r"\b(in\s+days|dias)\b", text) else "3 weeks"
+    if re.search(r"driver'?s?\s+licen[cs]e|driving\s+licen[cs]e|carnet\s+de\s+conducir|\bcnh\b", text):
+        return "Yes"
+    if re.search(r"provide.*references|professional\s+references|\b\d*\s*references\b", text):
+        return "Yes"
+    if re.search(
+        r"relatives?|family\s+member|conflict\s+of\s+interest|significant\s+interest|0\.1%|"
+        r"previously\s+employed|worked\s+for\s+|former\s+employee|government\s+official|"
+        r"bound\s+by\s+any\s+agreement|non[- ]?compete|restrictive\s+covenant",
+        text,
+    ):
+        return "No"
+    if re.search(
+        r"privacy|consent|certif(y|ied)|acknowledge|i\s+agree|accept.*terms|background\s+check|"
+        r"data\s+processing|retention|accurate\s+and\s+true|confirm\s+that|\blgpd\b|\bgdpr\b",
+        text,
+    ):
+        return "Yes"
+    if re.search(r"end\s+date\s+month|graduation\s+month|month.*graduat|m[eê]s.*conclus[aã]o", text):
+        return "December"
+    if re.search(r"highest\s+level\s+of\s+education|\bdegree\b|escolaridade|forma[cç][aã]o", text):
+        return "Bachelor's Degree"
+    if re.search(r"strictly\s+(looking\s+for\s+)?remote|only\s+remote", text):
+        return "No"
+    if re.search(r"willing\s+to\s+travel|comfortable\s+working\s+remotely|time\s*zone|overlap\s+with|remote\s+work|trabalho\s+remoto", text):
+        return "Yes"
+    if re.search(
+        r"(legally\s+)?authorized\s+to\s+work\s+in\s+(the\s+)?(united\s+states|\bus\b|\busa\b|"
+        r"united\s+kingdom|\buk\b|spain|european\s+union|\beu\b|canada)|\beu\s+citizen",
+        text,
+    ):
+        return "No"
+    if re.search(r"(legally\s+)?authorized\s+to\s+work\s+in\s+brazil|autorizado.*trabalhar.*brasil", text):
+        return "Yes"
+    if re.search(r"(require|need).*?(visa\s+)?sponsorship|visa\s+sponsorship|visto\s+de\s+trabalho", text):
+        return "Yes"
+    if re.search(r"salary\s+expectation|desired\s+(annual\s+)?(base\s+)?(salary|compensation|pay)|pretens[aã]o\s+salarial|hourly\s+rate|remunera[cç][aã]o", text):
+        if "eur" in text or "€" in text:
+            return "74400"
+        if "brl" in text or "r$" in text:
+            return "30000"
+        if "month" in text or "mensal" in text:
+            return "7000"
+        if "hour" in text or "hora" in text:
+            return "45"
+        return "84000"
+    if re.search(r"\b(gender|sex)\b|identidade\s+de\s+g[eê]nero", text):
+        return "Male"
+    if re.search(r"hispanic\s+or\s+latino|\b(ethnicity|race)\b|ra[cç]a|etnia", text):
+        return "Hispanic or Latino"
+    if re.search(r"\b(disability|disabled|veteran|pcd)\b", text):
+        return "No"
+    if re.search(r"how\s+did\s+you\s+hear|where\s+did\s+you\s+hear|referral\s+source|como\s+soube", text):
+        return "LinkedIn"
+    return None
 # Everything else (unknown question, captcha, login, an account to create…) is yours: Precisa de você
 
 LINKEDIN_LANES = ["linkedin_read", "linkedin_write"]
@@ -417,6 +509,28 @@ class AutomationService:
                          ORDER BY updated_at DESC LIMIT 200""")
 
     @staticmethod
+    def _upsert_answer(cur, question: str, answer: str, field_type: str = "text") -> None:
+        key = question_key(question)
+        val = str(answer or "").strip()
+        if not key or not val:
+            return
+        cur.execute("""
+            INSERT INTO public.automation_answers (question_norm, question, field_type, answer)
+            VALUES (%s, %s, %s, %s)
+            ON CONFLICT (question_norm, field_type) DO UPDATE SET answer = EXCLUDED.answer, updated_at = NOW()""",
+                    (key, question[:1000], field_type or "text", val[:2000]))
+
+    @staticmethod
+    def save_answer(question: str, answer: str, field_type: str = "text") -> None:
+        conn = get_db_connection()
+        try:
+            with get_db_cursor(conn) as cur:
+                AutomationService._upsert_answer(cur, question, answer, field_type)
+            conn.commit()
+        finally:
+            conn.close()
+
+    @staticmethod
     def answer(action_id: int, answers: List[dict]) -> Optional[dict]:
         """Your answers go to the answer bank and the action back to the queue."""
         conn = get_db_connection()
@@ -424,11 +538,7 @@ class AutomationService:
             with get_db_cursor(conn) as cur:
                 for a in answers:
                     if a.get("save", True) and str(a.get("answer") or "").strip():
-                        cur.execute("""
-                            INSERT INTO public.automation_answers (question_norm, question, field_type, answer)
-                            VALUES (%s, %s, %s, %s)
-                            ON CONFLICT (question_norm, field_type) DO UPDATE SET answer = EXCLUDED.answer, updated_at = NOW()""",
-                                    (question_key(a["question"]), a["question"], a.get("field_type") or "text", str(a["answer"]).strip()))
+                        AutomationService._upsert_answer(cur, a["question"], a["answer"], a.get("field_type") or "text")
                 cur.execute("""
                     UPDATE public.automation_actions
                        SET status = 'queued', error_code = NULL, error_text = NULL, questions = '[]', updated_at = NOW()
@@ -720,12 +830,158 @@ class AutomationService:
             return AutomationService._discard(action, code, text)
         if (action["result"] or {}).get("executed"):   # it may have gone out: nobody clicks again, you look
             return AutomationService._to_user(action_id, code, f"Pode já ter sido enviado, confira antes de repetir. {text}".strip(), questions)
+        if not CAPTCHA_RE.search(f"{code} {text}") and CLOSED_JOB_RE.search(text or ""):
+            return AutomationService._discard(action, "job_closed", text)
         lanes = (config().get("claude") or {}).get("lanes") or []
         ats_auth_code = action["lane"] == "ats" and code in ("account_required", "email_verification")
         if (code in CLAUDE_CODES or ats_auth_code) and action["claude_attempts"] < 1 and action["lane"] in lanes:
             return _one("""UPDATE public.automation_actions SET status = 'escalated', error_code = %s, error_text = %s, lease_owner = NULL, updated_at = NOW()
                             WHERE id = %s RETURNING *""", (code, text, action_id))
+        resolved = AutomationService._resolve_before_user(action, code, text, questions, source=source)
+        if resolved is not None:
+            return resolved
         return AutomationService._to_user(action_id, code, text, questions)
+
+    @staticmethod
+    def _extract_questions(questions: Optional[list], text: str) -> List[str]:
+        out: List[str] = []
+        for item in questions or []:
+            label = (item.get("label") or item.get("question") or "") if isinstance(item, dict) else str(item or "")
+            label = label.strip()
+            if label and label not in out:
+                out.append(label[:500])
+        if not out and text and len(text.strip()) >= 15:
+            low = text.lower()
+            if any(tok in low for tok in ("question", "pergunta", "required field", "campo obrigat", "missing field", "precisa preencher")):
+                out.append(text.strip()[:800])
+        return out
+
+    @staticmethod
+    def _ai_answer_questions(action: dict, questions: List[str], error_text: str) -> tuple[bool, Dict[str, str]]:
+        qs = AutomationService._extract_questions(questions, error_text)
+        if not qs:
+            return False, {}
+        resolved: Dict[str, str] = {}
+        pending: List[str] = []
+        for q in qs:
+            ans = _deterministic_answer(q) or AutomationService.known_answer(q, "text")
+            if ans:
+                resolved[q] = ans
+            else:
+                pending.append(q)
+        if pending:
+            try:
+                from app.services.ai_service import AIService
+                from app.services.linkedin_copilot_service import LinkedInCopilotService as Copilot
+                job = _one("SELECT job_title, company, location, resume_markdown FROM public.job_listings WHERE id = %s",
+                           (action.get("target_id"),)) or {}
+                facts = Copilot._facts()
+                saved = [{"question": a["question"], "answer": a["answer"]} for a in AutomationService.answers_list()[:40]]
+                prompt = (
+                    "You help submit a job application using ONLY real facts about the candidate.\n"
+                    f"Job: {job.get('job_title')} at {job.get('company')} ({job.get('location')})\n"
+                    f"Candidate Facts JSON: {json.dumps(facts, ensure_ascii=False, default=str)[:3000]}\n"
+                    f"Saved Answers JSON: {json.dumps(saved, ensure_ascii=False, default=str)[:2500]}\n"
+                    f"Resume Excerpt: {(job.get('resume_markdown') or '')[:3000]}\n"
+                    f"Questions to answer JSON: {json.dumps(pending, ensure_ascii=False)}\n"
+                    "Rules: Answer ONLY what can be truthfully derived from the facts, resume, or standard job-application conventions "
+                    "for this candidate (lives in Florianopolis, Brazil; graduated Bachelor in Mechanical Engineering at UFSC in 12/2011; "
+                    "not US/EU/UK citizen; requires visa sponsorship outside Brazil; fluent Portuguese & English; CNH / driver's license Yes; "
+                    "notice period 3 weeks / 21 days; open to hybrid & remote). NEVER invent skills, licenses, or years the candidate does not have. "
+                    "If ANY question requires personal judgment, asks for an NDA/non-compete agreement, or has an impossible country/residency requirement, "
+                    'set "can_answer": false.\n'
+                    'Return JSON: {"can_answer": true|false, "answers": [{"question": "...", "answer": "..."}]}'
+                )
+                ai_res = AIService.get_provider("default").generate_json(prompt, temperature=0.1)
+                if isinstance(ai_res, dict) and ai_res.get("can_answer"):
+                    for item in ai_res.get("answers") or []:
+                        if isinstance(item, dict) and str(item.get("question") or "").strip() and str(item.get("answer") or "").strip():
+                            resolved[str(item["question"]).strip()] = str(item["answer"]).strip()
+            except Exception as e:
+                log.warning("AI question triage failed for action #%s: %s", action.get("id"), e)
+        if any(q not in resolved for q in qs):
+            return False, resolved
+        for q, ans in resolved.items():
+            AutomationService.save_answer(q, ans, "text")
+        return True, resolved
+
+    @staticmethod
+    def _reschedule_retry(action_id: int, status: str, delay_secs: int, error_code: str, error_text: str) -> Optional[dict]:
+        return _one("""
+            UPDATE public.automation_actions
+               SET status = %s,
+                   scheduled_for = NOW() + make_interval(secs => %s),
+                   lease_owner = NULL,
+                   lease_until = NULL,
+                   error_code = %s,
+                   error_text = %s,
+                   updated_at = NOW()
+             WHERE id = %s RETURNING *""", (status, delay_secs, error_code, (error_text or "")[:500], action_id))
+
+    @staticmethod
+    def _resolve_before_user(action: dict, code: str, text: str, questions: Optional[list] = None,
+                             source: str = "worker") -> Optional[dict]:
+        """Deterministic + AI triage before escalating to needs_user."""
+        combined = f"{code or ''} {text or ''}"
+        if code == "captcha" or CAPTCHA_RE.search(combined) or re.search(r"\b2fa\b|\bsms\b.*code|phone verification", combined, re.I):
+            return None
+        if CLOSED_JOB_RE.search(text or ""):
+            return AutomationService._discard(action, "job_closed", text)
+        claude_lanes = set((config().get("claude") or {}).get("lanes") or [])
+        retry_status = "escalated" if action.get("lane") in claude_lanes else "queued"
+
+        if (
+            action.get("kind") == "apply"
+            and action.get("lane") == "linkedin_write"
+            and (config().get("jobs") or {}).get("external_apply")
+            and (code == "external_manual" or "candidatura no site" in (text or "").lower())
+        ):
+            urls = URL_EXTRACT_RE.findall(text or "")
+            ext_url = next((u for u in urls if "linkedin.com" not in u.lower()), "") or str(action.get("target_url") or "")
+            if ext_url:
+                AutomationService.add_event(action["id"], "triage", "auto_handoff", {"url": ext_url})
+                return _one("""UPDATE public.automation_actions
+                                  SET lane = 'ats', target_url = %s, status = 'queued', error_code = NULL, error_text = NULL,
+                                      scheduled_for = NOW(), lease_owner = NULL, lease_until = NULL, updated_at = NOW()
+                                WHERE id = %s RETURNING *""", (ext_url, action["id"]))
+
+        if QUOTA_RE.search(text or "") and action.get("claude_attempts", 0) < 5:
+            m = RESET_IN_RE.search(text or "")
+            delay_secs = max(120, (int(m.group(1) or 0) * 3600) + (int(m.group(2) or 0) * 60) + 60) if m and (m.group(1) or m.group(2)) else 1800
+            from app.services.bot_service import BotService
+            BotService.notify(
+                "summary",
+                "⏳ *CareerOps*: Cota temporária do modelo de IA atingida (502). O fallback multi-modelo foi acionado e "
+                "as vagas represadas foram reagendadas automaticamente para retomar quando a cota renovar.",
+                urgent=False,
+                key=f"quota_retry:{_local().strftime('%Y-%m-%d-%H')}",
+            )
+            AutomationService.add_event(action["id"], "triage", "auto_retry_quota", {"delay_secs": delay_secs})
+            return AutomationService._reschedule_retry(action["id"], retry_status, delay_secs, "auto_retry", text)
+
+        if TRANSIENT_RE.search(text or "") and action.get("claude_attempts", 0) < 4 and action.get("attempts", 0) < 6:
+            AutomationService.add_event(action["id"], "triage", "auto_retry_transient", {"source": source})
+            return AutomationService._reschedule_retry(action["id"], retry_status, 300, "auto_retry", text)
+
+        if action.get("lane") == "ats" and ATS_AUTH_RETRY_RE.search(text or "") and action.get("claude_attempts", 0) < 3:
+            AutomationService.add_event(action["id"], "triage", "ats_auth_retry", {})
+            return AutomationService._reschedule_retry(action["id"], "escalated", 60, "ats_auth_retry", text)
+
+        if (
+            action.get("kind") == "apply"
+            and (code in ("unknown_required_question", "step_stuck", "claude_stopped") or bool(questions))
+            and action.get("attempts", 0) < 6
+            and action.get("claude_attempts", 0) < 4
+        ):
+            ok, resolved = AutomationService._ai_answer_questions(action, questions or [], text or "")
+            if ok:
+                target_status = "escalated" if (action.get("lane") in claude_lanes and (source == "claude" or code == "claude_stopped" or action.get("lane") == "ats")) else "queued"
+                AutomationService.add_event(action["id"], "triage", "auto_answered", {"count": len(resolved)})
+                return _one("""UPDATE public.automation_actions
+                                  SET status = %s, scheduled_for = NOW() + INTERVAL '15 seconds', lease_owner = NULL, lease_until = NULL,
+                                      error_code = 'auto_answered', error_text = NULL, questions = '[]', updated_at = NOW()
+                                WHERE id = %s RETURNING *""", (target_status, action["id"]))
+        return None
 
     @staticmethod
     def _discard(action: dict, code: str, text: str) -> Optional[dict]:
@@ -813,7 +1069,10 @@ class AutomationService:
                 only_now = not AutomationService.in_window()   # outside the window, only what you approved or asked for
                 halted = state["halted_lanes"] or []
                 lanes = [l for l in (cfg.get("lanes") or []) if "all" not in halted and l not in halted]
-                cur.execute("""SELECT * FROM public.automation_actions WHERE status = 'escalated' AND lane = ANY(%s) AND (run_now OR approved_at IS NOT NULL OR NOT %s)
+                cur.execute("""SELECT * FROM public.automation_actions
+                                WHERE status = 'escalated' AND lane = ANY(%s)
+                                  AND (scheduled_for IS NULL OR scheduled_for <= NOW())
+                                  AND (run_now OR approved_at IS NOT NULL OR NOT %s)
                                 ORDER BY rank, sort_at DESC LIMIT 1 FOR UPDATE SKIP LOCKED""", (lanes, only_now))
                 row = cur.fetchone()
                 if not row:
@@ -877,7 +1136,11 @@ class AutomationService:
                         (Json({"executed": True, "claude_summary": summary, "executed_at": now().isoformat()}), action_id))
         if status in ("job_closed", "already_applied"):
             return AutomationService.escalate(action_id, status, summary or status, [], "claude")
-        return AutomationService._to_user(action_id, "claude_stopped", summary or "O Claude não conseguiu concluir", questions)
+        summary_text = summary or "O Claude não conseguiu concluir"
+        resolved = AutomationService._resolve_before_user(action, "claude_stopped", summary_text, questions, source="claude")
+        if resolved is not None:
+            return resolved
+        return AutomationService._to_user(action_id, "claude_stopped", summary_text, questions)
 
     @staticmethod
     def set_session(status: str) -> None:

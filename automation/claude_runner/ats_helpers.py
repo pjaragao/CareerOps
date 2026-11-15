@@ -342,7 +342,9 @@ def _load_gmail_access_token(env: Dict[str, str]) -> Optional[str]:
         access_token = tok.get("access_token")
         expiry_ts = 0.0
         exp = tok.get("expiry")
-        if isinstance(exp, str) and exp:
+        if isinstance(exp, (int, float)):
+            expiry_ts = float(exp)
+        elif isinstance(exp, str) and exp:
             try:
                 from datetime import datetime
                 expiry_ts = datetime.fromisoformat(exp.replace("Z", "+00:00")).timestamp()
@@ -365,14 +367,27 @@ def _load_gmail_access_token(env: Dict[str, str]) -> Optional[str]:
             if refreshed.get("access_token"):
                 tok["access_token"] = refreshed["access_token"]
                 if refreshed.get("expires_in"):
-                    from datetime import datetime, timezone, timedelta
-                    tok["expires_in"] = refreshed["expires_in"]
-                    tok["expiry"] = (datetime.now(timezone.utc) + timedelta(seconds=int(refreshed["expires_in"]))).isoformat()
+                    tok["expires_in"] = int(refreshed["expires_in"])
+                    tok["expiry"] = time.time() + int(refreshed["expires_in"])
                 tmp = tok_path.with_suffix(".tmp")
                 tmp.write_text(json.dumps(tok, indent=2), encoding="utf-8")
+                os.chmod(tmp, 0o600)
                 os.replace(tmp, tok_path)
                 return tok["access_token"]
         return access_token
+
+
+def _mark_read_and_archive_gmail(msg_id: str, headers: Dict[str, str]) -> bool:
+    """Marks a handled verification email as read and removes it from INBOX."""
+    if not msg_id:
+        return False
+    status, _ = _json_request(
+        f"https://gmail.googleapis.com/gmail/v1/users/me/messages/{urllib.parse.quote(str(msg_id))}/modify",
+        data={"removeLabelIds": ["UNREAD", "INBOX"]},
+        headers=headers,
+        timeout=15,
+    )
+    return 200 <= status < 300
 
 
 def _search_gmail(domain: str, query: str, since_minutes: int, env: Dict[str, str]) -> List[Dict[str, Any]]:
@@ -393,7 +408,7 @@ def _search_gmail(domain: str, query: str, since_minutes: int, env: Dict[str, st
         tok_path = Path(env.get("CAREEROPS_GMAIL_TOKEN_PATH") or str(DEFAULT_GMAIL_TOKEN))
         if tok_path.is_file():
             tok = json.loads(tok_path.read_text(encoding="utf-8"))
-            tok["expiry"] = "1970-01-01T00:00:00+00:00"
+            tok["expiry"] = 0.0
             tok_path.write_text(json.dumps(tok, indent=2), encoding="utf-8")
         access_token = _load_gmail_access_token(env)
         if not access_token:
@@ -437,12 +452,26 @@ def _search_gmail(domain: str, query: str, since_minutes: int, env: Dict[str, st
                 "subject": subject[:1000],
                 "body": body_text[:20000],
             }, env)
+            _mark_read_and_archive_gmail(str(msg_id), hdrs)
     return results
 
 
 def check_email_verification(domain: str, query: str = "", since_minutes: int = 20, env: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
-    """Checks CareerOps DB verification store first, then polls Gmail if configured."""
+    """Checks Gmail first (so handled verification emails are also marked read & archived), then falls back to DB."""
     cfg = load_runtime_env(env)
+    gmail_hits = _search_gmail(domain, query, since_minutes, cfg)
+    if gmail_hits:
+        best = gmail_hits[0]
+        return {
+            "found": True,
+            "code": best["code"],
+            "link": best["link"],
+            "links": [best["link"]] if best["link"] else [],
+            "subject": best["subject"],
+            "sender": best["sender"],
+            "snippet": best["snippet"],
+            "source": "gmail",
+        }
     hint = " ".join(p for p in (domain, query) if p).strip()
     db_res = _api_call("/automation/email/verification", {
         "query_hint": hint,
@@ -452,8 +481,7 @@ def check_email_verification(domain: str, query: str = "", since_minutes: int = 
     if db_res.get("found"):
         links = list(db_res.get("links") or [])
         return {**db_res, "link": links[0] if links else "", "links": links}
-    gmail_hits = _search_gmail(domain, query, since_minutes, cfg)
-    if not gmail_hits and cfg.get("CAREEROPS_ENV_FILES") != "" and (env or {}).get("CAREEROPS_ENV_FILES") != "":
+    if cfg.get("CAREEROPS_ENV_FILES") != "" and (env or {}).get("CAREEROPS_ENV_FILES") != "":
         time.sleep(4)
         gmail_hits = _search_gmail(domain, query, since_minutes, cfg)
     if gmail_hits:

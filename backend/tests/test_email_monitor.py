@@ -187,3 +187,19 @@ def test_funnel_by_how_old_the_ad_was(db, sql, add_job):
     by_age = {r["bucket"]: r for r in Monitor.funnel()["by_age"]}
     assert by_age["até 24 h"]["applied"] == 1 and by_age["até 24 h"]["interviews"] == 0
     assert by_age["mais de 48 h"]["interviews"] == 1
+
+
+def test_verification_otp_emails_from_lolo_are_marked_for_archive(db, sql, add_job, monkeypatch):
+    add_job(status="applied")
+    fake_reader(monkeypatch, {"classification": "other", "confidence": 0.6, "summary": "OTP", "evidence": "code"})
+    res = Monitor.process(
+        [msg(
+            message_id="<otp-1@gh>",
+            sender="no-reply@greenhouse.io",
+            subject="Security code for your application to Acme",
+            body="Copy and paste this code into the security code field: 17985286",
+        )],
+        source="lolo",
+    )
+    assert res["recorded"] == 1
+    assert "<otp-1@gh>" in res["archive"]

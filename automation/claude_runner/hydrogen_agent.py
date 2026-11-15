@@ -15,7 +15,16 @@ import ats_helpers
 VALID_STATUSES = {"done", "needs_user", "job_closed", "already_applied"}
 MAX_STEPS = 65
 DEFAULT_AGY_URL = "http://172.26.0.1:8787/v1"
-DEFAULT_MODELS = ("gemini-4-hydrogen-low", "gemini-4-hydrogen-medium", "gemini-3.8-flash-high", "gemini-flash-latest")
+DEFAULT_MODELS = (
+    "gemini-4-hydrogen-low",
+    "gemini-4-hydrogen-medium",
+    "gemini-4-argon-low",
+    "claude-sonnet-5-5-low",
+    "gemini-3.8-flash-high",
+    "gemini-4-argon-medium",
+    "claude-sonnet-5-5-medium",
+    "gemini-flash-latest",
+)
 
 
 class McpHttpClient:
@@ -356,21 +365,43 @@ def run_hydrogen_agent(
 
         final_answer: Optional[Dict[str, Any]] = None
         last_text = ""
-        used_model = models[0]
+        active_models = list(models)
+        used_model = active_models[0]
         turns = 0
 
         for step in range(MAX_STEPS):
             turns = step + 1
             resp = None
             last_err: Optional[Exception] = None
-            for cand_model in models:
+            for cand_model in list(active_models):
                 for attempt in range(2):
                     try:
                         resp = _chat_completion(base_url, token, cand_model, _trim_messages(messages), openai_tools)
                         used_model = cand_model
+                        if active_models[0] != cand_model:
+                            active_models.remove(cand_model)
+                            active_models.insert(0, cand_model)
                         break
                     except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, ConnectionError, ValueError) as exc:
-                        last_err = exc
+                        err_body = ""
+                        if isinstance(exc, urllib.error.HTTPError):
+                            try:
+                                err_body = exc.read().decode("utf-8", "ignore")
+                            except Exception:
+                                err_body = ""
+                            last_err = RuntimeError(f"HTTP Error {exc.code}: {err_body[:240] or exc.reason}")
+                        else:
+                            last_err = exc
+                        low_body = err_body.lower()
+                        quota_exhausted = (
+                            isinstance(exc, urllib.error.HTTPError)
+                            and exc.code in (429, 502)
+                            and ("cota" in low_body or "quota" in low_body or "weekly limit" in low_body)
+                        )
+                        if quota_exhausted:
+                            if len(active_models) > 1 and cand_model in active_models:
+                                active_models.remove(cand_model)
+                            break
                         transient = (
                             exc.code in (429, 500, 502, 503, 504)
                             if isinstance(exc, urllib.error.HTTPError)

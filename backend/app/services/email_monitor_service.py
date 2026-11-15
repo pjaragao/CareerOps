@@ -15,6 +15,7 @@ from html import unescape
 from typing import List, Optional
 
 from app.core.config import settings
+from app.services.ats_auth_service import extract_verification
 from app.services.automation_service import _one, _rows, config
 from app.services.skill_service import SkillService
 
@@ -194,6 +195,12 @@ class EmailMonitorService:
             review = (classification not in ("other", "linkedin_alert") and not job) or classification in ("assessment", "recruiter_question", "interview", "offer") \
                 or (classification in ("confirmation", "viewed") and bool(job) and job["status"] != "applied" and job["status"] != "interviewing")
             mail_action = _mail_action(classification, confidence, source)
+            if source != "imap" and mail_action != "archive":
+                subj_str = m.get("subject") or ""
+                ver = extract_verification(subj_str, m.get("body") or "")
+                is_ver_link = bool(ver.get("links")) and bool(re.search(r"verif|confirm|otp|code|c[oó]digo|activat", subj_str, re.I))
+                if ver.get("code") or (classification in ("linkedin_alert", "other") and is_ver_link) or (classification == "linkedin_alert" and alert == "verification_code"):
+                    mail_action = "archive"
             row = _one("""
                 INSERT INTO public.job_email_events (message_id, thread_id, job_id, received_at, sender_domain, subject, classification, confidence,
                                                      summary, evidence_quote, status_applied, needs_review, baseline, alert_kind, source, mail_action)
