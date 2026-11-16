@@ -90,7 +90,9 @@ def test_site_memory_and_recipes(db):
     SiteService.record_block("jobs.example.com", "hCaptcha image challenge")
     assert SiteService.human_block("https://jobs.example.com/3") == "captcha"     # twice, never passed: straight to you
     SiteService.save_recipe("jobs.example.com", "generic", ["Next"], ["Submit application"])
-    assert SiteService.human_block("https://jobs.example.com/4") is None          # a success there: tried again
+    assert SiteService.human_block("https://jobs.example.com/4") == "captcha"     # a click is not a success
+    SiteService.count_success("https://jobs.example.com/done")
+    assert SiteService.human_block("https://jobs.example.com/4") is None          # a proven success there: tried again
     assert SiteService.recipe("jobs.example.com")["submit"] == ["submit application"]
     assert SiteService.record_block("x.com", "the form needs a phone number") is None
 

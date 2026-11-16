@@ -61,17 +61,25 @@ class SiteService:
         return {"adapter": site.get("adapter") or "generic", "next": site.get("next_labels") or [], "submit": site.get("submit_labels") or []}
 
     @staticmethod
-    def save_recipe(host: str, adapter: str, next_labels: List[str], submit_labels: List[str]) -> dict:
-        """A successful navigation: its labels go first in the list (most recent wins), and the host counts a success."""
+    def save_recipe(host: str, adapter: str, next_labels: List[str], submit_labels: List[str], success: bool = False) -> dict:
+        """The labels a navigation used go first in the list (most recent wins). A success counts only once the page proved
+        the application went out (AutomationService.verify), never at the click."""
         site = SiteService.get(host) or {}
         nxt = _labels(list(next_labels or []) + list(site.get("next_labels") or []))
         sub = _labels(list(submit_labels or []) + list(site.get("submit_labels") or []))
         return _rows("""
             INSERT INTO public.automation_sites (host, adapter, next_labels, submit_labels, successes)
-            VALUES (%s, %s, %s, %s, 1)
+            VALUES (%s, %s, %s, %s, %s)
             ON CONFLICT (host) DO UPDATE SET adapter = EXCLUDED.adapter, next_labels = EXCLUDED.next_labels,
-                submit_labels = EXCLUDED.submit_labels, successes = public.automation_sites.successes + 1, updated_at = NOW()
-            RETURNING *""", (host, (adapter or "generic")[:40], Json(nxt), Json(sub)))[0]
+                submit_labels = EXCLUDED.submit_labels, successes = public.automation_sites.successes + EXCLUDED.successes, updated_at = NOW()
+            RETURNING *""", (host, (adapter or "generic")[:40], Json(nxt), Json(sub), 1 if success else 0))[0]
+
+    @staticmethod
+    def count_success(url_or_host: str) -> None:
+        host = url_or_host if "/" not in (url_or_host or "") else host_of(url_or_host)
+        if host:
+            _rows("""INSERT INTO public.automation_sites (host, successes) VALUES (%s, 1)
+                     ON CONFLICT (host) DO UPDATE SET successes = public.automation_sites.successes + 1, updated_at = NOW()""", (host,))
 
     @staticmethod
     def block_kind(text: str) -> Optional[str]:

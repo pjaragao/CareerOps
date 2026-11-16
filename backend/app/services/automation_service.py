@@ -811,6 +811,9 @@ class AutomationService:
         if not action:
             return None
         AutomationService.add_event(action_id, "worker", "verified", {"proof": proof, **(evidence or {})})
+        if proof and action["kind"] == "apply" and action["lane"] == "ats":   # the site is passable: recipes and site memory learn it
+            from app.services.site_service import SiteService
+            SiteService.count_success((evidence or {}).get("url") or action.get("target_url") or "")
         if proof:
             return AutomationService._finish(action, {"proof": evidence or True}, "worker")
         result = action["result"] or {}

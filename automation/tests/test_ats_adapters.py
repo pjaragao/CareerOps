@@ -50,3 +50,31 @@ def test_precheck_decides_closed_and_wrong_pages_without_a_model():
     right = Page("Apply", "Acme is hiring " + "lorem " * 300)
     assert asyncio.run(r.precheck(right, action, "external_form_unfinished")) is None
     assert asyncio.run(r.precheck(other, action, "account_required")) is None   # a login page carries no job title
+
+
+def test_the_worker_never_submits_a_step_with_no_fields_filled():
+    import asyncio
+    from worker.handlers import Runner
+
+    class Api:
+        def __init__(self):
+            self.posts = []
+
+        async def get(self, path):
+            return {"recipe": {}}
+
+        async def post(self, path, body=None):
+            self.posts.append(path)
+            return {}
+
+    class Page:
+        url = "https://jobs.ashbyhq.com/acme/1/application"
+
+        async def evaluate(self, script):
+            return '{"sig": "a#1", "filled": 0, "pending": []}' if "getAttribute" in script else []
+
+    api = Api()
+    r = Runner(api=api, browsers=None)
+    form = {"sig": None, "steps": 0, "since": None, "recipe": None, "labels": []}
+    out = asyncio.run(r.drive_form(Page(), {"id": 1, "lane": "ats", "kind": "apply"}, {"allow_final": True}, form))
+    assert out is None and not any("complete" in p for p in api.posts)

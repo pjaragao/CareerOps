@@ -116,6 +116,32 @@ async def page_errors(page: Page) -> List[str]:
         return []
 
 
+async def empty_required(page: Page) -> List[str]:
+    """Visible required fields still empty (inputs, text areas, lists, radio groups): never submitted like that."""
+    try:
+        return await page.evaluate("""() => {
+            const vis = (e) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
+            const out = [];
+            const groups = new Set();
+            document.querySelectorAll('input, textarea, select').forEach((e) => {
+                const req = e.required || e.getAttribute('aria-required') === 'true';
+                if (!req || !vis(e) || e.disabled || e.type === 'hidden') return;
+                if (e.type === 'radio' || e.type === 'checkbox') {
+                    if (!e.name || groups.has(e.name)) return;
+                    groups.add(e.name);
+                    const any = [...document.querySelectorAll(`input[name="${CSS.escape(e.name)}"]`)].some((x) => x.checked);
+                    if (!any) out.push(e.name.slice(0, 60));
+                    return;
+                }
+                if (e.type === 'file' ? !(e.files && e.files.length) : !String(e.value || '').trim())
+                    out.push((e.getAttribute('aria-label') || e.name || e.id || e.placeholder || 'field').slice(0, 60));
+            });
+            return out.slice(0, 12);
+        }""")
+    except PlaywrightError:
+        return []
+
+
 async def _buttons(page: Page) -> List[Tuple[str, object]]:
     """Visible, enabled controls that act as buttons, with their accessible text."""
     loc = page.locator('button, input[type="submit"], input[type="button"], [role="button"], a[role="button"]')
@@ -167,5 +193,8 @@ async def step(page: Page, ad: Adapter) -> StepResult:
     if not kind:
         return StepResult("stuck", reason=f"nenhum botão de avançar/enviar reconhecido ({ad.name})")
     if kind == "submit":
+        missing = await empty_required(page)
+        if missing:
+            return StepResult("stuck", reason="campos obrigatórios vazios antes do envio", errors=missing)
         return StepResult("submit_ready", label=name, element=el)
     return StepResult("next", label=name, element=el)

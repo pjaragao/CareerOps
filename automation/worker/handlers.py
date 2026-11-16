@@ -313,8 +313,10 @@ class Runner:
             return None
         if state is not None:
             form["sig"] = state.get("sig")
-            if state.get("pending"):
-                return None   # the extension escalates a step with fields left (managedFilled): nothing to do here
+            if state.get("pending") or not int(state.get("filled") or 0):
+                return None   # fields left, or none found: the extension escalates it (managedFilled), never a Submit here
+        elif form["steps"] == 0:
+            return None   # the idle path is only for a step reached by a Next of ours (a review page with no fields)
         if form["recipe"] is None:
             host = ats_adapters.host_of(page.url)
             form["recipe"] = (await self.api.get(f"/automation/recipes/{host}") or {}).get("recipe") or {}
@@ -324,6 +326,11 @@ class Runner:
             await self._hand_on(page, action, f"{res.reason}" + (f": {'; '.join(res.errors)[:300]}" if res.errors else ""))
             return "stop"
         if res.outcome == "next":
+            here = (page.url.split("#")[0], res.label)
+            if form.get("last") == here:   # the same button on the same page again: it does not move the form on
+                await self._hand_on(page, action, f"o botão \"{res.label}\" não avançou o formulário")
+                return "stop"
+            form["last"] = here
             if form["steps"] >= 12:
                 await self._hand_on(page, action, "o formulário passou de 12 etapas sem chegar ao envio")
                 return "stop"

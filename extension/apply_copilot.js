@@ -515,7 +515,9 @@
     }
     function managedFilled(filled, pending) {
         if (!managedAction || managedReported || !jobId) return;
-        if (!pending.length) {
+        // only a step with fields that were all filled is "ready": no fields found (a form still loading, or in a frame
+        // this script cannot see) goes to the routine as before, never to the worker's Submit (2026-11-16, LeoVegas)
+        if (!pending.length && filled > 0) {
             // nothing left on this step: the worker presses Next / Submit itself, with no AI (ats_adapters.py). The
             // attribute says which step was filled; a new step gets a new one when it is filled in turn.
             document.documentElement.setAttribute('data-careerops-form', JSON.stringify({ sig: `${lastSignature}#${Date.now()}`, filled, pending: [] }));
