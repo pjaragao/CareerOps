@@ -150,3 +150,17 @@ def test_opening_the_actions_own_conversation_or_post_is_not_off_target():
             "target_url": "https://www.linkedin.com/feed/update/urn:li:share:7524/"}
     assert not run.audit([call("browser_navigate", url="https://www.linkedin.com/feed/update/urn:li:share:7524/")], post)
     assert run.audit([call("browser_navigate", url="https://www.linkedin.com/feed/")], post)
+
+
+
+def test_usage_and_provider_error_are_reported():
+    final = {"type": "result", "is_error": True, "result": "Claude AI usage limit reached|1763300000",
+             "usage": {"input_tokens": 5, "output_tokens": 7, "cache_read_input_tokens": 100, "cache_creation_input_tokens": 9},
+             "modelUsage": {"claude-haiku-5-5": {}}}
+    res = run.outcome({"calls": [], "final": final}, 1, ACTION)
+    assert res["provider_error"] is True and res["status"] == "failed"
+    assert res["usage"] == {"model": "claude-haiku-5-5", "input_tokens": 5, "output_tokens": 7, "cache_read_tokens": 100, "cache_write_tokens": 9}
+    total = run.add_usage(res["usage"], {"model": "claude-sonnet-5-5", "input_tokens": 1, "output_tokens": 1, "cache_read_tokens": 0, "cache_write_tokens": 0})
+    assert total["input_tokens"] == 6 and total["model"] == "claude-haiku-5-5,claude-sonnet-5-5"
+    worked = run.outcome({"calls": [call("browser_click", ref="e1")], "final": final}, 1, ACTION)
+    assert not worked["provider_error"]   # it did something on the page: not a provider refusal

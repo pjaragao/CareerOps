@@ -15,6 +15,7 @@ from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
 
 import yaml
@@ -622,7 +623,9 @@ class AutomationService:
             _rows("""UPDATE public.automation_actions SET result = jsonb_build_object('previous', result) WHERE id = %s""", (action_id,))
         else:
             status = "unknown_outcome" if (action["result"] or {}).get("executed") else "queued"
-        # you asked for it again: it does not wait for the time window, which only holds back the automations
+        # you asked for it again: it does not wait for the time window, which only holds back the automations. The event
+        # also tells the Claude gate that something changed (a new run is allowed)
+        AutomationService.add_event(action_id, "user", "retry", {})
         return _one("""UPDATE public.automation_actions SET status = %s, error_code = NULL, error_text = NULL, questions = '[]', run_now = TRUE,
                         updated_at = NOW() WHERE id = %s RETURNING *""", (status, action_id))
 
@@ -1086,6 +1089,54 @@ class AutomationService:
         return _one("""UPDATE public.automation_actions SET lane = 'ats', target_url = %s, status = 'queued', lease_owner = NULL, updated_at = NOW()
                         WHERE id = %s RETURNING *""", (url, action_id))
 
+    # ── Token plan, phase 0: what is checked before a Claude run is spent ──
+    ENGINE_VERSION = "2026-11-16"   # bump when the engine changes in a way that makes a failed run worth trying again
+
+    @staticmethod
+    def _url_key(url: str) -> str:
+        """The same job page under different tracking parameters is one page."""
+        p = urlparse(url or "")
+        return f"{(p.hostname or '').lower()}{p.path.rstrip('/')}"
+
+    @staticmethod
+    def _run_fingerprint(cur, action: dict) -> str:
+        """What a new run could see differently: the engine, your answers, your actions on this item, the site account."""
+        cur.execute("SELECT COALESCE(MAX(updated_at)::text, '') AS t, COUNT(*) AS n FROM public.automation_answers")
+        answers = cur.fetchone()
+        cur.execute("SELECT COUNT(*) AS n FROM public.automation_events WHERE action_id = %s AND source = 'user'", (action["id"],))
+        yours = cur.fetchone()["n"]
+        host = (urlparse(action.get("target_url") or "").hostname or "").lower()
+        cur.execute("SELECT COALESCE(MAX(updated_at)::text, '') AS t FROM public.automation_site_accounts WHERE %s LIKE '%%' || domain", (host,))
+        account = cur.fetchone()["t"]
+        confirmed = bool((action.get("result") or {}).get("confirmed"))
+        raw = f"{AutomationService.ENGINE_VERSION}|{answers['t']}|{answers['n']}|{yours}|{account}|{confirmed}"
+        return hashlib.sha1(raw.encode("utf-8")).hexdigest()[:20]
+
+    @staticmethod
+    def _claude_gate(cur, action: dict, cfg: dict, fingerprint: str) -> Optional[tuple]:
+        """(code, text, discard) when a run would be spent for nothing; None to run it."""
+        budget = int(cfg.get("max_tokens_per_action") or 1_500_000)
+        if int(action.get("tokens_spent") or 0) >= budget:
+            return ("token_budget", f"Esta ação já usou {int(action['tokens_spent']):,} tokens (teto {budget:,}): fica com você.", False)
+        from app.services.site_service import SiteService
+        block = SiteService.human_block(action.get("target_url") or "")
+        if block:
+            return ("captcha", "Este site pediu CAPTCHA/verificação anti-robô nas últimas tentativas: resolva pelo noVNC e use Tentar de novo.", False)
+        key = AutomationService._url_key(action.get("target_url") or "")
+        if key:
+            cur.execute("""SELECT id, status, target_url FROM public.automation_actions
+                            WHERE id <> %s AND kind = %s AND status = ANY(%s) ORDER BY updated_at DESC LIMIT 50""",
+                        (action["id"], action["kind"], ["running_ext", "running_claude", "verifying", "unknown_outcome", "done", "needs_user"]))
+            for other in cur.fetchall():
+                if AutomationService._url_key(other["target_url"]) != key:
+                    continue
+                if other["status"] == "needs_user":
+                    return ("duplicate", f"Mesma página da ação #{other['id']}, que já está com você.", False)
+                return ("duplicate", f"Mesma página da ação #{other['id']} ({other['status']}).", True)
+        if action.get("last_run_fingerprint") and action["last_run_fingerprint"] == fingerprint and int(action.get("claude_attempts") or 0) > 0:
+            return ("no_change", "Nada mudou desde a última tentativa do Claude (sem resposta nova, sem conta nova, mesma versão): fica com você.", False)
+        return None
+
     # ── Claude fallback ──────────────────────────────────────────────────
     @staticmethod
     def claude_claim(runner: str) -> dict:
@@ -1106,20 +1157,38 @@ class AutomationService:
                 only_now = not AutomationService.in_window()   # outside the window, only what you approved or asked for
                 halted = state["halted_lanes"] or []
                 lanes = [l for l in (cfg.get("lanes") or []) if "all" not in halted and l not in halted]
+                if state.get("claude_paused_until") and state["claude_paused_until"] > now():
+                    conn.commit()
+                    return {"action": None, "reason": "breaker"}
                 cur.execute("""SELECT * FROM public.automation_actions
                                 WHERE status = 'escalated' AND lane = ANY(%s)
                                   AND (scheduled_for IS NULL OR scheduled_for <= NOW())
                                   AND (run_now OR approved_at IS NOT NULL OR NOT %s)
-                                ORDER BY rank, sort_at DESC LIMIT 1 FOR UPDATE SKIP LOCKED""", (lanes, only_now))
-                row = cur.fetchone()
-                if not row:
+                                ORDER BY rank, sort_at DESC LIMIT 20 FOR UPDATE SKIP LOCKED""", (lanes, only_now))
+                action = None
+                for row in cur.fetchall():
+                    candidate = dict(row)
+                    fingerprint = AutomationService._run_fingerprint(cur, candidate)
+                    gate = AutomationService._claude_gate(cur, candidate, cfg, fingerprint)
+                    if gate is None:
+                        action = candidate
+                        break
+                    code, text, discard = gate
+                    if discard:
+                        cur.execute("""UPDATE public.automation_actions SET status = 'discarded', error_code = %s, error_text = %s, finished_at = NOW(),
+                                              lease_owner = NULL, updated_at = NOW() WHERE id = %s""", (code, text, candidate["id"]))
+                    else:
+                        cur.execute("""UPDATE public.automation_actions SET status = 'needs_user', error_code = %s, error_text = %s,
+                                              lease_owner = NULL, lease_until = NULL, updated_at = NOW() WHERE id = %s""", (code, text, candidate["id"]))
+                    _event(cur, candidate["id"], "backend", f"claude_gate:{code}", {"text": text})
+                if action is None:
                     conn.commit()
                     return {"action": None, "reason": "outside_window" if only_now else "empty"}
-                action = dict(row)
                 cur.execute("""UPDATE public.automation_actions
                                   SET status = 'running_claude', executor = 'claude', claude_attempts = claude_attempts + 1,
+                                      last_run_fingerprint = %s,
                                       lease_owner = %s, lease_until = NOW() + INTERVAL '12 minutes', updated_at = NOW()
-                                WHERE id = %s RETURNING *""", (runner, action["id"]))
+                                WHERE id = %s RETURNING *""", (fingerprint, runner, action["id"]))
                 action = dict(cur.fetchone())
                 cur.execute("INSERT INTO public.automation_runs (kind, action_id) VALUES ('claude', %s) RETURNING id", (action["id"],))
                 run_id = cur.fetchone()["id"]
@@ -1155,13 +1224,36 @@ class AutomationService:
 
     @staticmethod
     def claude_result(action_id: int, run_id: int, status: str, summary: str = "", questions: Optional[list] = None,
-                      audit_flags: Optional[list] = None, cost_usd: Optional[float] = None, transcript: Optional[dict] = None) -> Optional[dict]:
-        _rows("UPDATE public.automation_runs SET finished_at = NOW(), ok = %s, cost_usd = %s, summary = %s WHERE id = %s",
+                      audit_flags: Optional[list] = None, cost_usd: Optional[float] = None, transcript: Optional[dict] = None,
+                      usage: Optional[dict] = None, provider_error: bool = False) -> Optional[dict]:
+        usage = usage or {}
+        tokens = sum(int(usage.get(k) or 0) for k in ("input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens"))
+        target = _one("SELECT target_url FROM public.automation_actions WHERE id = %s", (action_id,)) or {}
+        host = (urlparse(target.get("target_url") or "").hostname or "").lower()
+        from app.services.site_service import SiteService
+        block = SiteService.block_kind(summary) if status == "needs_user" else None
+        result_class = "provider_error" if provider_error else (block or status)
+        _rows("""UPDATE public.automation_runs SET finished_at = NOW(), ok = %s, cost_usd = %s, summary = %s, model = %s,
+                        input_tokens = %s, output_tokens = %s, cache_read_tokens = %s, cache_write_tokens = %s, host = %s, result_class = %s
+                  WHERE id = %s""",
               (status in ("done", "job_closed", "already_applied") and not audit_flags, cost_usd,
-               Json({"summary": summary, "audit_flags": audit_flags or [], **(transcript or {})}), run_id))
+               Json({"summary": summary, "audit_flags": audit_flags or [], **(transcript or {})}), (usage.get("model") or "")[:80] or None,
+               usage.get("input_tokens"), usage.get("output_tokens"), usage.get("cache_read_tokens"), usage.get("cache_write_tokens"),
+               host or None, result_class, run_id))
+        if tokens:
+            _rows("UPDATE public.automation_actions SET tokens_spent = tokens_spent + %s WHERE id = %s", (tokens, action_id))
         action = _one("SELECT * FROM public.automation_actions WHERE id = %s AND status = 'running_claude'", (action_id,))
         if not action:
             return None
+        if provider_error:   # a usage limit, a 5xx, a quota: every run pauses, and this one did not count
+            minutes = int((config().get("claude") or {}).get("breaker_minutes") or 30)
+            _rows("UPDATE public.automation_state SET claude_paused_until = NOW() + make_interval(mins => %s) WHERE id = 1", (minutes,))
+            AutomationService.add_event(action_id, "claude", "breaker", {"summary": summary[:300], "minutes": minutes}, level="warning")
+            return _one("""UPDATE public.automation_actions SET status = 'escalated', claude_attempts = GREATEST(claude_attempts - 1, 0),
+                                  last_run_fingerprint = NULL, scheduled_for = NOW() + make_interval(mins => %s), lease_owner = NULL,
+                                  lease_until = NULL, updated_at = NOW() WHERE id = %s RETURNING *""", (minutes, action_id))
+        if block:
+            SiteService.record_block(host, summary)
         AutomationService.add_event(action_id, "claude", f"result:{status}", {"summary": summary, "audit_flags": audit_flags or []},
                                     level="error" if audit_flags else "info")
         if audit_flags:   # it touched something outside the target: you look before anything else happens

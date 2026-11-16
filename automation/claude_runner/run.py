@@ -290,6 +290,24 @@ def refused_tools(calls: list) -> list:
     return sorted({c.get("name") or "" for c in calls if c.get("refused")})
 
 
+PROVIDER_ERROR_RE = re.compile(r"usage limit|rate.?limit|overloaded|quota|credit balance|\b5\d\d\b|cota .* esgotada|upstream failed|"
+                               r"hit your limit|limit reached", re.I)
+
+
+def usage_of(final: dict) -> dict:
+    """Model and tokens of one Claude Code run, from its final stream-json event (token plan, phase 0)."""
+    u = (final or {}).get("usage") or {}
+    models = list(((final or {}).get("modelUsage") or {}).keys())
+    return {"model": ",".join(models)[:80], "input_tokens": int(u.get("input_tokens") or 0), "output_tokens": int(u.get("output_tokens") or 0),
+            "cache_read_tokens": int(u.get("cache_read_input_tokens") or 0), "cache_write_tokens": int(u.get("cache_creation_input_tokens") or 0)}
+
+
+def add_usage(a: dict, b: dict) -> dict:
+    out = {k: int((a or {}).get(k) or 0) + int((b or {}).get(k) or 0) for k in ("input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens")}
+    out["model"] = ",".join(x for x in ((a or {}).get("model"), (b or {}).get("model")) if x)[:80]
+    return out
+
+
 def outcome(parsed: dict, returncode: int, action: dict) -> dict:
     """The result to report. A run that did not end cleanly is never "done"."""
     final = parsed["final"] or {}
@@ -299,10 +317,12 @@ def outcome(parsed: dict, returncode: int, action: dict) -> dict:
     if helper_tools:
         transcript["helper_tools"] = helper_tools
     result = {"status": "needs_user", "summary": "", "questions": [], "audit_flags": audit(parsed["calls"], action),
-              "cost_usd": final.get("total_cost_usd"), "transcript": transcript}
+              "cost_usd": final.get("total_cost_usd"), "transcript": transcript, "usage": usage_of(final)}
     if returncode != 0 or final.get("is_error") or not final:
         result["status"] = "failed"
         result["summary"] = f"A execução do Claude terminou com erro: {str(final.get('result') or returncode)[:500]}"
+        # nothing done and the provider said no (usage limit, overload, 5xx): the backend pauses all runs (breaker)
+        result["provider_error"] = not parsed["calls"] and bool(PROVIDER_ERROR_RE.search(str(final.get("result") or "") + " " + str(final.get("api_error_status") or "")))
         return result
     answer = final.get("structured_output")
     if not isinstance(answer, dict):
@@ -372,16 +392,26 @@ def _run_action(action: dict, env: dict) -> tuple:
                 "audit_flags": [],
                 "cost_usd": None,
                 "transcript": {"error": str(exc)[:500]},
+                "provider_error": bool(PROVIDER_ERROR_RE.search(str(exc))),
             }, 0
 
     extra = ATS_EXTRA_TOOLS if action.get("lane") == "ats" else ()
     result, tool_count = None, 0
+    usage = {}
     for model, effort in _claude_models():
         parsed, code = _claude_attempt(action, env, prompt, mcp_url, port, model, effort, extra)
         result = outcome(parsed, code, action)
+        usage = add_usage(usage, result.get("usage"))
+        result["usage"] = usage
         tool_count += len(parsed["calls"])
+        if result.get("provider_error"):
+            return result, tool_count   # the next model shares the same limit: the backend pauses and retries later
         if result["audit_flags"] or not (result["status"] == "failed" or result["summary"].startswith("O Claude não devolveu")):
             break
+        # token plan, phase 3: the next model continues where this one stopped, instead of starting over
+        if parsed["calls"]:
+            prompt += (f"\n\nPREVIOUS ATTEMPT ({model}) made {len(parsed['calls'])} tool calls and ended: {result['summary'][:600]}\n"
+                       "The form keeps what it filled: take one snapshot and continue from where it stopped; do not redo filled fields.")
     runtime_cfg = ats_helpers.load_runtime_env(env)
     can_hydrogen = (
         not result["audit_flags"]

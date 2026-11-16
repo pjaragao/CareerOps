@@ -584,11 +584,14 @@ class ClaudeResultIn(BaseModel):
     audit_flags: list = []
     cost_usd: Optional[float] = None
     transcript: dict = {}
+    usage: dict = {}                 # model and tokens of the run (token plan, phase 0)
+    provider_error: bool = False     # usage limit / 5xx / quota: the breaker pauses all runs
 
 
 @router.post("/actions/{action_id}/claude-result", dependencies=[Depends(require_worker)])
 async def claude_result(action_id: int, req: ClaudeResultIn):
-    return _found(Auto.claude_result(action_id, req.run_id, req.status, req.summary, req.questions, req.audit_flags, req.cost_usd, req.transcript))
+    return _found(Auto.claude_result(action_id, req.run_id, req.status, req.summary, req.questions, req.audit_flags, req.cost_usd,
+                                     req.transcript, req.usage, req.provider_error))
 
 
 class SiteAccountIn(BaseModel):

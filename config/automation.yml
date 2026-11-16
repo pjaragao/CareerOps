@@ -52,6 +52,8 @@ jobs:
 
 claude:
   per_day: 1000
+  max_tokens_per_action: 1500000             # all runs of one action together (input + output + cache); then it is yours
+  breaker_minutes: 30                        # a usage limit / 5xx / exhausted quota pauses every Claude run this long
   lanes: [linkedin_write, ats]               # remove linkedin_write for less risk: that fallback becomes "Precisa de você"
 
 # A test account only comments on / invites these (exact URLs); anything else stops before the final click

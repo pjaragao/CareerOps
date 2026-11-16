@@ -25,3 +25,28 @@ def test_apply_is_navigation_never_the_final_submit():
 
 def test_labels_match_whole_names_only():
     assert not ad._matches("Submit feedback about this page", ad.SUBMIT)
+
+
+def test_precheck_decides_closed_and_wrong_pages_without_a_model():
+    import asyncio
+    from worker.handlers import Runner
+
+    class Page:
+        def __init__(self, title, text):
+            self.url, self._title, self._text = "https://jobs.example.com/1", title, text
+
+        async def title(self):
+            return self._title
+
+        async def evaluate(self, _):
+            return self._text
+
+    r = Runner(api=None, browsers=None)
+    action = {"lane": "ats", "kind": "apply", "payload": {"title": "Senior Data Scientist", "company": "Acme"}}
+    closed = Page("Job", "Sorry, this position has been filled. " + "x " * 500)
+    assert asyncio.run(r.precheck(closed, action, "external_form_unfinished"))[0] == "job_closed"
+    other = Page("Member of Technical Staff, Finance Research", "Micro1 role about finance research " + "lorem " * 300)
+    assert asyncio.run(r.precheck(other, action, "external_form_unfinished"))[0] == "wrong_page"
+    right = Page("Apply", "Acme is hiring " + "lorem " * 300)
+    assert asyncio.run(r.precheck(right, action, "external_form_unfinished")) is None
+    assert asyncio.run(r.precheck(other, action, "account_required")) is None   # a login page carries no job title

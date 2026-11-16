@@ -37,3 +37,7 @@ CREATE TABLE IF NOT EXISTS public.automation_text_cache (
     text TEXT NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
 );
+
+-- Circuit breaker (phase 0): a usage limit, a 5xx or an exhausted quota pauses every Claude run until this time, instead of
+-- spending one attempt per action every 5 minutes.
+ALTER TABLE public.automation_state ADD COLUMN IF NOT EXISTS claude_paused_until TIMESTAMP WITH TIME ZONE;

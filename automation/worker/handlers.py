@@ -28,6 +28,15 @@ VERIFY_SETTLE_SECONDS = 6
 HEARTBEAT_SECONDS = 30
 
 
+DISCARD_LIKE = {"job_closed", "already_applied", "captcha"}
+CLOSED_JOB_RE = re.compile(r"\b(?:no longer accepting applications|not currently accepting applications|this job (?:is )?(?:no longer|not) available|"
+                           r"job posting (?:has )?(?:expired|been removed)|position has been filled|this (?:job|position) (?:has been|is) closed|"
+                           r"vaga (?:encerrada|n[aã]o est[aá] mais dispon[ií]vel)|cette offre n['’]est plus disponible|"
+                           r"la oferta (?:ya )?no est[aá] disponible|stelle (?:ist )?nicht mehr verf[uü]gbar)\b", re.I)
+TITLE_STOP = {"senior", "junior", "lead", "manager", "engineer", "analyst", "specialist", "remote", "hybrid", "full", "time",
+              "with", "and", "the", "for", "all", "genders", "from", "home", "global", "team", "role"}
+
+
 def browser_of(lane: str) -> str:
     return "ats" if lane == "ats" else "linkedin"
 
@@ -84,7 +93,32 @@ class Runner:
             if doc:
                 (folder / Path(doc[0]).name).write_bytes(doc[1])
 
+    async def precheck(self, page: Page, action: dict, code: str) -> Optional[tuple]:
+        """Before a company form goes to the Claude routine (token plan, phase 0): a closed job or a page that is plainly
+        another job is decided here, with no model run. Returns (code, text) to report instead, or None."""
+        if action["lane"] != "ats" or action["kind"] != "apply" or code in DISCARD_LIKE:
+            return None
+        _, title, text = await self._page_state(page)
+        body = f"{title}\n{text}"[:20000]
+        if CLOSED_JOB_RE.search(body):
+            return "job_closed", "A página informa que a vaga foi encerrada (checado antes do Claude)."
+        payload = action.get("payload") or {}
+        if code != "external_form_unfinished" or len(text) < 800:
+            return None   # a login or account page carries no job title: nothing to compare
+        low = body.lower()
+        company = str(payload.get("company") or "").strip().lower()
+        words = [w for w in re.findall(r"[a-zà-ÿ0-9&+#]{4,}", str(payload.get("title") or "").lower()) if w not in TITLE_STOP]
+        if company and company in low:
+            return None
+        if words and sum(w in low for w in words) == 0:
+            return "wrong_page", (f"A página aberta não menciona a vaga ({payload.get('title') or ''} · {payload.get('company') or ''}): "
+                                  "confira o link antes de gastar uma execução do Claude.")
+        return None
+
     async def report_stop(self, page: Page, action: dict, code: str, text: str = "") -> None:
+        checked = await self.precheck(page, action, code)
+        if checked:
+            code, text = checked
         shot = await self.artifact(page, action["id"], code)
         await self.api.post(f"/automation/actions/{action['id']}/escalate", {"code": code, "text": text, "source": "worker", "screenshot": shot})
 

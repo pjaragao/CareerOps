@@ -713,3 +713,59 @@ def test_an_invite_the_page_proves_not_sent_goes_to_claude_not_to_you(db):
     row = _one("SELECT status, error_code, result FROM public.automation_actions WHERE id = %s", (got["id"],))
     assert row["error_code"] == "unexpected_layout" and not row["result"].get("executed") and row["result"]["previous"]["executed"]
     assert row["status"] in ("escalated", "needs_user")   # Claude when its lane is on, else you, told it did not go out
+
+
+# ── Token plan, phase 0: what is checked before a Claude run is spent ──────
+def test_a_run_records_model_and_tokens_and_spends_the_budget(db, sql):
+    got = stuck()
+    first = Auto.claude_claim("r")["action"]
+    usage = {"model": "claude-haiku-5-5", "input_tokens": 10, "output_tokens": 20, "cache_read_tokens": 300, "cache_write_tokens": 40}
+    Auto.claude_result(got["id"], first["run_id"], "failed", "não deu", usage=usage)
+    run = _one("SELECT * FROM public.automation_runs WHERE id = %s", (first["run_id"],))
+    assert run["model"] == "claude-haiku-5-5" and run["input_tokens"] == 10 and run["cache_read_tokens"] == 300 and run["result_class"] == "failed"
+    assert _one("SELECT tokens_spent FROM public.automation_actions WHERE id = %s", (got["id"],))["tokens_spent"] == 370
+
+
+def test_an_action_over_its_token_budget_goes_to_you(db, sql):
+    got = stuck()
+    sql("UPDATE public.automation_actions SET tokens_spent = 99999999 WHERE id = %s", (got["id"],))
+    assert Auto.claude_claim("r")["action"] is None
+    assert _one("SELECT status, error_code FROM public.automation_actions WHERE id = %s", (got["id"],)) == {"status": "needs_user", "error_code": "token_budget"}
+
+
+def test_a_provider_error_trips_the_breaker_and_does_not_count(db):
+    got = stuck()
+    first = Auto.claude_claim("r")["action"]
+    Auto.claude_result(got["id"], first["run_id"], "failed", "Claude AI usage limit reached", provider_error=True)
+    row = _one("SELECT status, claude_attempts, last_run_fingerprint FROM public.automation_actions WHERE id = %s", (got["id"],))
+    assert row == {"status": "escalated", "claude_attempts": 0, "last_run_fingerprint": None}
+    assert Auto.claude_claim("r") == {"action": None, "reason": "breaker"}
+
+
+def test_nothing_new_since_the_last_run_means_no_new_run(db, sql):
+    got = stuck()
+    first = Auto.claude_claim("r")["action"]
+    sql("UPDATE public.automation_actions SET status = 'escalated' WHERE id = %s", (got["id"],))   # an automatic retry
+    assert Auto.claude_claim("r")["action"] is None
+    assert _one("SELECT error_code FROM public.automation_actions WHERE id = %s", (got["id"],))["error_code"] == "no_change"
+    Auto.retry(got["id"])                                                                           # you asked again: something changed
+    sql("UPDATE public.automation_actions SET status = 'escalated' WHERE id = %s", (got["id"],))
+    assert Auto.claude_claim("r")["action"]["id"] == got["id"] and first
+
+
+def test_a_site_that_keeps_asking_for_a_captcha_skips_the_run(db):
+    from app.services.site_service import SiteService
+    a = Auto.create_action("apply", "apply:9", "Vaga", "https://jobs.blocked.example/apply/1", {}, status="escalated", target_type="job", target_id=9)
+    SiteService.record_block("jobs.blocked.example", "hCaptcha challenge")
+    SiteService.record_block("jobs.blocked.example", "Cloudflare Turnstile")
+    assert Auto.claude_claim("r")["action"] is None
+    assert _one("SELECT error_code FROM public.automation_actions WHERE id = %s", (a["id"],))["error_code"] == "captcha"
+
+
+def test_the_same_page_twice_runs_once(db, sql):
+    a = Auto.create_action("apply", "apply:1", "Vaga", "https://jobs.example/job/1?utm_source=a", {}, status="escalated", target_type="job", target_id=1)
+    b = Auto.create_action("apply", "apply:2", "Vaga", "https://jobs.example/job/1?utm_source=b", {}, status="escalated", target_type="job", target_id=2)
+    first = Auto.claude_claim("r")["action"]
+    assert Auto.claude_claim("r")["action"] is None
+    other = b["id"] if first["id"] == a["id"] else a["id"]
+    assert _one("SELECT status, error_code FROM public.automation_actions WHERE id = %s", (other,)) == {"status": "discarded", "error_code": "duplicate"}
