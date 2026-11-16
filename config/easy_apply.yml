@@ -74,6 +74,27 @@ standing_answers:
     data_and_ai_engineer_self_employed: "Employer: Self-employed. Current Job: checked (Feb 2026 - Present), end date blank; if a reason is required write 'N/A - current position'"
     independent_consultant_infrastructure_finance: "Employer: Independent Consultant (self-employed). Current Job: checked (Feb 2026 - Present), end date blank; if a reason is required write 'N/A - current position'"
     employer_missing_from_list: "select Other and type the name"
+  # 2026-11-16 answers
+  education: {institution: "Universidade Federal de Santa Catarina (UFSC)", degree: "Bachelor's (Engenharia Sanitária e Ambiental / Sanitary and Environmental Engineering)", start_year: 2005, end: "Dec 2011"}
+  mba_or_cpa: "Yes (MBA)"
+  cube_tools_tm1_cognos_essbase: "No (SQL and data warehouse: Yes)"
+  first_generation_in_higher_education: "No (second generation)"
+  cultural_origin_or_ethnicity: "Latino / Hispanic or Latino"
+  spain_or_eu_work_visa_follow_up: "No, but I am eligible to apply for a work visa within six months"
+  clean_driving_record: "Yes"
+  working_hours_overlap_with_us_pacific: "Yes: based in UTC-3 (Florianópolis), available with at least 4 hours of overlap with PST (e.g. 12:00-16:00 BRT = 7:00-11:00 PST)"
+  fully_remote_long_term: "Yes"
+  outside_work_or_consulting_commitments: "Yes: an independent consulting practice (infrastructure project finance and modeling), which I would disclose and adapt to the company policy"
+  usd_expectation_for_brazil_based_roles: "USD 76,000/year"
+  helped_teams_adopt_ai_hands_on: "Yes"
+  worked_in_insurance_or_financial_services_industry: "No"
+  built_and_shipped_ai_llm_systems_in_production: "Yes: built and shipped AI/LLM-powered systems used in production"
+  ownership_in_0_to_1_environments: "Owned projects end to end, from zero to production, on my own"
+  specialization_when_asked: "AI Engineering"
+  disagreement_example_pt: "Na 1ª implantação de IA havia desconfiança. Propus um piloto: mostrei o fluxo no n8n e KPIs de antes e depois. A eficácia ficou clara e o time aprovou a adoção."
+  disagreement_example_en: "In our first AI rollout the team distrusted it. I ran a pilot, showed the n8n workflow and before/after KPIs; the results made the case and the team adopted it."
+  self_rating_proactivity_problem_solving_1_to_5: 5
+  prefilled_cover_letter_text_not_ours: "replace it with our cover letter (dossier file / text)"
   why_do_you_want_to_work_here_and_other_open_motivation_questions: "call mcp__careerops__write_answer (Claude Sonnet High) with the job context and paste the text as returned; no approval needed"
 
 # total_professional and engineering_sanitation_water_infrastructure are counted from this year (career start)
