@@ -80,7 +80,7 @@ def test_careerops_mcp_server_dispatch_roundtrip(monkeypatch):
     with ats_helpers.CareerOpsMcpServer({"CAREEROPS_ENV_FILES": ""}) as srv:
         with hydrogen_agent.McpHttpClient(srv.url) as mcp:
             names = {t["name"] for t in mcp.list_tools()}
-            assert names == {"check_email", "site_account"}
+            assert names == {"check_email", "site_account", "write_answer"}
             out_email, err1 = mcp.call_tool("check_email", {"domain": "jobs.ashbyhq.com"})
             assert not err1 and json.loads(out_email)["code"] == "998877"
             out_acc, err2 = mcp.call_tool("site_account", {"op": "get_or_create", "domain": "jobs.ashbyhq.com"})

@@ -25,14 +25,15 @@ def test_years_count_from_2008():
     ("Expected annual salary (USD)", "84000"),
     ("Annual compensation in EUR", "74400"),
     ("Pretensão salarial mensal em EUR", "6200"),
-    ("Pretensão salarial mensal em R$", "30000"),
+    ("Pretensão salarial mensal em R$", "35000"),
+    ("Annual salary in BRL", "420000"),
     ("Yearly salary $", "84000"),
 ])
 def test_number_fields_get_the_floor_in_that_currency_and_period(label, expected):
     assert answer(label) == expected
 
 
-@pytest.mark.parametrize("label", ["Expected salary in GBP", "Salary (CAD)", "Hourly rate expectation in USD salary", "Annual salary in BRL"])
+@pytest.mark.parametrize("label", ["Expected salary in GBP", "Salary (CAD)", "Hourly rate expectation in USD salary"])
 def test_what_has_no_floor_is_left_for_you(label):
     assert answer(label) is None
 
@@ -50,7 +51,7 @@ def test_a_bare_number_abroad_is_yearly_never_the_monthly_figure():
 def test_text_fields_say_currency_and_period():
     assert answer("Salary expectation", "text") == "from USD 7,000/month (USD 84,000/year)"
     assert answer("Pretensão salarial em EUR", "text", lang="Portuguese") == "a partir de EUR 6.200/mês (EUR 74.400/ano)"
-    assert answer("Pretensão salarial em BRL", "text", lang="Portuguese") == "acima de BRL 30.000/mês (PJ)"
+    assert answer("Pretensão salarial em BRL", "text", lang="Portuguese") == "acima de BRL 35.000/mês (PJ)"
 
 
 def test_a_list_of_ranges_is_left_for_you():

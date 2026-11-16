@@ -581,12 +581,22 @@ def probe_mcp_http(url: str, timeout: int = 8) -> bool:
         return False
 
 
-FORBIDDEN_TEXT_RE = re.compile(r"res[ií]duos?\s+s[oó]lidos?|solid\s+waste", re.I)   # NDA: never in any text
+def _content_guard() -> Dict[str, Any]:
+    """The NDA rules (config/automation.yml content_guard): topics for the prompt, patterns that refuse a draft."""
+    path = Path(__file__).resolve().parents[2] / "config" / "automation.yml"
+    try:
+        import yaml
+        guard = (yaml.safe_load(path.read_text(encoding="utf-8")) or {}).get("content_guard") or {}
+    except Exception:
+        guard = {}
+    return {"topics": [str(t) for t in guard.get("topics") or []],
+            "patterns": [re.compile(p, re.I) for p in guard.get("patterns") or []]}
 
 
 def write_answer(question: str, context: Dict[str, Any], env: Dict[str, str]) -> Dict[str, Any]:
     """An open motivation answer ("Why do you want to work at X?") written by Claude Sonnet 5.5 at HIGH effort through the Claude
     CLI, from the job and the candidate's resume. Sent as returned, no approval (the candidate's decision of 2026-11-15)."""
+    guard = _content_guard()
     job = (context or {}).get("job") or {}
     resume = str((context or {}).get("resume_markdown") or "")[:9000]
     facts = json.dumps((context or {}).get("facts") or {}, ensure_ascii=False, default=str)[:3000]
@@ -595,7 +605,7 @@ def write_answer(question: str, context: Dict[str, Any], env: Dict[str, str]) ->
         "Tone: between informal and formal, warm, with real enthusiasm. Concrete (the company, the role, what the candidate would bring), "
         "no clichés, no flattery, no bullet lists. 90-170 words unless the form limits the length (obey the limit).\n"
         "Write in the language of the question. Use ONLY facts from the resume and facts below; never invent employers, numbers or "
-        "tools. Never mention solid waste / resíduos sólidos. Output only the answer text, nothing else.\n\n"
+        "tools. Never mention these topics: " + "; ".join(guard["topics"]) + ". Output only the answer text, nothing else.\n\n"
         f"QUESTION: {question}\nJOB: {job.get('job_title') or ''} at {job.get('company') or ''} ({job.get('location') or ''})\n"
         f"JOB URL: {job.get('url') or ''}\n\nCANDIDATE FACTS:\n{facts}\n\nRESUME:\n{resume}\n"
     )
@@ -612,7 +622,7 @@ def write_answer(question: str, context: Dict[str, Any], env: Dict[str, str]) ->
     text = str(data.get("result") or "").strip()
     if data.get("is_error") or not text:
         return {"error": "empty answer"}
-    if FORBIDDEN_TEXT_RE.search(text):
+    if any(p.search(text) for p in guard["patterns"]):
         return {"error": "the draft mentioned a forbidden term; call again"}
     return {"text": text}
 
