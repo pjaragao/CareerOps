@@ -213,9 +213,12 @@ def build_command(prompt: str, mcp_config: Path, offered: list = (), extra_tools
             "--json-schema", json.dumps(RESULT_SCHEMA), "--max-budget-usd", MAX_BUDGET_USD, "--no-session-persistence"]
 
 
+NO_SUCH_TOOL = re.compile(r"no such tool|tool (is )?not available|unknown tool|tool .{0,80}not found|does not exist", re.I)
+
+
 def parse_stream(lines: list) -> dict:
     """What the run did (every tool call, and which ones Claude Code refused) and how it ended, from the stream-json output."""
-    calls, final = [], None
+    calls, final, missing = [], None, set()
     for line in lines:
         try:
             event = json.loads(line)
@@ -225,9 +228,18 @@ def parse_stream(lines: list) -> dict:
             for block in (event.get("message") or {}).get("content") or []:
                 if isinstance(block, dict) and block.get("type") == "tool_use":
                     calls.append({"id": block.get("id"), "name": block.get("name"), "input": block.get("input") or {}})
+        elif event.get("type") == "user":
+            # a call to a tool that does not exist (2026-11-16: Haiku invented "mcp__wait_placeholder") comes back as an
+            # error result and did nothing: it is noted like a refused call, never a reason to stop the lane
+            for block in (event.get("message") or {}).get("content") or []:
+                if isinstance(block, dict) and block.get("type") == "tool_result" and block.get("is_error"):
+                    text = block.get("content")
+                    text = " ".join(str(c.get("text") or "") for c in text if isinstance(c, dict)) if isinstance(text, list) else str(text or "")
+                    if NO_SUCH_TOOL.search(text):
+                        missing.add(block.get("tool_use_id"))
         elif event.get("type") == "result":
             final = event
-    refused = {d.get("tool_use_id") for d in (final or {}).get("permission_denials") or [] if isinstance(d, dict)}
+    refused = {d.get("tool_use_id") for d in (final or {}).get("permission_denials") or [] if isinstance(d, dict)} | missing
     for c in calls:
         c["refused"] = bool(c["id"]) and c["id"] in refused
     return {"calls": calls, "final": final}

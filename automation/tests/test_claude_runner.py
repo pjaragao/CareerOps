@@ -164,3 +164,17 @@ def test_usage_and_provider_error_are_reported():
     assert total["input_tokens"] == 6 and total["model"] == "claude-haiku-5-5,claude-sonnet-5-5"
     worked = run.outcome({"calls": [call("browser_click", ref="e1")], "final": final}, 1, ACTION)
     assert not worked["provider_error"]   # it did something on the page: not a provider refusal
+
+
+
+def test_a_tool_that_does_not_exist_is_noted_not_flagged():
+    lines = [json.dumps({"type": "assistant", "message": {"content": [{"type": "tool_use", "id": "t1", "name": "mcp__wait_placeholder", "input": {}}]}}),
+             json.dumps({"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "t1", "is_error": True,
+                                                                   "content": "<tool_use_error>Error: No such tool available: mcp__wait_placeholder</tool_use_error>"}]}}),
+             json.dumps({"type": "result", "is_error": False, "structured_output": {"status": "needs_user", "summary": "x"}})]
+    parsed = run.parse_stream(lines)
+    assert parsed["calls"][0]["refused"] is True
+    assert run.audit(parsed["calls"], ACTION) == []
+    # a real call to a forbidden tool that ran is still flagged
+    ran = [{"id": "t2", "name": "mcp__playwright__browser_evaluate", "input": {}, "refused": False}]
+    assert run.audit(ran, ACTION)
