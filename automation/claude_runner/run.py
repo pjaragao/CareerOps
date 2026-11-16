@@ -312,7 +312,10 @@ def refused_tools(calls: list) -> list:
 
 
 PROVIDER_ERROR_RE = re.compile(r"usage limit|rate.?limit|overloaded|quota|credit balance|\b5\d\d\b|cota .* esgotada|upstream failed|"
-                               r"hit your limit|limit reached", re.I)
+                               r"hit your (\w+ )?limit|session limit|limit reached|resets \d", re.I)
+# the run started but the browser tools never came (MCP still connecting, CDP reset): nothing was done, nothing to count
+TOOLS_DOWN_RE = re.compile(r"no browser tools are available|browser tools? (is|are) (not available|not responding)|mcp server (is )?still connecting|"
+                           r"has announced no tools|ws at 127\.0\.0\.1:\d+|econnreset", re.I)
 
 
 def usage_of(final: dict) -> dict:
@@ -343,7 +346,8 @@ def outcome(parsed: dict, returncode: int, action: dict) -> dict:
         result["status"] = "failed"
         result["summary"] = f"A execução do Claude terminou com erro: {str(final.get('result') or returncode)[:500]}"
         # nothing done and the provider said no (usage limit, overload, 5xx): the backend pauses all runs (breaker)
-        result["provider_error"] = not parsed["calls"] and bool(PROVIDER_ERROR_RE.search(str(final.get("result") or "") + " " + str(final.get("api_error_status") or "")))
+        said = " ".join(str(x or "") for x in (final.get("result"), final.get("api_error_status"), parsed.get("stderr")))
+        result["provider_error"] = not parsed["calls"] and bool(PROVIDER_ERROR_RE.search(said))
         return result
     answer = final.get("structured_output")
     if not isinstance(answer, dict):
@@ -358,6 +362,9 @@ def outcome(parsed: dict, returncode: int, action: dict) -> dict:
     refused = refused_tools(parsed["calls"])
     if refused:
         result["summary"] = (result["summary"] + f"\n\nO sistema recusou (nada foi feito): {', '.join(refused)}").strip()[:2700]
+    browser_calls = [c for c in parsed["calls"] if str(c.get("name") or "").startswith("mcp__playwright__") and not c.get("refused")]
+    if result["status"] != "done" and len(browser_calls) <= 3 and TOOLS_DOWN_RE.search(result["summary"] or ""):
+        result["provider_error"] = True   # the browser never answered: a pause and a retry, not a stop for you
     return result
 
 
@@ -381,7 +388,9 @@ def _claude_attempt(action: dict, env: dict, prompt: str, mcp_url: str, port, mo
                                                     system=system_prompt(action)),
                                       cwd=folder, env=clean_env, capture_output=True, text=True,
                                       timeout=TIMEOUT_SECONDS + (1200 if action.get("live_captcha") else 0))
-                return parse_stream(done.stdout.splitlines()), done.returncode
+                parsed = parse_stream(done.stdout.splitlines())
+                parsed["stderr"] = (done.stderr or "")[-2000:]
+                return parsed, done.returncode
             except subprocess.TimeoutExpired as e:
                 out = e.stdout.decode("utf-8", "replace") if isinstance(e.stdout, bytes) else (e.stdout or "")
                 return parse_stream(out.splitlines()), 124
@@ -397,9 +406,18 @@ def _run_action(action: dict, env: dict) -> tuple:
                            dossier=json.dumps(slim_dossier(dossier), ensure_ascii=False, separators=(",", ":"), default=str))
     port = env.get("CAREEROPS_MCP_PORT_ATS", 8932) if action["lane"] == "ats" else env.get("CAREEROPS_MCP_PORT_LINKEDIN", 8931)
     mcp_url = f"http://127.0.0.1:{port}/mcp"
-    if not ats_helpers.probe_mcp_http(mcp_url, timeout=8):
-        time.sleep(2)
-        ats_helpers.probe_mcp_http(mcp_url, timeout=8)
+    # the browser tools must answer before a run is spent (2026-11-16: the worker had closed the idle company-site browser,
+    # and five runs started with "the playwright MCP server is still connecting" and did nothing). The worker reopens it
+    # within a minute when there is routine work, so wait up to ~90 s; still down: a provider-like pause, nothing counted
+    ready = False
+    for _ in range(9):
+        if ats_helpers.probe_mcp_http(mcp_url, timeout=8) and server_tools(port):
+            ready = True
+            break
+        time.sleep(10)
+    if not ready:
+        return {"status": "failed", "summary": "As ferramentas do navegador não responderam: nada foi feito; tento de novo depois",
+                "questions": [], "audit_flags": [], "cost_usd": None, "transcript": {}, "provider_error": True}, 0
 
     provider = (env.get("CAREEROPS_RUNNER_PROVIDER") or "auto").lower()
     if provider == "hydrogen":

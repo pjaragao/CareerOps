@@ -178,3 +178,15 @@ def test_a_tool_that_does_not_exist_is_noted_not_flagged():
     # a real call to a forbidden tool that ran is still flagged
     ran = [{"id": "t2", "name": "mcp__playwright__browser_evaluate", "input": {}, "refused": False}]
     assert run.audit(ran, ACTION)
+
+
+
+def test_session_limit_and_a_browser_that_never_answered_pause_instead_of_stopping():
+    final = {"type": "result", "is_error": True, "result": "You've hit your session limit · resets 1pm (America/Sao_Paulo)"}
+    assert run.outcome({"calls": [], "final": final}, 1, ACTION)["provider_error"] is True
+    assert run.outcome({"calls": [], "final": None, "stderr": "Claude AI usage limit reached"}, 1, ACTION)["provider_error"] is True
+    down = {"type": "result", "is_error": False, "structured_output": {"status": "needs_user",
+            "summary": "No browser tools are available in this session: the playwright MCP server is still connecting."}}
+    assert run.outcome({"calls": [], "final": down}, 0, ACTION)["provider_error"] is True
+    real = {"type": "result", "is_error": False, "structured_output": {"status": "needs_user", "summary": "A required question has no answer."}}
+    assert not run.outcome({"calls": [], "final": real}, 0, ACTION).get("provider_error")
