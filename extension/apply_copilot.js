@@ -426,7 +426,7 @@
         const fixed = [];
         const toAsk = [];
         for (const f of all) {
-            if (DEMOGRAPHIC.test(f.label)) { if (!f.current) { mark(f, '#e17055'); pending.push(f.label); } continue; }
+            // demographic questions go to the backend too: it answers only from your standing answers, never with the AI
             if (!f.current && f.type === 'textarea' && COVER.test(f.label) && prep.cover_letter) { await apply(f, prep.cover_letter); mark(f, '#00b894'); filled++; continue; }
             toAsk.push(f);   // empty ones are filled; filled ones are checked against the CV (sites prefill from a parsed resume, often wrongly)
         }
@@ -515,6 +515,13 @@
     }
     function managedFilled(filled, pending) {
         if (!managedAction || managedReported || !jobId) return;
+        if (!pending.length) {
+            // nothing left on this step: the worker presses Next / Submit itself, with no AI (ats_adapters.py). The
+            // attribute says which step was filled; a new step gets a new one when it is filled in turn.
+            document.documentElement.setAttribute('data-careerops-form', JSON.stringify({ sig: `${lastSignature}#${Date.now()}`, filled, pending: [] }));
+            backend('POST', `/automation/actions/${managedAction}/events`, { source: 'extension', event: 'external_step_filled', data: { filled } });
+            return;
+        }
         managedReported = true;
         removePanel();
         backend('POST', `/automation/actions/${managedAction}/events`, { source: 'extension', event: 'external_form_filled', data: { filled, pending: pending.slice(0, 40) } })

@@ -790,12 +790,15 @@ class LinkedInCopilotService:
     async def easy_apply_answers(job: Dict[str, Any], fields: List[Dict[str, Any]]) -> dict:
         """Answers for the fields of one Easy Apply step. Demographic questions are never answered."""
         from app.services.profile_service import ProfileService
-        desc = (job.get("description") or "")[:5000]
-        lang = "Portuguese" if sum(h in f" {desc.lower()} " for h in LinkedInCopilotService.PT_HINTS) >= 2 else "English"
+        full_desc = job.get("description") or ""
+        lang = "Portuguese" if sum(h in f" {full_desc[:5000].lower()} " for h in LinkedInCopilotService.PT_HINTS) >= 2 else "English"
+        desc = full_desc[:2500]   # the leftover fields rarely need more of the ad (token plan, phase 2)
         facts = LinkedInCopilotService._facts()
         gender = str((facts.get("self_identification") or {}).get("gender") or "")
         answers: Dict[str, str] = {}
         usable, skipped = [], []
+        from app.services.form_mapper import FormMapper
+        mapper = FormMapper(facts, job, lang)   # label -> fact with no AI: only what it cannot map goes to the model
         for f in fields:
             if not f.get("key"):
                 continue
@@ -807,6 +810,11 @@ class LinkedInCopilotService:
                 if coerced is not None:
                     answers[f["key"]] = coerced
                     continue
+                if not LinkedInCopilotService.SALARY.search(label):
+                    mapped = mapper.answer(f)
+                    if mapped is not None:
+                        answers[f["key"]] = mapped
+                        continue
             if LinkedInCopilotService.GENDER.search(label):
                 g = LinkedInCopilotService._gender_answer(f, gender, lang) if gender else None
                 (answers.__setitem__(f["key"], g) if g else skipped.append(f["key"]))
@@ -831,7 +839,8 @@ class LinkedInCopilotService:
             "job_title": job.get("title"), "company": job.get("company"), "location": job.get("location"),
             "job_description": desc, "lang_name": lang, "facts": LinkedInCopilotService._facts_text(),
             "resume_sent": (saved or {}).get("resume_markdown") or "",
-            "resume_base": ProfileService.get_resume_base("pt" if lang == "Portuguese" else "en"),
+            # one resume is enough: the base only when this job has none of its own
+            "resume_base": "" if (saved or {}).get("resume_markdown") else ProfileService.get_resume_base("pt" if lang == "Portuguese" else "en"),
             "fields": usable,
         }, model_key="ai_model_writing")
         raw = ai.get("answers") or {}

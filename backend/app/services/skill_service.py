@@ -45,6 +45,9 @@ class SkillService:
     # Documents: written by Claude Sonnet 5.5 medium through the Claude CLI shim (AIService.get_document_provider)
     DOCUMENT_SKILLS = {"jobs/resume.md", "jobs/cover_letter.md", "jobs/cv_review.md", "resumes/improve.md", "resumes/ats_review.md"}
 
+    # Form answers left over after the deterministic mapper: one small call on Claude Haiku 5.5 through the same shim
+    FORM_SKILLS = {"linkedin/easy_apply.md": "claude-haiku-5-5"}
+
     # Skills whose text reaches other people: they go through the content guard (config/automation.yml)
     OUTGOING_SKILLS = {
         "jobs/resume.md", "jobs/cover_letter.md", "jobs/outreach.md", "resumes/improve.md", "resumes/form_suggestions.md",
@@ -96,8 +99,12 @@ class SkillService:
         target_domain = domain_mapping.get(domain, domain)
         model_key = "ai_model_writing" if skill_path in cls.WRITING_SKILLS else f"ai_model_{target_domain}"
         
-        provider = (AIService.get_document_provider(model_key) if skill_path in cls.DOCUMENT_SKILLS
-                    else AIService.get_provider(model_key))
+        if skill_path in cls.FORM_SKILLS:
+            provider = AIService.get_document_provider(model_key, model=cls.FORM_SKILLS[skill_path])
+        elif skill_path in cls.DOCUMENT_SKILLS:
+            provider = AIService.get_document_provider(model_key)
+        else:
+            provider = AIService.get_provider(model_key)
         prompt = await cls.render_prompt(skill_path, context)
         
         generate = provider.generate_json if response_format == "json" else provider.generate_text

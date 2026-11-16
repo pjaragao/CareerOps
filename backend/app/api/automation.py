@@ -298,6 +298,26 @@ class ReadyIn(BaseModel):
     fields: list = []
 
 
+class RecipeIn(BaseModel):
+    adapter: str = Field("generic", max_length=40)
+    next: List[str] = Field(default_factory=list, max_length=20)
+    submit: List[str] = Field(default_factory=list, max_length=5)
+
+
+@router.get("/recipes/{host}", dependencies=[Depends(require_worker)])
+async def recipe(host: str):
+    """How the forms of this site were navigated before (token plan, phase 2): the worker's adapter tries these first."""
+    from app.services.site_service import SiteService
+    return {"recipe": SiteService.recipe(host.lower()[:200])}
+
+
+@router.post("/recipes/{host}", dependencies=[Depends(require_worker)])
+async def save_recipe(host: str, req: RecipeIn):
+    from app.services.site_service import SiteService
+    SiteService.save_recipe(host.lower()[:200], req.adapter, req.next, req.submit)
+    return {"ok": True}
+
+
 @router.post("/actions/{action_id}/ready", dependencies=[Depends(require_worker)])
 async def ready(action_id: int, req: ReadyIn):
     return _found(Auto.ready_to_submit(action_id, req.fields))

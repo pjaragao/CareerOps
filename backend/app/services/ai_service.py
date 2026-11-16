@@ -207,7 +207,9 @@ class ClaudeShimProvider(AgyShimProvider):
     (automation/claude_shim/claude_shim.py on the host). If the shim fails, the AGY chain answers instead."""
     MODEL = "claude-sonnet-5-5-medium"
 
-    def __init__(self, token: str, base_url: str, agy_provider: "AgyShimProvider"):
+    def __init__(self, token: str, base_url: str, agy_provider: "AgyShimProvider", model: Optional[str] = None):
+        if model:
+            self.MODEL = model
         super().__init__(token, base_url, self.MODEL)
         self.agy = agy_provider
 
@@ -224,13 +226,13 @@ class ClaudeShimProvider(AgyShimProvider):
 
 class AIService:
     @staticmethod
-    def get_document_provider(model_key: Optional[str] = None) -> AIProvider:
+    def get_document_provider(model_key: Optional[str] = None, model: Optional[str] = None) -> AIProvider:
         """Provider for the skills that write documents: Claude CLI (Sonnet medium) unless CLAUDE_SHIM_URL=off."""
         base = AIService.get_provider(model_key)
         url = os.getenv("CLAUDE_SHIM_URL", "http://172.26.0.1:8788/v1")   # "off" turns it off
         if not url or url.lower() == "off" or not isinstance(base, AgyShimProvider):
             return base
-        return ClaudeShimProvider(os.getenv("CLAUDE_SHIM_TOKEN") or os.getenv("AGY_SHIM_TOKEN", ""), url, base)
+        return ClaudeShimProvider(os.getenv("CLAUDE_SHIM_TOKEN") or os.getenv("AGY_SHIM_TOKEN", ""), url, base, model=model)
 
     @staticmethod
     def get_provider(model_key: Optional[str] = None) -> AIProvider:

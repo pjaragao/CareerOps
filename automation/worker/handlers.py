@@ -10,7 +10,7 @@ from typing import Dict, Optional
 
 from playwright.async_api import Error as PlaywrightError, Page
 
-from . import clicks, connect_engine, safety, verify
+from . import ats_adapters, clicks, connect_engine, safety, verify
 from .api import Api
 from .browser import Browsers
 
@@ -194,6 +194,7 @@ class Runner:
         waiting_since = None
         form_since = time.monotonic()
         clicked: set = set()   # the real clicks the extension asked for (clicks.py): each at most once
+        form = {"sig": None, "steps": 0, "since": None, "recipe": None, "labels": []}   # deterministic ATS navigation
         while True:
             await asyncio.sleep(POLL_SECONDS)
             now = time.monotonic()
@@ -250,6 +251,12 @@ class Runner:
                     continue
                 await self.api.post(f"/automation/actions/{action_id}/handoff", {"url": target})
                 return
+            if action["lane"] == "ats" and action["kind"] == "apply":
+                outcome = await self.drive_form(page, action, info, form)
+                if outcome == "stop":
+                    return
+                if outcome == "progress":
+                    form_since = time.monotonic()
             if action["lane"] == "ats" and now - form_since > EXTERNAL_FORM_TIMEOUT:
                 await self.report_stop(page, action, "external_form_unfinished", "O preenchimento não terminou a tempo")
                 await self._remove_copilot_overlay(page)
@@ -258,6 +265,63 @@ class Runner:
             if now - started > DEADLINES.get(action["kind"], 300):
                 await self.report_stop(page, action, "step_stuck", "A extensão não terminou a tempo")
                 return
+
+    async def drive_form(self, page: Page, action: dict, info: dict, form: dict) -> Optional[str]:
+        """After the extension filled a step with nothing pending, presses Next / Submit itself (ats_adapters.py), with
+        no LLM. Returns "progress" after a Next, "stop" once it handed the form on (submitted, or escalated), else None.
+        A step it cannot move on goes to the Claude routine with the form kept open, as before."""
+        action_id = action["id"]
+        state = await ats_adapters.ready_state(page)
+        idle = form["since"] is not None and time.monotonic() - form["since"] > 15
+        if state is None and not idle:
+            return None
+        if state is not None and state.get("sig") == form["sig"] and not idle:
+            return None
+        if state is not None:
+            form["sig"] = state.get("sig")
+            if state.get("pending"):
+                return None   # the extension escalates a step with fields left (managedFilled): nothing to do here
+        if form["recipe"] is None:
+            host = ats_adapters.host_of(page.url)
+            form["recipe"] = (await self.api.get(f"/automation/recipes/{host}") or {}).get("recipe") or {}
+        ad = ats_adapters.adapter_for(page.url, form["recipe"])
+        res = await ats_adapters.step(page, ad)
+        if res.outcome == "stuck":
+            await self._hand_on(page, action, f"{res.reason}" + (f": {'; '.join(res.errors)[:300]}" if res.errors else ""))
+            return "stop"
+        if res.outcome == "next":
+            if form["steps"] >= 12:
+                await self._hand_on(page, action, "o formulário passou de 12 etapas sem chegar ao envio")
+                return "stop"
+            await res.element.click(timeout=8000)
+            form["steps"] += 1
+            form["labels"].append(("next", res.label))
+            form["since"] = time.monotonic()
+            await self.api.post(f"/automation/actions/{action_id}/events", {"source": "worker", "event": "ats_next", "data": {"adapter": ad.name, "label": res.label, "step": form["steps"]}})
+            return "progress"
+        # Submit: only with the final click allowed and nothing waiting for your confirmation
+        if not info.get("allow_final") or (info.get("confirm_required") and not info.get("confirmed")):
+            await self._hand_on(page, action, "Formulário pronto para enviar; o envio final não está liberado para o worker")
+            return "stop"
+        await res.element.click(timeout=8000)
+        await page.wait_for_timeout(VERIFY_SETTLE_SECONDS * 1000)
+        errors = await ats_adapters.page_errors(page)
+        if errors:
+            await self._hand_on(page, action, f"o envio mostrou erro na página: {'; '.join(errors)[:300]}")
+            return "stop"
+        form["labels"].append(("submit", res.label))
+        host = ats_adapters.host_of(page.url)
+        await self.api.post(f"/automation/recipes/{host}", {"adapter": ad.name, "next": [l for k, l in form["labels"] if k == "next"],
+                                                             "submit": [l for k, l in form["labels"] if k == "submit"]})
+        await self.api.post(f"/automation/actions/{action_id}/complete", {"outcome": "executed", "source": "worker",
+                                                                          "data": {"engine": "ats_adapter", "adapter": ad.name, "steps": form["steps"]}})
+        return None   # the loop sees "verifying" and proves it on this page
+
+    async def _hand_on(self, page: Page, action: dict, text: str) -> None:
+        """The form goes to the Claude routine as it is, kept open (the old way, now only for what the adapter cannot do)."""
+        await self._remove_copilot_overlay(page)
+        self.kept[action["id"]] = page
+        await self.report_stop(page, action, "external_form_unfinished", text)
 
     async def settle(self, page: Page, action: dict, clicked: set) -> None:
         """The wait after the final click. The extension may still ask for the real click that sends (clicks.py): done here,
