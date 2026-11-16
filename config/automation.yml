@@ -49,6 +49,10 @@ jobs:
   cv_review: agent
   cv_review_rounds: 2
   resume_max_chars: 4800                     # the first version already fits two pages (the approved ones: 4,300–5,500)
+  # token plan, phase 3 (2026-11-16)
+  docs_on_demand: true                       # CV and cover letter only for jobs you approved, not for every import
+  cv_archetypes: true                        # one approved CV per job family (AI, data, finance, infrastructure) and language, reused
+  cover_cache: true                          # one cover letter per company and language, reused
 
 claude:
   per_day: 1000

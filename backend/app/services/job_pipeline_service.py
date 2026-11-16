@@ -101,16 +101,36 @@ class JobPipelineService:
     @staticmethod
     async def generate_docs(job_id: int) -> list:
         """CV and cover letter for the job, only the ones still missing. Attempted once (auto_docs_at)."""
-        from app.api.actions import ActionOptions, generate_resume, generate_cover_letter
+        from app.api.actions import ActionOptions, generate_resume, generate_cover_letter, get_job_lang
+        from app.services.automation_service import config as automation_config
+        from app.services.site_service import TextCache, archetype_of, text_key
         job = JobService.get_job_by_id(job_id)
         made = []
+        jobs_cfg = automation_config().get("jobs") or {}
+        lang = "pt" if get_job_lang(job) == "Portuguese" else "en"
         try:
             if not job.get("resume_markdown"):
-                if (await generate_resume(job_id, ActionOptions())).get("content"):
+                # token plan, phase 3: a job of a known family takes the CV already approved for that family and language
+                arch = archetype_of(job.get("job_title") or "") if jobs_cfg.get("cv_archetypes", True) else None
+                cached = TextCache.get(text_key("cv", arch, lang)) if arch else None
+                if cached:
+                    JobService.update_job_ai_content(job_id, "resume", cached)
+                    made.append("resume_archetype")
+                elif (await generate_resume(job_id, ActionOptions())).get("content"):
                     made.append("resume")
             if not job.get("cover_letter"):
-                if (await generate_cover_letter(job_id, ActionOptions())).get("content"):
-                    made.append("cover")
+                # one letter per company and language: a second job at the same company reuses it
+                key = text_key("cover", job.get("company") or "", lang) if job.get("company") else ""
+                cached = TextCache.get(key) if key and jobs_cfg.get("cover_cache", True) else None
+                if cached:
+                    JobService.update_job_ai_content(job_id, "cover", cached)
+                    made.append("cover_cached")
+                else:
+                    letter = (await generate_cover_letter(job_id, ActionOptions())).get("content")
+                    if letter:
+                        made.append("cover")
+                        if key:
+                            TextCache.put(key, "cover", letter)
         finally:
             conn = get_db_connection()
             try:
@@ -131,7 +151,10 @@ class JobPipelineService:
         else:
             check = await JobPipelineService.check_eligibility(job_id)
         made = []
-        if check["status"] != "blocked" and not job.get("auto_docs_at"):
+        from app.services.automation_service import config as automation_config
+        on_demand = (automation_config().get("jobs") or {}).get("docs_on_demand", True)
+        # token plan, phase 3: documents only for jobs you approved (AutomationService.prepare_documents), not for every import
+        if check["status"] != "blocked" and not job.get("auto_docs_at") and not on_demand:
             made = await JobPipelineService.generate_docs(job_id)
         log.info("job %s: eligibility %s, generated %s", job_id, check["status"], made or "nothing")
         return {**check, "generated": made}

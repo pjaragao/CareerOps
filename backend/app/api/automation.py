@@ -304,6 +304,25 @@ class RecipeIn(BaseModel):
     submit: List[str] = Field(default_factory=list, max_length=5)
 
 
+class TextCacheIn(BaseModel):
+    kind: str = Field("answer", max_length=40)
+    text: str = Field(..., min_length=1, max_length=6000)
+
+
+@router.get("/text-cache/{key}", dependencies=[Depends(require_worker)])
+async def text_cache_get(key: str):
+    """A text written before (token plan, phase 3): a motivation answer for this company and question."""
+    from app.services.site_service import TextCache
+    return {"text": TextCache.get(key[:300])}
+
+
+@router.put("/text-cache/{key}", dependencies=[Depends(require_worker)])
+async def text_cache_put(key: str, req: TextCacheIn):
+    from app.services.site_service import TextCache
+    TextCache.put(key[:300], req.kind, req.text)
+    return {"ok": True}
+
+
 @router.get("/answers/lookup", dependencies=[Depends(require_worker)])
 async def lookup_answer(q: str):
     """The saved answers closest to one form question (the Claude routine asks instead of carrying them all)."""

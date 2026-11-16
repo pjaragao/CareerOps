@@ -1195,7 +1195,19 @@ class AutomationService:
             conn.commit()
         finally:
             conn.close()
-        return {"action": {**AutomationService._run_info(action, state), "run_id": run_id, "dossier": AutomationService._dossier(action)}, "reason": None}
+        return {"action": {**AutomationService._run_info(action, state), "run_id": run_id, "dossier": AutomationService._dossier(action),
+                           "models": AutomationService.model_hint(action)}, "reason": None}
+
+    @staticmethod
+    def model_hint(action: dict) -> dict:
+        """Token plan, phase 3: on a host where Haiku keeps failing and never finished, the chain starts at Sonnet."""
+        host = (urlparse(action.get("target_url") or "").hostname or "").lower()
+        if not host:
+            return {}
+        row = _one("""SELECT COUNT(*) FILTER (WHERE model = 'claude-haiku-5-5' AND NOT ok) AS bad,
+                             COUNT(*) FILTER (WHERE model LIKE 'claude-haiku-5-5%%' AND ok) AS good
+                        FROM public.automation_runs WHERE kind = 'claude' AND host = %s""", (host,)) or {}
+        return {"skip_haiku": int(row.get("bad") or 0) >= 3 and int(row.get("good") or 0) == 0}
 
     @staticmethod
     def _dossier(action: dict) -> dict:
@@ -1329,18 +1341,36 @@ class AutomationService:
         done = 0
         state = AutomationService.state()
         by_agent = (config().get("jobs") or {}).get("cv_review", "agent") == "agent"
+        from app.services.site_service import SiteService, TextCache, archetype_of, text_key
         for action in _rows("SELECT * FROM public.automation_actions WHERE kind = 'apply' AND status = 'approved' ORDER BY rank, sort_at DESC LIMIT 2"):
             try:
-                asyncio.run(JobPipelineService.generate_docs(action["target_id"]))
-                job = _one("SELECT resume_markdown, cover_letter FROM public.job_listings WHERE id = %s", (action["target_id"],)) or {}
+                # token plan, phase 3: no documents for a site that only you can pass, nor for a page another action holds
+                block = SiteService.human_block(action.get("target_url") or "")
+                if block:
+                    AutomationService._to_user(action["id"], "captcha", "Este site pediu CAPTCHA nas últimas tentativas: os documentos esperam você resolver.")
+                    continue
+                made = asyncio.run(JobPipelineService.generate_docs(action["target_id"])) or []
+                job = _one("SELECT job_title, resume_markdown, cover_letter, language, description FROM public.job_listings WHERE id = %s", (action["target_id"],)) or {}
                 if not job.get("resume_markdown"):
                     raise RuntimeError("o CV não foi gerado")
+                if "resume_archetype" in made:   # the CV the reviewer already approved for this family: no new review
+                    AutomationService.add_event(action["id"], "reviewer", "cv_archetype", {"archetype": archetype_of(job.get("job_title") or "")})
+                    _rows("UPDATE public.automation_actions SET status = 'queued', updated_at = NOW() WHERE id = %s", (action["id"],))
+                    done += 1
+                    continue
                 if by_agent:
                     verdict = asyncio.run(CvReviewService.run(action["target_id"]))
                     AutomationService.add_event(action["id"], "reviewer", "cv_review", {k: verdict[k] for k in ("approved", "rounds", "history")},
                                                 level="info" if verdict["approved"] else "warning")
                     if verdict["approved"]:
                         _rows("UPDATE public.automation_actions SET status = 'queued', updated_at = NOW() WHERE id = %s", (action["id"],))
+                        arch = archetype_of(job.get("job_title") or "") if (config().get("jobs") or {}).get("cv_archetypes", True) else None
+                        if arch:   # the first approved CV of a family serves the next jobs of that family
+                            from app.api.actions import get_job_lang
+                            key = text_key("cv", arch, "pt" if get_job_lang(job) == "Portuguese" else "en")
+                            fresh = _one("SELECT resume_markdown FROM public.job_listings WHERE id = %s", (action["target_id"],)) or {}
+                            if not TextCache.get(key) and fresh.get("resume_markdown"):
+                                TextCache.put(key, "cv", fresh["resume_markdown"])
                     else:   # still wrong after being redone: it waits for you, with the reasons
                         _rows("""UPDATE public.automation_actions SET status = 'review_docs', error_code = 'cv_review_failed', error_text = %s,
                                         updated_at = NOW() WHERE id = %s""",

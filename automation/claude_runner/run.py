@@ -398,7 +398,10 @@ def _run_action(action: dict, env: dict) -> tuple:
     extra = ATS_EXTRA_TOOLS if action.get("lane") == "ats" else ()
     result, tool_count = None, 0
     usage = {}
-    for model, effort in _claude_models():
+    chain = _claude_models()
+    if (action.get("models") or {}).get("skip_haiku") and len(chain) > 1:
+        chain = [m for m in chain if "haiku" not in m[0]] or chain   # Haiku never finished on this host: start at Sonnet
+    for model, effort in chain:
         parsed, code = _claude_attempt(action, env, prompt, mcp_url, port, model, effort, extra)
         result = outcome(parsed, code, action)
         usage = add_usage(usage, result.get("usage"))

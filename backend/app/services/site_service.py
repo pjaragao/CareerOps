@@ -6,6 +6,7 @@ account wall), so a site that keeps blocking goes straight to you instead of spe
 from __future__ import annotations
 
 import re
+import unicodedata
 from typing import Dict, List, Optional
 from urllib.parse import urlparse
 
@@ -111,3 +112,46 @@ class SiteService:
     def clear_block(host: str) -> None:
         """You passed it (or the site changed): the host is tried again."""
         _rows("UPDATE public.automation_sites SET blocks = '{}'::jsonb, last_block = NULL, updated_at = NOW() WHERE host = %s", (host,))
+
+
+# ── Texts written once and reused (token plan, phase 3; table automation_text_cache) ──
+ARCHETYPES = (   # job families that share one approved CV per language; anything else gets its own CV
+    ("ai_engineering", re.compile(r"\b(ai|ml|llm|genai|gen ai|machine learning|generative|agentic|agents?|mlops|forward deployed|"
+                                  r"artificial intelligence|intelig[eê]ncia artificial|ia gen)\b", re.I)),
+    ("data", re.compile(r"\b(data scientist|data engineer|data analyst|analytics|business intelligence|bi analyst|cientista de dados)\b", re.I)),
+    ("finance", re.compile(r"\b(fp&a|fp & a|finance|financial|controller|controlling|cfo|treasury|valuation|investment|m&a|"
+                           r"corporate development|financeiro|finan[cç]as)\b", re.I)),
+    ("infrastructure", re.compile(r"\b(infrastructure|project finance|water|wastewater|utility|utilities|energy|cost manager|"
+                                  r"project controls?|saneamento|infraestrutura)\b", re.I)),
+)
+
+
+def archetype_of(title: str) -> Optional[str]:
+    for name, rx in ARCHETYPES:
+        if rx.search(title or ""):
+            return name
+    return None
+
+
+def text_key(*parts: str) -> str:
+    raw = ":".join(re.sub(r"[^a-z0-9]+", "-", unicodedata.normalize("NFKD", str(p or "").lower()).encode("ascii", "ignore").decode()).strip("-")
+                   for p in parts)
+    return raw[:300]
+
+
+class TextCache:
+    @staticmethod
+    def get(key: str) -> Optional[str]:
+        rows = _rows("SELECT text FROM public.automation_text_cache WHERE cache_key = %s", (key,))
+        return rows[0]["text"] if rows else None
+
+    @staticmethod
+    def put(key: str, kind: str, text: str) -> None:
+        if not key or not (text or "").strip():
+            return
+        _rows("""INSERT INTO public.automation_text_cache (cache_key, kind, text) VALUES (%s, %s, %s)
+                 ON CONFLICT (cache_key) DO UPDATE SET text = EXCLUDED.text, created_at = NOW()""", (key, kind[:40], text))
+
+    @staticmethod
+    def drop(key: str) -> None:
+        _rows("DELETE FROM public.automation_text_cache WHERE cache_key = %s", (key,))

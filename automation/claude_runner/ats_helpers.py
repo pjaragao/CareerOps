@@ -608,11 +608,38 @@ def lookup_answer(question: str, env: Dict[str, str]) -> Dict[str, Any]:
         return {"saved": [], "mapped": None, "error": str(e)[:200]}
 
 
+def _cache_key(company: str, question: str) -> str:
+    norm = lambda t: re.sub(r"[^a-z0-9]+", "-", str(t or "").lower()).strip("-")
+    return f"answer:{norm(company)}:{norm(question)}"[:300]
+
+
+def _text_cache(env: Dict[str, str], key: str, text: Optional[str] = None) -> Optional[str]:
+    """GET (text None) or PUT the backend's text cache; None when unavailable."""
+    raw_base = (env.get("CAREEROPS_API_BASE") or env.get("CAREEROPS_API_URL") or "http://127.0.0.1:8005/api").rstrip("/")
+    api_base = raw_base if raw_base.endswith("/api") else f"{raw_base}/api"
+    token = env.get("CAREEROPS_WORKER_TOKEN") or ""
+    if not token:
+        return None
+    url = f"{api_base}/automation/text-cache/{urllib.parse.quote(key, safe='')}"
+    data = json.dumps({"kind": "answer", "text": text}).encode("utf-8") if text is not None else None
+    req = urllib.request.Request(url, data=data, method="PUT" if text is not None else "GET",
+                                 headers={"X-CareerOps-Token": token, "Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=15) as r:
+            return (json.loads(r.read().decode("utf-8")) or {}).get("text")
+    except (urllib.error.URLError, ValueError):
+        return None
+
+
 def write_answer(question: str, context: Dict[str, Any], env: Dict[str, str]) -> Dict[str, Any]:
     """An open motivation answer ("Why do you want to work at X?") written by Claude Sonnet 5.5 at HIGH effort through the Claude
     CLI, from the job and the candidate's resume. Sent as returned, no approval (the candidate's decision of 2026-11-15)."""
     guard = _content_guard()
     job = (context or {}).get("job") or {}
+    key = _cache_key(job.get("company") or "", question) if job.get("company") else ""
+    cached = _text_cache(env, key) if key else None
+    if cached and not any(p.search(cached) for p in guard["patterns"]):
+        return {"text": cached, "cached": True}   # token plan, phase 3: the same company asked the same before
     resume = str((context or {}).get("resume_markdown") or "")[:9000]
     facts = json.dumps((context or {}).get("facts") or {}, ensure_ascii=False, default=str)[:3000]
     prompt = (
@@ -639,6 +666,8 @@ def write_answer(question: str, context: Dict[str, Any], env: Dict[str, str]) ->
         return {"error": "empty answer"}
     if any(p.search(text) for p in guard["patterns"]):
         return {"error": "the draft mentioned a forbidden term; call again"}
+    if key:
+        _text_cache(env, key, text)
     return {"text": text}
 
 
