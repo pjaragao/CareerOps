@@ -29,6 +29,11 @@ HEARTBEAT_SECONDS = 30
 
 
 DISCARD_LIKE = {"job_closed", "already_applied", "captcha"}
+HUMAN_WAIT_SECONDS = 900   # live CAPTCHA session: how long the worker waits for you on one challenge
+LIVE_CAPTCHA_RE = re.compile(r"complete the captcha|i['’]m not a robot|n[aã]o sou um rob[oô]|verify you are human|confirme que [eé] humano|"
+                             r"executando verifica[cç][aã]o de seguran[cç]a|checking (if the site connection is secure|your browser)|"
+                             r"select all images|selecione todas as imagens|just a moment\.\.\.|press (and|&) hold|unusual traffic|"
+                             r"verificaci[oó]n de seguridad|bist du ein mensch|v[eé]rifiez que vous [eê]tes humain", re.I)
 CLOSED_JOB_RE = re.compile(r"\b(?:no longer accepting applications|not currently accepting applications|this job (?:is )?(?:no longer|not) available|"
                            r"job posting (?:has )?(?:expired|been removed)|position has been filled|this (?:job|position) (?:has been|is) closed|"
                            r"vaga (?:encerrada|n[aã]o est[aá] mais dispon[ií]vel)|cette offre n['’]est plus disponible|"
@@ -92,6 +97,43 @@ class Runner:
             doc = await self.api.download(f"/jobs/{action['target_id']}/document.pdf?kind={kind}")
             if doc:
                 (folder / Path(doc[0]).name).write_bytes(doc[1])
+
+    async def captcha_present(self, page: Page) -> bool:
+        """A challenge on the page: the known phrases, a Cloudflare check, or a reCAPTCHA / hCaptcha / Turnstile frame."""
+        try:
+            _, title, text = await self._page_state(page)
+            if LIVE_CAPTCHA_RE.search(f"{title}\n{text[:4000]}"):
+                return True
+            return safety.has_captcha_frame([f.url for f in page.frames])
+        except PlaywrightError:
+            return False
+
+    async def wait_for_human(self, page: Page, action: dict) -> bool:
+        """Live CAPTCHA session: the tab stays open on the noVNC screen, you are told on WhatsApp, and the worker waits
+        until the challenge is gone (twice in a row), keeping the lease alive. False after HUMAN_WAIT_SECONDS."""
+        action_id = action["id"]
+        shot = await self.artifact(page, action_id, "captcha_waiting")
+        await self.api.post(f"/automation/actions/{action_id}/events", {"source": "worker", "event": "captcha_waiting",
+                                                                           "data": {"url": page.url[:300]}, "screenshot": shot})
+        try:
+            await page.bring_to_front()
+        except PlaywrightError:
+            pass
+        start, last_beat, clear = time.monotonic(), 0.0, 0
+        while time.monotonic() - start < HUMAN_WAIT_SECONDS:
+            await asyncio.sleep(3)
+            if time.monotonic() - last_beat >= HEARTBEAT_SECONDS:
+                await self.api.post(f"/automation/actions/{action_id}/heartbeat")
+                last_beat = time.monotonic()
+            if page.is_closed():
+                return False
+            clear = clear + 1 if not await self.captcha_present(page) else 0
+            if clear >= 2:
+                await self.api.post(f"/automation/actions/{action_id}/events", {"source": "worker", "event": "captcha_solved", "data": {}})
+                await page.wait_for_timeout(2500)
+                return True
+        await self.api.post(f"/automation/actions/{action_id}/escalate", {"code": "captcha", "text": "Ninguém resolveu o CAPTCHA em 15 minutos", "source": "worker"})
+        return False
 
     async def precheck(self, page: Page, action: dict, code: str) -> Optional[tuple]:
         """Before a company form goes to the Claude routine (token plan, phase 0): a closed job or a page that is plainly
@@ -176,6 +218,10 @@ class Runner:
             page.on("popup", lambda p: external.put_nowait(p))
             response = await self.open(page, action)
             stop = await self.stop_sign(page, response.status if response else None)
+            if action.get("live_captcha") and (stop == "captcha" or (not stop and await self.captcha_present(page))):
+                if not await self.wait_for_human(page, action):
+                    return
+                stop = await self.stop_sign(page)
             if stop:
                 if action["lane"] == "ats" and stop in ("account_required", "email_verification"):
                     self.kept[action["id"]] = page
@@ -266,6 +312,11 @@ class Runner:
                 if status in ("needs_user", "escalated") and page.url and not page.is_closed():
                     await self.artifact(page, action_id, status)
                 return
+            if action.get("live_captcha") and await self.captcha_present(page):   # live session: you solve it, then on
+                if not await self.wait_for_human(page, action):
+                    return
+                form_since = time.monotonic()
+                continue
             stop = await self.stop_sign(page)
             if stop:
                 if action["lane"] == "ats" and stop in ("account_required", "email_verification"):
@@ -346,6 +397,10 @@ class Runner:
             return "stop"
         await res.element.click(timeout=8000)
         await page.wait_for_timeout(VERIFY_SETTLE_SECONDS * 1000)
+        if action.get("live_captcha") and await self.captcha_present(page):
+            if not await self.wait_for_human(page, action):
+                return "stop"
+            await page.wait_for_timeout(VERIFY_SETTLE_SECONDS * 1000)
         errors = await ats_adapters.page_errors(page)
         if errors:
             await self._hand_on(page, action, f"o envio mostrou erro na página: {'; '.join(errors)[:300]}")

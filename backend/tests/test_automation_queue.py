@@ -769,3 +769,46 @@ def test_the_same_page_twice_runs_once(db, sql):
     assert Auto.claude_claim("r")["action"] is None
     other = b["id"] if first["id"] == a["id"] else a["id"]
     assert _one("SELECT status, error_code FROM public.automation_actions WHERE id = %s", (other,)) == {"status": "discarded", "error_code": "duplicate"}
+
+
+# ── Live CAPTCHA session ─────────────────────────────────────────────────
+def test_a_captcha_session_runs_only_those_one_at_a_time(db, sql):
+    cap = Auto.create_action("apply", "apply:31", "Vaga A", "https://jobs.a.example/1", {}, status="queued", target_type="job", target_id=31, lane="ats")
+    sql("UPDATE public.automation_actions SET status = 'needs_user', error_code = 'claude_stopped', error_text = 'Blocked by an hCaptcha challenge' WHERE id = %s", (cap["id"],))
+    other = Auto.create_action("apply", "apply:32", "Vaga B", "https://jobs.b.example/1", {}, status="queued", target_type="job", target_id=32, lane="ats")
+    queued_follow("f9")
+    out = Auto.captcha_session_start(30)
+    assert out["queued"] == 1
+    assert Auto.claim("linkedin_write", "t") == {"action": None, "reason": "captcha_session"}
+    got = Auto.claim("ats", "t")["action"]
+    assert got["id"] == cap["id"] and got["live_captcha"] is True
+    assert Auto.claim("ats", "t") == {"action": None, "reason": "captcha_session_busy"}
+    assert status_of(other["id"]) == "queued"
+    Auto.captcha_session_stop()
+    assert not Auto.captcha_session_active()
+
+
+def test_a_live_item_stopping_at_the_captcha_goes_back_to_the_worker(db, sql):
+    cap = Auto.create_action("apply", "apply:41", "Vaga", "https://jobs.c.example/1", {}, status="queued", target_type="job", target_id=41, lane="ats")
+    sql("UPDATE public.automation_actions SET status = 'needs_user', error_code = 'captcha' WHERE id = %s", (cap["id"],))
+    Auto.captcha_session_start(30)
+    sql("UPDATE public.automation_actions SET status = 'escalated' WHERE id = %s", (cap["id"],))
+    run = Auto.claude_claim("r")["action"]
+    Auto.claude_result(cap["id"], run["run_id"], "needs_user", "Stopped at a Cloudflare Turnstile challenge")
+    assert status_of(cap["id"]) == "queued"
+
+
+def test_a_captcha_waiting_event_tells_you_on_whatsapp(db, sql):
+    a = Auto.create_action("apply", "apply:51", "Vaga X · Acme", "https://jobs.d.example/1", {}, status="queued", target_type="job", target_id=51, lane="ats")
+    Auto.add_event(a["id"], "worker", "captcha_waiting", {})
+    rows = sql("SELECT kind, text FROM public.bot_notifications WHERE kind = 'captcha'")
+    assert rows and "Vaga X · Acme" in rows[0]["text"]
+
+
+def test_new_and_changed_portal_passwords_are_sent_to_you(db, sql):
+    from app.services.ats_auth_service import AtsAuthService
+    acc = AtsAuthService.get_or_create_account("https://career5.successfactors.eu/x")
+    fresh = AtsAuthService.new_password("https://career5.successfactors.eu/x")
+    assert fresh["password"] != acc["password"]
+    texts = [r["text"] for r in sql("SELECT text FROM public.bot_notifications WHERE kind = 'site_password' ORDER BY id")]
+    assert len(texts) == 2 and acc["password"] in texts[0] and fresh["password"] in texts[1]

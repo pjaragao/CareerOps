@@ -123,8 +123,11 @@ class EmailMonitorService:
 
     @staticmethod
     def _jobs() -> List[dict]:
+        # also the jobs whose application went out but the page gave no proof: their confirmation e-mail is the proof
         return _rows("""SELECT id, company, job_title, status FROM public.job_listings
-                         WHERE status IN ('applied', 'interviewing', 'offer', 'rejected', 'done')""")
+                         WHERE status IN ('applied', 'interviewing', 'offer', 'rejected', 'done')
+                            OR id IN (SELECT target_id FROM public.automation_actions WHERE kind = 'apply' AND target_id IS NOT NULL
+                                        AND (status IN ('unknown_outcome', 'verifying') OR (status = 'needs_user' AND error_code = 'verify_failed')))""")
 
     @staticmethod
     def fetch_since(since: datetime) -> List[dict]:
@@ -227,6 +230,10 @@ class EmailMonitorService:
                 stats["alerts"] += 1
             if classification in ("confirmation", "viewed"):
                 closed.append(f"{_where(job, m)} — {'recebida' if classification == 'confirmation' else 'visualizada'}")
+            if classification == "confirmation" and job and confidence >= 0.7 and not baseline:
+                proved = AutomationService.confirm_by_email(job_id, row["id"], m["subject"], _domain(m["sender"]))
+                if proved:
+                    stats["proved"] = stats.get("proved", 0) + 1
             elif not baseline:
                 BotService.email_notice(row["id"], classification, alert, halted, reading, job, m, feedback, archived=mail_action == "archive",
                                         status_change=(old_status, new_status) if new_status else None, confidence=confidence)
@@ -251,6 +258,31 @@ class EmailMonitorService:
                              WHERE message_id = ANY(%s) AND mail_action = 'archive' AND mail_done_at IS NULL RETURNING id""", (message_ids,)))
 
     @staticmethod
+    def backfill_proofs() -> int:
+        """Confirmations already recorded (before the job was known as pending proof, or with no job matched) that prove an
+        apply still waiting for proof: matched again by company in the sender domain or subject, after the action started."""
+        from app.services.automation_service import AutomationService
+        pending = _rows("""SELECT a.id, a.target_id, a.created_at, j.company, j.job_title FROM public.automation_actions a
+                             JOIN public.job_listings j ON j.id = a.target_id
+                            WHERE a.kind = 'apply' AND (a.status IN ('unknown_outcome', 'verifying') OR (a.status = 'needs_user' AND a.error_code = 'verify_failed'))""")
+        if not pending:
+            return 0
+        jobs = [{"id": p["target_id"], "company": p["company"], "job_title": p["job_title"]} for p in pending]
+        proved = 0
+        for ev in _rows("""SELECT id, sender_domain, subject, received_at FROM public.job_email_events
+                            WHERE classification = 'confirmation' AND received_at > NOW() - INTERVAL '30 days' ORDER BY received_at DESC LIMIT 500"""):
+            job_id = match_job(f"x@{ev['sender_domain'] or ''}", ev["subject"] or "", "", jobs)
+            if not job_id:
+                continue
+            started = next((p["created_at"] for p in pending if p["target_id"] == job_id), None)
+            if started and ev["received_at"] and ev["received_at"] < started:
+                continue   # a confirmation older than the action is about another application
+            if AutomationService.confirm_by_email(job_id, ev["id"], ev["subject"] or "", ev["sender_domain"] or ""):
+                proved += 1
+                jobs = [j for j in jobs if j["id"] != job_id]
+        return proved
+
+    @staticmethod
     def ingest(messages: List[dict], source: str = "lolo", baseline: Optional[bool] = None) -> dict:
         """Messages someone else read from the mailbox (Lolo, with its own Gmail access): the same filter and reading. A first
         read sent in several parts says so in each one, so none of them changes a status."""
@@ -259,6 +291,7 @@ class EmailMonitorService:
         run = _one("INSERT INTO public.automation_runs (kind) VALUES ('email') RETURNING id")
         try:
             stats = EmailMonitorService.process(messages, baseline, source)
+            stats["proved"] = stats.get("proved", 0) + EmailMonitorService.backfill_proofs()
             _rows("UPDATE public.automation_runs SET finished_at = NOW(), ok = TRUE, summary = %s::jsonb WHERE id = %s",
                   (_json({**{k: v for k, v in stats.items() if k != "archive"}, "baseline": baseline, "source": source}), run["id"]))
             return {"ok": True, **stats, "baseline": baseline}
@@ -273,7 +306,10 @@ class EmailMonitorService:
         companies you applied to. Everything it finds still goes through the filter above."""
         companies = [k for k in (_company_key(r["company"]) for r in _rows("""
             SELECT company FROM public.job_listings WHERE status IN ('applied', 'interviewing', 'offer') AND company IS NOT NULL
-             ORDER BY updated_at DESC NULLS LAST LIMIT 40""")) if len(k) >= 4]
+             ORDER BY updated_at DESC NULLS LAST LIMIT 40""") + _rows("""
+            SELECT j.company FROM public.job_listings j JOIN public.automation_actions a ON a.target_id = j.id AND a.kind = 'apply'
+             WHERE j.company IS NOT NULL AND (a.status IN ('unknown_outcome', 'verifying') OR (a.status = 'needs_user' AND a.error_code = 'verify_failed'))
+             LIMIT 40""")) if len(k) >= 4]
         senders = [d.split(".")[0] for d in ATS_DOMAINS] + ["security-noreply@linkedin.com", "jobs-noreply@linkedin.com"] + companies
         words = ['"your application"', '"sua candidatura"', '"thank you for applying"', "interview", "entrevista", '"processo seletivo"',
                  '"next steps"', "unfortunately", "infelizmente", '"not moving forward"', "assessment"]
@@ -293,6 +329,7 @@ class EmailMonitorService:
         try:
             messages = [EmailMonitorService._parse(raw) for raw in EmailMonitorService.fetch_since(since)]
             stats = EmailMonitorService.process(messages, baseline)
+            stats["proved"] = stats.get("proved", 0) + EmailMonitorService.backfill_proofs()
             _rows("UPDATE public.automation_runs SET finished_at = NOW(), ok = TRUE, summary = %s::jsonb WHERE id = %s", (_json({**stats, "baseline": baseline}), run["id"]))
             log.info("email check: %s", stats)
             return {"ok": True, **stats, "baseline": baseline}

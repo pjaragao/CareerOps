@@ -172,13 +172,13 @@ def question_key(text: str) -> str:
 
 
 def ensure_schema() -> None:
-    """Applies migrations_v15.sql through migrations_v20.sql (idempotent)."""
+    """Applies migrations_v15.sql through migrations_v21.sql (idempotent)."""
     folder = Path(__file__).resolve().parent.parent / "db" / "migrations"
     conn = get_db_connection()
     try:
         with conn.cursor() as cur:
             for name in ("migrations_v15.sql", "migrations_v17.sql", "migrations_v18.sql", "migrations_v19.sql",
-                         "migrations_v20.sql"):
+                         "migrations_v20.sql", "migrations_v21.sql"):
                 cur.execute((folder / name).read_text(encoding="utf-8"))
         conn.commit()
     finally:
@@ -676,6 +676,16 @@ class AutomationService:
                                      AND status IN ('queued', 'unknown_outcome') LIMIT 1""", (lane, list(ANYTIME_KINDS)))
                     if not cur.fetchone():
                         refusal = "outside_window"
+                live = AutomationService.captcha_session_active(state)
+                if not refusal and live:
+                    # the live CAPTCHA session: only those actions, one at a time, in the company-site browser you watch
+                    if lane != "ats":
+                        refusal = "captcha_session"
+                    else:
+                        cur.execute("""SELECT 1 FROM public.automation_actions WHERE status IN ('running_ext', 'running_claude', 'verifying')
+                                         AND (result->>'live_captcha')::boolean IS TRUE LIMIT 1""")
+                        if cur.fetchone():
+                            refusal = "captcha_session_busy"
                 if refusal:
                     conn.commit()
                     return {"action": None, "reason": refusal}
@@ -696,7 +706,8 @@ class AutomationService:
                            AND (run_now OR approved_at IS NOT NULL OR NOT (kind = ANY(%s)))
                            AND (scheduled_for IS NULL OR scheduled_for <= NOW()) AND (expires_at IS NULL OR expires_at > NOW())
                            AND (run_now OR approved_at IS NOT NULL OR kind = ANY(%s) OR NOT %s)
-                         ORDER BY run_now DESC, rank, sort_at DESC LIMIT 1 FOR UPDATE SKIP LOCKED""", (lane, paused, exhausted, list(ANYTIME_KINDS), only_now))
+                           AND (NOT %s OR (result->>'live_captcha')::boolean IS TRUE)
+                         ORDER BY run_now DESC, rank, sort_at DESC LIMIT 1 FOR UPDATE SKIP LOCKED""", (lane, paused, exhausted, list(ANYTIME_KINDS), only_now, live))
                     row = cur.fetchone()
                 if not row:
                     conn.commit()
@@ -752,6 +763,7 @@ class AutomationService:
                 "target_url": action["target_url"], "target_id": action["target_id"], "payload": action["payload"],
                 "allow_final": AutomationService._allow_final(state, action["kind"], action["target_url"]),
                 "confirm_required": confirm, "confirmed": bool((action["result"] or {}).get("confirmed")),
+                "live_captcha": bool((action["result"] or {}).get("live_captcha")),
                 "halted": bool(state["halted_lanes"] and ("all" in state["halted_lanes"] or action["lane"] in state["halted_lanes"]))}
 
     @staticmethod
@@ -778,6 +790,15 @@ class AutomationService:
             conn.commit()
         finally:
             conn.close()
+        if event == "captcha_waiting":   # live session: tell you on WhatsApp which job is on the noVNC screen now
+            try:
+                from app.services.bot_service import BotService
+                a = _one("SELECT title FROM public.automation_actions WHERE id = %s", (action_id,)) or {}
+                BotService.notify("captcha", f"🧩 CAPTCHA esperando você no noVNC: {a.get('title') or f'ação #{action_id}'}\n"
+                                  f"{settings.CAREEROPS_NOVNC_URL or ''}\nResolva o desafio; o resto o sistema faz.",
+                                  {"action_id": action_id}, urgent=True, key=f"captcha:{action_id}:{now().strftime('%Y%m%d%H')}")
+            except Exception as e:
+                log.warning("captcha notice failed: %s", e)
 
     @staticmethod
     def ready_to_submit(action_id: int, fields: Optional[list] = None) -> Optional[dict]:
@@ -803,6 +824,22 @@ class AutomationService:
             AutomationService.halt(f"Ação #{action_id} ({action['kind']}) foi executada sem permissão", source="backend")
         return _one("""UPDATE public.automation_actions SET status = 'verifying', result = result || %s, updated_at = NOW()
                         WHERE id = %s RETURNING *""", (Json({**data, "executed": True, "executed_at": now().isoformat()}), action_id))
+
+    @staticmethod
+    def confirm_by_email(job_id: int, event_id: Optional[int], subject: str = "", domain: str = "") -> Optional[dict]:
+        """The company's "we received your application" e-mail proves an apply the page could not: the action is done and
+        the job applied. Only an action whose final click happened (never a send that did not go out)."""
+        action = _one("""SELECT * FROM public.automation_actions WHERE kind = 'apply' AND target_id = %s
+                           AND (status IN ('unknown_outcome', 'verifying') OR (status = 'needs_user' AND error_code = 'verify_failed'))
+                         ORDER BY updated_at DESC LIMIT 1""", (job_id,))
+        if not action:
+            return None
+        AutomationService.add_event(action["id"], "email", "verified", {"proof": True, "by": "email", "event_id": event_id,
+                                                                        "subject": (subject or "")[:200], "domain": domain})
+        if action["lane"] == "ats":
+            from app.services.site_service import SiteService
+            SiteService.count_success(action.get("target_url") or "")
+        return AutomationService._finish(action, {"proof": "email", "email_event_id": event_id}, "email")
 
     @staticmethod
     def verify(action_id: int, proof: bool, evidence: Optional[dict] = None) -> Optional[dict]:
@@ -1092,6 +1129,43 @@ class AutomationService:
         return _one("""UPDATE public.automation_actions SET lane = 'ats', target_url = %s, status = 'queued', lease_owner = NULL, updated_at = NOW()
                         WHERE id = %s RETURNING *""", (url, action_id))
 
+    # ── Live CAPTCHA session: you solve the challenge in noVNC, the system does the rest ──
+    @staticmethod
+    def captcha_session_active(state: Optional[dict] = None) -> bool:
+        state = state or AutomationService.state()
+        until = state.get("captcha_session_until")
+        return bool(until and until > now())
+
+    @staticmethod
+    def _is_captcha_item(action: dict) -> bool:
+        from app.services.site_service import SiteService
+        return action.get("error_code") == "captcha" or bool(SiteService.block_kind(action.get("error_text") or ""))
+
+    @staticmethod
+    def captcha_session_start(minutes: int = 60) -> dict:
+        """Puts every apply stuck on a CAPTCHA back in the queue, marked live, and for `minutes` only those run (one at a
+        time): the worker opens each one in the browser you watch in noVNC and waits for you to solve the challenge."""
+        minutes = max(10, min(int(minutes or 60), 240))
+        items = [a for a in _rows("""SELECT * FROM public.automation_actions WHERE kind = 'apply' AND status = 'needs_user'
+                                     ORDER BY rank, sort_at DESC""") if AutomationService._is_captcha_item(a)]
+        for a in items:
+            _rows("""UPDATE public.automation_actions SET status = 'queued', lane = 'ats', error_code = NULL, error_text = NULL, questions = '[]',
+                            run_now = TRUE, last_run_fingerprint = NULL, result = result || '{"live_captcha": true}'::jsonb, updated_at = NOW()
+                      WHERE id = %s""", (a["id"],))
+            AutomationService.add_event(a["id"], "user", "captcha_session", {"minutes": minutes})
+        _rows("UPDATE public.automation_state SET captcha_session_until = NOW() + make_interval(mins => %s) WHERE id = 1", (minutes,))
+        return {"queued": len(items), "minutes": minutes, "ids": [a["id"] for a in items]}
+
+    @staticmethod
+    def captcha_session_stop() -> dict:
+        """Ends the session: what is still waiting goes back to you, as it was."""
+        _rows("UPDATE public.automation_state SET captcha_session_until = NULL WHERE id = 1")
+        back = _rows("""UPDATE public.automation_actions SET status = 'needs_user', error_code = 'captcha',
+                               error_text = 'Sessão de CAPTCHA encerrada antes desta vaga', run_now = FALSE, updated_at = NOW()
+                         WHERE status IN ('queued', 'escalated') AND (result->>'live_captcha')::boolean IS TRUE RETURNING id""")
+        _rows("UPDATE public.automation_actions SET result = result - 'live_captcha' WHERE (result->>'live_captcha')::boolean IS TRUE AND status <> 'running_ext' AND status <> 'running_claude'")
+        return {"returned": len(back)}
+
     # ── Token plan, phase 0: what is checked before a Claude run is spent ──
     ENGINE_VERSION = "2026-11-16"   # bump when the engine changes in a way that makes a failed run worth trying again
 
@@ -1122,7 +1196,7 @@ class AutomationService:
         if int(action.get("tokens_spent") or 0) >= budget:
             return ("token_budget", f"Esta ação já usou {int(action['tokens_spent']):,} tokens (teto {budget:,}): fica com você.", False)
         from app.services.site_service import SiteService
-        block = SiteService.human_block(action.get("target_url") or "")
+        block = SiteService.human_block(action.get("target_url") or "") if not (action.get("result") or {}).get("live_captcha") else None
         if block:
             return ("captcha", "Este site pediu CAPTCHA/verificação anti-robô nas últimas tentativas: resolva pelo noVNC e use Tentar de novo.", False)
         key = AutomationService._url_key(action.get("target_url") or "")
@@ -1163,11 +1237,13 @@ class AutomationService:
                 if state.get("claude_paused_until") and state["claude_paused_until"] > now():
                     conn.commit()
                     return {"action": None, "reason": "breaker"}
+                live = AutomationService.captcha_session_active(state)
                 cur.execute("""SELECT * FROM public.automation_actions
                                 WHERE status = 'escalated' AND lane = ANY(%s)
                                   AND (scheduled_for IS NULL OR scheduled_for <= NOW())
                                   AND (run_now OR approved_at IS NOT NULL OR NOT %s)
-                                ORDER BY rank, sort_at DESC LIMIT 20 FOR UPDATE SKIP LOCKED""", (lanes, only_now))
+                                  AND (NOT %s OR (result->>'live_captcha')::boolean IS TRUE)
+                                ORDER BY rank, sort_at DESC LIMIT 20 FOR UPDATE SKIP LOCKED""", (lanes, only_now, live))
                 action = None
                 for row in cur.fetchall():
                     candidate = dict(row)
@@ -1190,8 +1266,8 @@ class AutomationService:
                 cur.execute("""UPDATE public.automation_actions
                                   SET status = 'running_claude', executor = 'claude', claude_attempts = claude_attempts + 1,
                                       last_run_fingerprint = %s,
-                                      lease_owner = %s, lease_until = NOW() + INTERVAL '12 minutes', updated_at = NOW()
-                                WHERE id = %s RETURNING *""", (fingerprint, runner, action["id"]))
+                                      lease_owner = %s, lease_until = NOW() + make_interval(mins => %s), updated_at = NOW()
+                                WHERE id = %s RETURNING *""", (fingerprint, runner, 35 if (action.get("result") or {}).get("live_captcha") else 12, action["id"]))
                 action = dict(cur.fetchone())
                 cur.execute("INSERT INTO public.automation_runs (kind, action_id) VALUES ('claude', %s) RETURNING id", (action["id"],))
                 run_id = cur.fetchone()["id"]
@@ -1269,6 +1345,11 @@ class AutomationService:
                                   lease_until = NULL, updated_at = NOW() WHERE id = %s RETURNING *""", (minutes, action_id))
         if block:
             SiteService.record_block(host, summary)
+            if (action.get("result") or {}).get("live_captcha") and AutomationService.captcha_session_active():
+                AutomationService.add_event(action_id, "claude", "captcha_back_to_worker", {"summary": summary[:300]})
+                return _one("""UPDATE public.automation_actions SET status = 'queued', run_now = TRUE, last_run_fingerprint = NULL,
+                                      claude_attempts = GREATEST(claude_attempts - 1, 0), lease_owner = NULL, lease_until = NULL, updated_at = NOW()
+                                WHERE id = %s RETURNING *""", (action_id,))
         AutomationService.add_event(action_id, "claude", f"result:{status}", {"summary": summary, "audit_flags": audit_flags or []},
                                     level="error" if audit_flags else "info")
         if audit_flags:   # it touched something outside the target: you look before anything else happens

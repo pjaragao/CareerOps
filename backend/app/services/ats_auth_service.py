@@ -198,6 +198,7 @@ class AtsAuthService:
                 "is_new": False,
             }
         pwd = generate_password()
+        AtsAuthService._tell_password(host, resolved_email, pwd, "conta nova")
         created = _one(
             """
             INSERT INTO public.automation_site_accounts (site_key, domain, email, password, status)
@@ -218,9 +219,31 @@ class AtsAuthService:
         }
 
     @staticmethod
+    def _tell_password(domain: str, email: str, password: str, why: str) -> None:
+        """You asked for every portal password the system creates or changes on WhatsApp (Lolo), each time it changes."""
+        try:
+            import hashlib
+            from app.services.bot_service import BotService
+            BotService.notify("site_password", f"🔐 Senha de portal ({why})\nSite: {domain}\nE-mail: {email}\nSenha: {password}",
+                              {"domain": domain, "email": email}, urgent=False,
+                              key=f"pwd:{domain}:{hashlib.sha256(password.encode()).hexdigest()[:12]}")
+        except Exception as e:   # the account works anyway; you just were not told
+            import logging
+            logging.getLogger("ats_auth").warning("password notice failed for %s: %s", domain, e)
+
+    @staticmethod
+    def new_password(url_or_domain: str, email: Optional[str] = None) -> Dict[str, Any]:
+        """A fresh password for a password reset (portals refuse the old one): saved, and sent to you."""
+        acc = AtsAuthService.get_or_create_account(url_or_domain, email=email)
+        return AtsAuthService.update_account(url_or_domain, status="reset", password=generate_password(), email=email,
+                                             notes=(acc.get("notes") or "")[:900] or None)
+
+    @staticmethod
     def update_account(url_or_domain: str, status: Optional[str] = None, password: Optional[str] = None,
                        email: Optional[str] = None, notes: Optional[str] = None) -> Dict[str, Any]:
         acc = AtsAuthService.get_or_create_account(url_or_domain, email=email)
+        if password and password != acc.get("password"):
+            AtsAuthService._tell_password(acc.get("domain") or url_or_domain, email or acc.get("email") or "", password, "senha alterada")
         row = _one(
             """
             UPDATE public.automation_site_accounts

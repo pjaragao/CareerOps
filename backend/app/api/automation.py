@@ -48,6 +48,22 @@ class HaltIn(BaseModel):
     reason: str = Field("Parado por você", max_length=500)
 
 
+class CaptchaSessionIn(BaseModel):
+    minutes: int = Field(60, ge=10, le=240)
+
+
+@router.post("/captcha-session/start", dependencies=[Depends(require_decider)])
+async def captcha_session_start(req: CaptchaSessionIn):
+    """Live CAPTCHA session: only the applies stuck on a CAPTCHA run, one at a time, in the browser you watch in noVNC.
+    You solve the challenge; the system fills and sends the rest. Lolo tells you on WhatsApp which one is on screen."""
+    return Auto.captcha_session_start(req.minutes)
+
+
+@router.post("/captcha-session/stop", dependencies=[Depends(require_decider)])
+async def captcha_session_stop():
+    return Auto.captcha_session_stop()
+
+
 @router.post("/halt", dependencies=[Depends(require_decider)])
 async def halt(req: HaltIn):
     return Auto.halt(req.reason)
@@ -619,11 +635,14 @@ class SiteAccountIn(BaseModel):
     password: Optional[str] = Field(None, max_length=255)
     status: Optional[str] = Field(None, max_length=40)
     notes: Optional[str] = Field(None, max_length=1000)
+    new_password: bool = False   # a password reset: a fresh one, saved and sent to you on WhatsApp
 
 
 @router.post("/site-accounts", dependencies=[Depends(require_worker)])
 async def site_account(req: SiteAccountIn):
     from app.services.ats_auth_service import AtsAuthService
+    if req.new_password:
+        return AtsAuthService.new_password(req.domain, req.email)
     if req.status or req.password or req.notes is not None:
         return AtsAuthService.update_account(req.domain, req.status, req.password, req.email, req.notes)
     return AtsAuthService.get_or_create_account(req.domain, req.email)

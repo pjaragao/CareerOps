@@ -78,3 +78,54 @@ def test_the_worker_never_submits_a_step_with_no_fields_filled():
     form = {"sig": None, "steps": 0, "since": None, "recipe": None, "labels": []}
     out = asyncio.run(r.drive_form(Page(), {"id": 1, "lane": "ats", "kind": "apply"}, {"allow_final": True}, form))
     assert out is None and not any("complete" in p for p in api.posts)
+
+
+def test_live_captcha_waits_for_you_then_goes_on():
+    import asyncio
+    from worker import handlers
+    from worker.handlers import Runner
+
+    class Api:
+        def __init__(self):
+            self.posts = []
+
+        async def post(self, path, body=None):
+            self.posts.append((path, (body or {}).get("event")))
+            return {}
+
+    class Page:
+        url, frames = "https://jobs.x.example/1", []
+
+        def __init__(self):
+            self.checks = 0
+
+        async def title(self):
+            return "Apply"
+
+        async def evaluate(self, _):
+            self.checks += 1
+            return "Please verify you are human" if self.checks < 3 else "Application form"
+
+        async def bring_to_front(self):
+            pass
+
+        def is_closed(self):
+            return False
+
+        async def wait_for_timeout(self, ms):
+            pass
+
+    orig = handlers.asyncio.sleep
+    handlers.asyncio.sleep = lambda s: orig(0)
+    try:
+        api = Api()
+        r = Runner(api=api, browsers=None)
+
+        async def artifact(page, action_id, name):
+            return "shot.png"
+        r.artifact = artifact
+        assert asyncio.run(r.wait_for_human(Page(), {"id": 7})) is True
+        events = [e for _, e in api.posts if e]
+        assert events[0] == "captcha_waiting" and events[-1] == "captcha_solved"
+    finally:
+        handlers.asyncio.sleep = orig

@@ -208,12 +208,21 @@ class CvReviewService:
                 "resume_instructions": instructions("resume"), "cover_instructions": instructions("cover")}
 
     @staticmethod
+    def autofix(job_id: int) -> Optional[str]:
+        return _autofix(job_id)
+
+    @staticmethod
+    async def fallback(job_id: int, asked: str = "") -> Optional[dict]:
+        return await _fallback(job_id, asked)
+
+    @staticmethod
     async def run(job_id: int, rounds: Optional[int] = None) -> dict:
         """Review; redo what failed; review again. Returns the last verdict and every round's."""
         from app.api.actions import ActionOptions, generate_cover_letter, generate_resume
         rounds = int((config().get("jobs") or {}).get("cv_review_rounds", 2) if rounds is None else rounds)
         history, asked = [], ""
         for n in range(rounds + 1):
+            CvReviewService.autofix(job_id)   # what a rule can fix never costs a rewrite (cv_autofix.py)
             verdict = await CvReviewService.review(job_id, asked)
             history.append({k: verdict[k] for k in ("approved", "issues", "pages", "summary")})
             if not verdict["approved"] and n == rounds and only_too_long(verdict):
@@ -224,6 +233,12 @@ class CvReviewService:
                     verdict = await CvReviewService.review(job_id, asked)
                     verdict["trimmed"] = True
                     history.append({k: verdict[k] for k in ("approved", "issues", "pages", "summary")})
+            if not verdict["approved"] and n == rounds:
+                # still rejected after every round: a CV that is known good takes its place, so no job waits on the CV
+                fallback = await CvReviewService.fallback(job_id, asked)
+                if fallback:
+                    history.append({k: fallback[k] for k in ("approved", "issues", "pages", "summary")})
+                    return {**fallback, "rounds": n, "history": history}
             if verdict["approved"] or n == rounds:
                 return {**verdict, "rounds": n, "history": history}
             job = _job(job_id)
@@ -235,6 +250,51 @@ class CvReviewService:
             asked = "\n".join(f"{'Resume' if d == 'resume' else 'Cover letter'}:\n{verdict[d + '_instructions']}"
                               for d in ("resume", "cover") if verdict[d + "_instructions"])
         return {**verdict, "rounds": rounds, "history": history}   # not reached
+
+
+def _set_resume(job_id: int, markdown: str) -> None:
+    _one("UPDATE public.job_listings SET resume_markdown = %s, updated_at = NOW() WHERE id = %s RETURNING id", (markdown, job_id))
+
+
+def _base_for(job: dict) -> str:
+    from app.api.actions import get_job_lang
+    from app.services.profile_service import ProfileService
+    return ProfileService.get_resume_base("pt" if get_job_lang(job) == "Portuguese" else "en")
+
+
+def _autofix(job_id: int) -> Optional[str]:
+    from app.services.cv_autofix import autofix
+    job = _job(job_id)
+    resume = job.get("resume_markdown") or ""
+    if not resume.strip():
+        return None
+    fixed = autofix(resume, base=_base_for(job), fit=lambda md: fit_pages(md) if (pdf_pages(md) or 0) > MAX_PAGES else None)
+    if fixed != resume:
+        _set_resume(job_id, fixed)
+    return fixed
+
+
+async def _fallback(job_id: int, asked: str) -> Optional[dict]:
+    """The family CV the reviewer already approved (same archetype and language), else the base resume fitted to two pages.
+    Both are true by construction: nothing is invented. Reviewed once; only an approved one is kept."""
+    from app.api.actions import get_job_lang
+    from app.services import content_guard
+    from app.services.cv_autofix import autofix
+    from app.services.site_service import TextCache, archetype_of, text_key
+    job = _job(job_id)
+    lang = "pt" if get_job_lang(job) == "Portuguese" else "en"
+    arch = archetype_of(job.get("job_title") or "")
+    candidates = [TextCache.get(text_key("cv", arch, lang)) if arch else None, _base_for(job)]
+    current = job.get("resume_markdown") or ""
+    for cand in [c for c in candidates if c and c.strip()]:
+        if content_guard.forbidden_in(cand):
+            continue
+        _set_resume(job_id, autofix(cand, base=_base_for(job), fit=lambda md: fit_pages(md) if (pdf_pages(md) or 0) > MAX_PAGES else None))
+        verdict = await CvReviewService.review(job_id, asked)
+        if verdict["approved"]:
+            return {**verdict, "fallback": "archetype" if cand is candidates[0] else "base"}
+    _set_resume(job_id, current)   # nothing better: the last version stays for you, with the reasons
+    return None
 
 
 PAGE_WORDS = re.compile(r"p[aá]gina|\bpages?\b|caracteres|characters|too long|longo demais|verbose|condens|length|comprimento", re.I)

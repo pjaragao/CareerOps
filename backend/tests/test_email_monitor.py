@@ -203,3 +203,32 @@ def test_verification_otp_emails_from_lolo_are_marked_for_archive(db, sql, add_j
     )
     assert res["recorded"] == 1
     assert "<otp-1@gh>" in res["archive"]
+
+
+def _unproven_apply(sql, job_id, status="needs_user", code="verify_failed"):
+    from app.services.automation_service import AutomationService as Auto
+    a = Auto.create_action("apply", f"apply:{job_id}", "Vaga · Acme", "https://jobs.acme.com/1", {}, status="queued",
+                           target_type="job", target_id=job_id, lane="ats")
+    sql("UPDATE public.automation_actions SET status = %s, error_code = %s, created_at = NOW() - INTERVAL '1 hour' WHERE id = %s", (status, code, a["id"]))
+    return a
+
+
+def test_a_confirmation_email_proves_an_unproven_send(db, sql, add_job, monkeypatch):
+    job = add_job(status="approved", resume="CV", cover="Carta")
+    a = _unproven_apply(sql, job["id"])
+    fake_reader(monkeypatch, {"classification": "confirmation", "confidence": 0.95, "summary": "Recebida", "evidence": "Thank you"})
+    sql("INSERT INTO public.automation_runs (kind, ok) VALUES ('email', TRUE)")   # not the first (baseline) read
+    stats = Monitor.process([msg()])
+    assert stats["proved"] == 1
+    row = sql("SELECT status FROM public.automation_actions WHERE id = %s", (a["id"],))[0]
+    assert row["status"] == "done"
+    assert sql("SELECT status FROM public.job_listings WHERE id = %s", (job["id"],))[0]["status"] == "applied"
+
+
+def test_a_confirmation_already_recorded_proves_it_later(db, sql, add_job):
+    job = add_job(status="approved")
+    a = _unproven_apply(sql, job["id"], status="unknown_outcome", code=None)
+    sql("""INSERT INTO public.job_email_events (message_id, sender_domain, subject, classification, confidence, received_at)
+           VALUES ('<old@x>', 'acme.com', 'Thank you for applying to Acme', 'confirmation', 0.9, NOW())""")
+    assert Monitor.backfill_proofs() == 1
+    assert sql("SELECT status FROM public.automation_actions WHERE id = %s", (a["id"],))[0]["status"] == "done"

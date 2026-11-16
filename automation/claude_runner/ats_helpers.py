@@ -508,6 +508,8 @@ def manage_site_account(op: str, domain: str, email: str = "", password: str = "
     payload: Dict[str, Any] = {"domain": domain}
     if email:
         payload["email"] = email
+    if op == "new_password":
+        payload["new_password"] = True
     if op == "update":
         if password:
             payload["password"] = password
@@ -689,6 +691,11 @@ class CareerOpsMcpServer:
             },
         },
         {
+            "name": "wait_for_human",
+            "description": "LIVE CAPTCHA SESSION ONLY: tells the candidate (WhatsApp) that a CAPTCHA is on the screen and waits up to `seconds` (max 120) while they solve it in the browser. Take a snapshot after it returns.",
+            "inputSchema": {"type": "object", "properties": {"seconds": {"type": "integer"}}},
+        },
+        {
             "name": "lookup_answer",
             "description": "The candidate's saved answers closest to one form question, and the value the deterministic mapper gives for it. Use before stopping on a question the dossier does not answer.",
             "inputSchema": {"type": "object", "properties": {"question": {"type": "string"}}, "required": ["question"]},
@@ -708,7 +715,8 @@ class CareerOpsMcpServer:
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "op": {"type": "string", "enum": ["get", "get_or_create", "update"]},
+                    "op": {"type": "string", "enum": ["get", "get_or_create", "update", "new_password"],
+                           "description": "new_password: a fresh password for a reset (saved; the candidate is told)"},
                     "domain": {"type": "string", "description": "ATS hostname"},
                     "email": {"type": "string"},
                     "password": {"type": "string"},
@@ -738,6 +746,14 @@ class CareerOpsMcpServer:
                 since_minutes=int(args.get("since_minutes") or 20),
                 env=self.env,
             )
+        if name == "wait_for_human":
+            action_id = (self.context or {}).get("_action_id")
+            if action_id and not self.context.get("_told"):
+                _api_call(f"/automation/actions/{action_id}/events", {"source": "claude", "event": "captcha_waiting", "data": {}}, self.env)
+                self.context["_told"] = True
+            seconds = max(10, min(int(args.get("seconds") or 60), 120))
+            time.sleep(seconds)
+            return {"waited": seconds}
         if name == "lookup_answer":
             return lookup_answer(str(args.get("question") or ""), self.env)
         if name == "write_answer":
