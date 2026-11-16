@@ -68,6 +68,12 @@ standing_answers:
   optional_free_text_like_favorite_aspect: "leave blank"
   institution_missing_from_the_list: "pick Other and type the full name (e.g. Universidade Federal de Santa Catarina)"
   dealbreakers_culture_or_environment_that_would_make_you_leave: "A culture of blame or office politics where people protect themselves instead of solving the problem; slow, bureaucratic environments where decisions take weeks and little ships; low ownership, lots of meetings and little real work; teams that do not value quality or honest feedback. I do my best work in fast, curious, high-trust teams where people own outcomes, ship often and talk straight. (Paste in the language of the question.)"
+  work_history_forms:                          # employer / current job / "reason for leaving" fields (Burns & McDonnell and similar)
+    reason_for_leaving_MPB_Engineering_any_role: "The company was sold"
+    reason_for_leaving_when_the_role_changed_inside_MPB: "Internal promotion within the same company (Engineering Intern -> Senior Engineer in Aug 2011; Senior Engineer -> Finance Director in Feb 2023)"
+    data_and_ai_engineer_self_employed: "Employer: Self-employed. Current Job: checked (Feb 2026 - Present), end date blank; if a reason is required write 'N/A - current position'"
+    independent_consultant_infrastructure_finance: "Employer: Independent Consultant (self-employed). Current Job: checked (Feb 2026 - Present), end date blank; if a reason is required write 'N/A - current position'"
+    employer_missing_from_list: "select Other and type the name"
   why_do_you_want_to_work_here_and_other_open_motivation_questions: "call mcp__careerops__write_answer (Claude Sonnet High) with the job context and paste the text as returned; no approval needed"
 
 # total_professional and engineering_sanitation_water_infrastructure are counted from this year (career start)

@@ -860,7 +860,9 @@ class AutomationService:
     @staticmethod
     def _ai_answer_questions(action: dict, questions: List[str], error_text: str) -> tuple[bool, Dict[str, str]]:
         qs = AutomationService._extract_questions(questions, error_text)
-        if not qs:
+        # no real question list: the fallback is the agent's whole summary, not a form question. Answering it by keyword and saving
+        # the pair filled the answer bank with junk ("Yes" to a paragraph) on 2026-11-15
+        if not qs or any(len(q) > 300 for q in qs):
             return False, {}
         resolved: Dict[str, str] = {}
         pending: List[str] = []
