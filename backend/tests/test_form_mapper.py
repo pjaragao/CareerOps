@@ -93,3 +93,12 @@ def test_site_memory_and_recipes(db):
     assert SiteService.human_block("https://jobs.example.com/4") is None          # a success there: tried again
     assert SiteService.recipe("jobs.example.com")["submit"] == ["submit application"]
     assert SiteService.record_block("x.com", "the form needs a phone number") is None
+
+
+def test_lookup_answers_finds_the_close_question(db):
+    from app.services.automation_service import AutomationService as A
+    A.save_answer("Do you have experience with energy, data center, or infrastructure financings?", "Yes")
+    A.save_answer("What is your notice period?", "3 weeks")
+    out = A.lookup_answers("Do you have experience with infrastructure financings?")
+    assert out["saved"] and out["saved"][0]["answer"] == "Yes"
+    assert A.lookup_answers("Favourite colour?")["saved"] == []

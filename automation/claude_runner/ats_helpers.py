@@ -593,6 +593,21 @@ def _content_guard() -> Dict[str, Any]:
             "patterns": [re.compile(p, re.I) for p in guard.get("patterns") or []]}
 
 
+def lookup_answer(question: str, env: Dict[str, str]) -> Dict[str, Any]:
+    raw_base = (env.get("CAREEROPS_API_BASE") or env.get("CAREEROPS_API_URL") or "http://127.0.0.1:8005/api").rstrip("/")
+    api_base = raw_base if raw_base.endswith("/api") else f"{raw_base}/api"
+    token = env.get("CAREEROPS_WORKER_TOKEN") or ""
+    if not token or not question.strip():
+        return {"saved": [], "mapped": None}
+    url = f"{api_base}/automation/answers/lookup?q={urllib.parse.quote(question[:500])}"
+    req = urllib.request.Request(url, headers={"X-CareerOps-Token": token})
+    try:
+        with urllib.request.urlopen(req, timeout=15) as r:
+            return json.loads(r.read().decode("utf-8"))
+    except (urllib.error.URLError, ValueError) as e:
+        return {"saved": [], "mapped": None, "error": str(e)[:200]}
+
+
 def write_answer(question: str, context: Dict[str, Any], env: Dict[str, str]) -> Dict[str, Any]:
     """An open motivation answer ("Why do you want to work at X?") written by Claude Sonnet 5.5 at HIGH effort through the Claude
     CLI, from the job and the candidate's resume. Sent as returned, no approval (the candidate's decision of 2026-11-15)."""
@@ -645,6 +660,11 @@ class CareerOpsMcpServer:
             },
         },
         {
+            "name": "lookup_answer",
+            "description": "The candidate's saved answers closest to one form question, and the value the deterministic mapper gives for it. Use before stopping on a question the dossier does not answer.",
+            "inputSchema": {"type": "object", "properties": {"question": {"type": "string"}}, "required": ["question"]},
+        },
+        {
             "name": "write_answer",
             "description": "Write an open motivation answer (e.g. 'Why do you want to work at X?', 'Why are you interested in us?') for the form. Uses the job and the resume; returns {text} to paste as is, no approval needed.",
             "inputSchema": {
@@ -689,6 +709,8 @@ class CareerOpsMcpServer:
                 since_minutes=int(args.get("since_minutes") or 20),
                 env=self.env,
             )
+        if name == "lookup_answer":
+            return lookup_answer(str(args.get("question") or ""), self.env)
         if name == "write_answer":
             return write_answer(str(args.get("question") or ""), self.context, self.env)
         if name == "site_account":

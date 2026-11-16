@@ -304,6 +304,12 @@ class RecipeIn(BaseModel):
     submit: List[str] = Field(default_factory=list, max_length=5)
 
 
+@router.get("/answers/lookup", dependencies=[Depends(require_worker)])
+async def lookup_answer(q: str):
+    """The saved answers closest to one form question (the Claude routine asks instead of carrying them all)."""
+    return Auto.lookup_answers(q[:500])
+
+
 @router.get("/recipes/{host}", dependencies=[Depends(require_worker)])
 async def recipe(host: str):
     """How the forms of this site were navigated before (token plan, phase 2): the worker's adapter tries these first."""

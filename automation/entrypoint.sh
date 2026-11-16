@@ -40,6 +40,7 @@ cd /data/run
 playwright-mcp --cdp-endpoint http://127.0.0.1:9222 --host 0.0.0.0 --port 8931 --allowed-hosts '*' --allow-unrestricted-file-access >/dev/null 2>&1 &
 playwright-mcp --cdp-endpoint http://127.0.0.1:9223 --host 0.0.0.0 --port 8932 --allowed-hosts '*' \
     --allow-unrestricted-file-access \
+    --snapshot-mode none --image-responses omit --console-level error \
     --blocked-origins 'https://www.linkedin.com;https://linkedin.com' >/dev/null 2>&1 &
 
 cd /app

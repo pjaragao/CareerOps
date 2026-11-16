@@ -19,9 +19,12 @@ import subprocess
 from pathlib import Path
 
 PROFILES = {"linkedin": {"dir": "/data/profiles/linkedin", "port": 9222}, "ats": {"dir": "/data/profiles/ats", "port": 9223}}
+# Token plan, phase 1: on company sites a click or a keystroke no longer returns the whole page (the agent asks for a
+# snapshot when it needs one), screenshots carry no image, and only console errors come back.
+LEAN_MCP = ["--snapshot-mode", "none", "--image-responses", "omit", "--console-level", "error"]
 MCP_PORTS = {
-    "linkedin": {"port": 8931, "cdp": 9222, "blocked": ""},
-    "ats": {"port": 8932, "cdp": 9223, "blocked": "https://www.linkedin.com;https://linkedin.com"},
+    "linkedin": {"port": 8931, "cdp": 9222, "blocked": "", "extra": []},
+    "ats": {"port": 8932, "cdp": 9223, "blocked": "https://www.linkedin.com;https://linkedin.com", "extra": LEAN_MCP},
 }
 
 
@@ -73,6 +76,7 @@ async def _restart_mcp(name: str) -> None:
     ]
     if cfg["blocked"]:
         cmd.extend(["--blocked-origins", cfg["blocked"]])
+    cmd.extend(cfg.get("extra") or [])
     log_path = Path(f"/data/run/mcp-{name}.log")
     with open(log_path, "ab") as log_file:
         subprocess.Popen(cmd, cwd="/data/run", stdout=log_file, stderr=subprocess.STDOUT, start_new_session=True)

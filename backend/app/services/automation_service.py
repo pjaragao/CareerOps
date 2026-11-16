@@ -567,6 +567,34 @@ class AutomationService:
                    (key,))
         return row["answer"] if row else None
 
+    STOPWORDS = {"the", "a", "an", "do", "you", "your", "are", "is", "of", "in", "to", "for", "and", "or", "have", "what", "how",
+                 "this", "with", "be", "will", "can", "o", "a", "de", "da", "do", "voce", "e", "em", "para", "qual", "que"}
+
+    @staticmethod
+    def lookup_answers(question: str, limit: int = 3) -> dict:
+        """For the Claude routine (token plan, phase 1): the saved answers closest to one question, instead of the whole
+        answer bank in every prompt, plus what the deterministic mapper would answer."""
+        words = {w for w in question_key(question).split() if w not in AutomationService.STOPWORDS and len(w) > 1}
+        scored = []
+        for a in AutomationService.answers_list():
+            other = {w for w in (a.get("question_norm") or question_key(a["question"])).split()
+                     if w not in AutomationService.STOPWORDS and len(w) > 1}
+            if not words or not other:
+                continue
+            score = len(words & other) / len(words | other)
+            if score >= 0.34:
+                scored.append((score, a))
+        scored.sort(key=lambda x: -x[0])
+        mapped = None
+        try:
+            from app.services.form_mapper import FormMapper
+            from app.services.linkedin_copilot_service import LinkedInCopilotService
+            mapped = FormMapper(LinkedInCopilotService._facts()).answer({"key": "q", "label": question, "type": "text"})
+        except Exception as e:
+            log.warning("lookup mapper failed: %s", e)
+        return {"mapped": mapped, "saved": [{"question": a["question"], "answer": a["answer"], "score": round(sc, 2)}
+                                            for sc, a in scored[:limit]]}
+
     @staticmethod
     def answers_list() -> List[dict]:
         return _rows("SELECT * FROM public.automation_answers ORDER BY updated_at DESC")
