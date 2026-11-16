@@ -544,7 +544,7 @@ class AutomationService:
                         AutomationService._upsert_answer(cur, a["question"], a["answer"], a.get("field_type") or "text")
                 cur.execute("""
                     UPDATE public.automation_actions
-                       SET status = 'queued', error_code = NULL, error_text = NULL, questions = '[]', updated_at = NOW()
+                       SET status = 'queued', error_code = NULL, error_text = NULL, questions = '[]', claude_attempts = 0, updated_at = NOW()
                      WHERE id = %s AND status = 'needs_user' RETURNING *""", (action_id,))
                 row = cur.fetchone()
                 if row:
@@ -626,8 +626,10 @@ class AutomationService:
         # you asked for it again: it does not wait for the time window, which only holds back the automations. The event
         # also tells the Claude gate that something changed (a new run is allowed)
         AutomationService.add_event(action_id, "user", "retry", {})
+        # asking again also gives the Claude routine a new attempt: escalate() hands a form to it only while claude_attempts < 1,
+        # so without this a retried form came straight back to you (2026-11-16: 18 items in a row)
         return _one("""UPDATE public.automation_actions SET status = %s, error_code = NULL, error_text = NULL, questions = '[]', run_now = TRUE,
-                        updated_at = NOW() WHERE id = %s RETURNING *""", (status, action_id))
+                        claude_attempts = 0, updated_at = NOW() WHERE id = %s RETURNING *""", (status, action_id))
 
     @staticmethod
     def cancel(action_id: int) -> Optional[dict]:

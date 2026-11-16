@@ -812,3 +812,12 @@ def test_new_and_changed_portal_passwords_are_sent_to_you(db, sql):
     assert fresh["password"] != acc["password"]
     texts = [r["text"] for r in sql("SELECT text FROM public.bot_notifications WHERE kind = 'site_password' ORDER BY id")]
     assert len(texts) == 2 and acc["password"] in texts[0] and fresh["password"] in texts[1]
+
+
+
+def test_asking_again_gives_the_routine_a_new_attempt(db, sql):
+    got = stuck()
+    first = Auto.claude_claim("r")["action"]
+    Auto.claude_result(got["id"], first["run_id"], "failed", "não deu")
+    Auto.retry(got["id"])
+    assert _one("SELECT claude_attempts FROM public.automation_actions WHERE id = %s", (got["id"],))["claude_attempts"] == 0
