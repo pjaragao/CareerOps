@@ -604,16 +604,17 @@ async def artifact(action_id: int, name: str):
 
 class ClaudeClaimIn(BaseModel):
     runner: str = Field("claude-runner", max_length=100)
+    hermes: bool = False   # the runner can run Lolo's Hermes (free): it may claim company forms while Claude is paused
 
 
 @router.post("/escalated/claim", dependencies=[Depends(require_worker)])
 async def claude_claim(req: ClaudeClaimIn):
-    return Auto.claude_claim(req.runner)
+    return Auto.claude_claim(req.runner, hermes=req.hermes)
 
 
 class ClaudeResultIn(BaseModel):
     run_id: int
-    status: Literal["done", "needs_user", "failed", "job_closed", "already_applied"]
+    status: Literal["done", "needs_user", "failed", "job_closed", "already_applied", "deferred"]
     summary: str = Field("", max_length=3000)
     questions: list = []
     audit_flags: list = []

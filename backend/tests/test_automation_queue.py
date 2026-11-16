@@ -821,3 +821,18 @@ def test_asking_again_gives_the_routine_a_new_attempt(db, sql):
     Auto.claude_result(got["id"], first["run_id"], "failed", "não deu")
     Auto.retry(got["id"])
     assert _one("SELECT claude_attempts FROM public.automation_actions WHERE id = %s", (got["id"],))["claude_attempts"] == 0
+
+
+def test_hermes_keeps_working_company_forms_while_claude_is_paused(db, sql):
+    """2026-11-16: the breaker guards Claude's quota; Lolo's Hermes is free, so it still takes company forms, and what it does
+    not finish waits for Claude until the pause ends (deferred), without spending an attempt."""
+    a = Auto.create_action("apply", "apply:31", "Vaga", "https://jobs.example/apply/31", {}, status="escalated", target_type="job", target_id=31, lane="ats")
+    sql("UPDATE public.automation_state SET claude_paused_until = NOW() + interval '20 minutes' WHERE id = 1")
+    assert Auto.claude_claim("r") == {"action": None, "reason": "breaker"}
+    got = Auto.claude_claim("r", hermes=True)["action"]
+    assert got["id"] == a["id"] and got["claude_paused"] is True
+    Auto.claude_result(a["id"], got["run_id"], "deferred", "Hermes parou no passo 2")
+    row = _one("""SELECT status, claude_attempts, scheduled_for > NOW() + interval '15 minutes' AS later
+                    FROM public.automation_actions WHERE id = %s""", (a["id"],))
+    assert row == {"status": "escalated", "claude_attempts": 0, "later": True}
+    assert Auto.claude_claim("r", hermes=True) == {"action": None, "reason": "breaker"}   # not again during the same pause

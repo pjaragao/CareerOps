@@ -43,6 +43,7 @@ if _RUNNER_DIR not in sys.path:
 
 import ats_helpers  # noqa: E402
 import hydrogen_agent  # noqa: E402
+import hermes_agent  # noqa: E402
 
 TOOLS = ["browser_snapshot", "browser_navigate", "browser_click", "browser_type", "browser_fill_form", "browser_select_option",
          "browser_file_upload", "browser_wait_for", "browser_tabs", "browser_press_key", "browser_hover", "browser_find"]
@@ -129,12 +130,23 @@ challenge is gone, then continue the task. Never try to solve or click through t
 RESUME_IN_PROMPT = 3500
 
 
-def slim_dossier(dossier: dict) -> dict:
+def slim_dossier(dossier: dict, resume_chars: int = RESUME_IN_PROMPT) -> dict:
     slim = {k: v for k, v in (dossier or {}).items() if k != "saved_answers"}
     resume = str(slim.get("resume_markdown") or "")
-    if len(resume) > RESUME_IN_PROMPT:
-        slim["resume_markdown"] = resume[:RESUME_IN_PROMPT] + "\n…(older roles omitted)"
+    if len(resume) > resume_chars:
+        slim["resume_markdown"] = resume[:resume_chars] + "\n…(older roles omitted)"
     return slim
+
+
+# Hermes has no prompt cache to lean on, and the whole prompt goes again on every turn: the resume shrinks to its head
+# (the PDF is uploaded anyway; open texts come from write_answer, which reads the full resume)
+HERMES_RESUME_CHARS = 1200
+
+
+def task_prompt(action: dict, resume_chars: int = RESUME_IN_PROMPT) -> str:
+    dossier = action["dossier"]
+    return PROMPT.format(task=TASKS.get(action["kind"], action["kind"]), why=dossier.get("why_stuck") or "não informado",
+                         dossier=json.dumps(slim_dossier(dossier, resume_chars), ensure_ascii=False, separators=(",", ":"), default=str))
 
 
 TASKS = {
@@ -400,10 +412,18 @@ def _claude_attempt(action: dict, env: dict, prompt: str, mcp_url: str, port, mo
         shutil.rmtree(folder, ignore_errors=True)
 
 
+def hermes_ends(result: dict) -> bool:
+    """Whether a Hermes attempt closes the action, or the Claude chain takes it over."""
+    if result.get("audit_flags"):
+        return True
+    status = result.get("status")
+    if status in ("done", "job_closed", "already_applied"):
+        return True
+    return status == "needs_user" and bool(result.get("questions"))
+
+
 def _run_action(action: dict, env: dict) -> tuple:
-    dossier = action["dossier"]
-    prompt = PROMPT.format(task=TASKS.get(action["kind"], action["kind"]), why=dossier.get("why_stuck") or "não informado",
-                           dossier=json.dumps(slim_dossier(dossier), ensure_ascii=False, separators=(",", ":"), default=str))
+    prompt = task_prompt(action)
     port = env.get("CAREEROPS_MCP_PORT_ATS", 8932) if action["lane"] == "ats" else env.get("CAREEROPS_MCP_PORT_LINKEDIN", 8931)
     mcp_url = f"http://127.0.0.1:{port}/mcp"
     # the browser tools must answer before a run is spent (2026-11-16: the worker had closed the idle company-site browser,
@@ -440,7 +460,30 @@ def _run_action(action: dict, env: dict) -> tuple:
         extra = tuple(extra) + ("mcp__careerops__wait_for_human",)
         prompt += LIVE_CAPTCHA_RULES
     result, tool_count = None, 0
-    usage = {}
+    usage, hermes_usage = {}, {}
+    # Lolo's Hermes first (free Nous model, 2026-11-16), company forms only: the bridge checks every call before it runs.
+    # It ends the action when it finished it, found it closed or already sent, or names the questions only you can answer;
+    # anything else (no answer, an error, "needs_user" with no question) goes on to the Claude chain, which continues the form.
+    if action.get("lane") == "ats" and provider in ("auto", "hermes") and hermes_agent.configured(env) and hermes_agent.bridge_ready(env):
+        h_prompt = task_prompt(action, HERMES_RESUME_CHARS) + (LIVE_CAPTCHA_RULES if action.get("live_captcha") else "")
+        parsed, code = hermes_agent.run_hermes(action, system_prompt(action), h_prompt, env,
+                                               TIMEOUT_SECONDS + (1200 if action.get("live_captcha") else 0))
+        result = outcome(parsed, code, action)
+        result.pop("provider_error", None)   # Hermes's limits are not Claude's: they never pause the Claude chain
+        # Hermes is free: its tokens go to the transcript, not to the action's token budget (which guards Claude's quota)
+        hermes_usage = result.get("usage") or {}
+        result["transcript"]["hermes_usage"] = hermes_usage
+        usage = {"model": hermes_usage.get("model") or "hermes"}
+        result["usage"] = dict(usage)
+        tool_count += len(parsed["calls"])
+        if hermes_ends(result) or provider == "hermes":
+            return result, tool_count
+        if action.get("claude_paused"):   # Claude is paused (breaker): it takes this form when the pause ends
+            result["status"] = "deferred"
+            return result, tool_count
+        if parsed["calls"]:
+            prompt += (f"\n\nPREVIOUS ATTEMPT (Hermes) made {len(parsed['calls'])} tool calls and ended: {result['summary'][:600]}\n"
+                       "The form keeps what it filled: take one snapshot and continue from where it stopped; do not redo filled fields.")
     chain = _claude_models()
     if (action.get("models") or {}).get("skip_haiku") and len(chain) > 1:
         chain = [m for m in chain if "haiku" not in m[0]] or chain   # Haiku never finished on this host: start at Sonnet
@@ -458,6 +501,8 @@ def _run_action(action: dict, env: dict) -> tuple:
         if parsed["calls"]:
             prompt += (f"\n\nPREVIOUS ATTEMPT ({model}) made {len(parsed['calls'])} tool calls and ended: {result['summary'][:600]}\n"
                        "The form keeps what it filled: take one snapshot and continue from where it stopped; do not redo filled fields.")
+    if hermes_usage:
+        result.setdefault("transcript", {})["hermes_usage"] = hermes_usage
     runtime_cfg = ats_helpers.load_runtime_env(env)
     can_hydrogen = (
         not result["audit_flags"]
@@ -491,7 +536,8 @@ def _wait_for_worker_verify(env: dict, action_id: int, timeout: int = 35) -> Non
 
 
 def _claim_and_run(env: dict, wait_verify: bool = False):
-    claimed = api(env, "/automation/escalated/claim", {"runner": os.uname().nodename})
+    hermes = hermes_agent.configured(env) and hermes_agent.bridge_ready(env) and (env.get("CAREEROPS_RUNNER_PROVIDER") or "auto").lower() in ("auto", "hermes")
+    claimed = api(env, "/automation/escalated/claim", {"runner": os.uname().nodename, "hermes": hermes})
     action = claimed.get("action")
     if not action:
         print(f"nothing to do ({claimed.get('reason')})")
@@ -522,7 +568,7 @@ def run_once(env: dict) -> int:
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="CareerOps escalated automation runner")
     parser.add_argument("--batch", type=int, default=1, help="Max escalated actions to process per invocation")
-    parser.add_argument("--provider", choices=("auto", "claude", "hydrogen"), default=None)
+    parser.add_argument("--provider", choices=("auto", "claude", "hydrogen", "hermes"), default=None)
     args, _ = parser.parse_known_args(argv)
     env = ats_helpers.load_runtime_env(load_env())
     if args.provider:

@@ -769,6 +769,31 @@ class CareerOpsMcpServer:
             )
         raise ValueError(f"Unknown careerops MCP tool: {name}")
 
+    def rpc(self, req: Dict[str, Any]) -> Tuple[int, Optional[Dict[str, Any]]]:
+        """One JSON-RPC request -> (HTTP status, body). Shared by the per-run server below and the Hermes bridge."""
+        method = req.get("method")
+        req_id = req.get("id")
+        if req_id is None and str(method).startswith("notifications/"):
+            return 202, None
+        if method == "initialize":
+            return 200, {"jsonrpc": "2.0", "id": req_id, "result": {
+                "protocolVersion": (req.get("params") or {}).get("protocolVersion") or "2024-11-05",
+                "capabilities": {"tools": {}}, "serverInfo": {"name": "careerops", "version": "1.0"}}}
+        if method == "tools/list":
+            return 200, {"jsonrpc": "2.0", "id": req_id, "result": {"tools": self.TOOLS}}
+        if method == "ping":
+            return 200, {"jsonrpc": "2.0", "id": req_id, "result": {}}
+        if method == "tools/call":
+            params = req.get("params") or {}
+            try:
+                res = self._dispatch(params.get("name", ""), params.get("arguments") or {})
+                return 200, {"jsonrpc": "2.0", "id": req_id,
+                             "result": {"content": [{"type": "text", "text": json.dumps(res, ensure_ascii=False)}], "isError": False}}
+            except Exception as exc:
+                return 200, {"jsonrpc": "2.0", "id": req_id,
+                             "result": {"content": [{"type": "text", "text": f"Error: {exc}"}], "isError": True}}
+        return 200, {"jsonrpc": "2.0", "id": req_id, "error": {"code": -32601, "message": f"Method not found: {method}"}}
+
     def __enter__(self) -> "CareerOpsMcpServer":
         parent = self
 
@@ -796,40 +821,8 @@ class CareerOpsMcpServer:
             def do_POST(self) -> None:
                 length = int(self.headers.get("Content-Length") or 0)
                 req = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
-                method = req.get("method")
-                req_id = req.get("id")
-                if req_id is None and str(method).startswith("notifications/"):
-                    self._send_json(202, None)
-                    return
-                if method == "initialize":
-                    self._send_json(200, {
-                        "jsonrpc": "2.0",
-                        "id": req_id,
-                        "result": {
-                            "protocolVersion": (req.get("params") or {}).get("protocolVersion") or "2024-11-05",
-                            "capabilities": {"tools": {}},
-                            "serverInfo": {"name": "careerops", "version": "1.0"},
-                        },
-                    })
-                elif method == "tools/list":
-                    self._send_json(200, {"jsonrpc": "2.0", "id": req_id, "result": {"tools": parent.TOOLS}})
-                elif method == "tools/call":
-                    params = req.get("params") or {}
-                    try:
-                        res = parent._dispatch(params.get("name", ""), params.get("arguments") or {})
-                        self._send_json(200, {
-                            "jsonrpc": "2.0",
-                            "id": req_id,
-                            "result": {"content": [{"type": "text", "text": json.dumps(res, ensure_ascii=False)}], "isError": False},
-                        })
-                    except Exception as exc:
-                        self._send_json(200, {
-                            "jsonrpc": "2.0",
-                            "id": req_id,
-                            "result": {"content": [{"type": "text", "text": f"Error: {exc}"}], "isError": True},
-                        })
-                else:
-                    self._send_json(200, {"jsonrpc": "2.0", "id": req_id, "error": {"code": -32601, "message": f"Method not found: {method}"}})
+                code, payload = parent.rpc(req)
+                self._send_json(code, payload)
 
         self._server = HTTPServer(("127.0.0.1", 0), Handler)
         port = self._server.server_address[1]

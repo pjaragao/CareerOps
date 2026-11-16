@@ -1,0 +1,164 @@
+"""Lolo's Hermes as the first apply agent (2026-11-16): the bridge refuses what the audit would flag BEFORE it runs, logs
+every call, and the runner reads Hermes's run like a Claude run."""
+import json
+import sys
+import threading
+import urllib.request
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "claude_runner"))
+
+import hermes_agent  # noqa: E402
+import mcp_bridge  # noqa: E402
+import run  # noqa: E402
+
+ACTION = {"id": 7, "run_id": 70, "kind": "apply", "lane": "ats", "target_url": "https://boards.greenhouse.io/acme/jobs/1",
+          "dossier": {"files": {"resume": "/data/run/7/cv.pdf"}}}
+TOKEN = "t" * 32
+
+
+def test_guard_refuses_without_a_task_and_off_target():
+    assert mcp_bridge.guard(None, "mcp__playwright__browser_click", {}) == "nenhuma tarefa aberta pelo CareerOps"
+    assert mcp_bridge.guard(ACTION, "mcp__playwright__browser_click", {"ref": "e1"}) is None
+    assert mcp_bridge.guard(ACTION, "mcp__playwright__browser_navigate", {"url": "https://boards.greenhouse.io/acme/jobs/1"}) is None
+    assert "fora do alvo" in mcp_bridge.guard(ACTION, "mcp__playwright__browser_navigate", {"url": "https://www.linkedin.com/feed/"})
+    assert "não permitida" in mcp_bridge.guard(ACTION, "mcp__playwright__browser_evaluate", {"function": "() => 1"})
+    assert "outro arquivo" in mcp_bridge.guard(ACTION, "mcp__playwright__browser_file_upload", {"paths": ["/etc/passwd"]})
+    assert mcp_bridge.guard(ACTION, "mcp__careerops__check_email", {"domain": "greenhouse.io"}) is None
+
+
+def test_hermes_ends_only_on_a_real_outcome():
+    assert run.hermes_ends({"status": "done"}) and run.hermes_ends({"status": "job_closed"})
+    assert run.hermes_ends({"status": "needs_user", "questions": [{"label": "Salary?"}]})
+    assert not run.hermes_ends({"status": "needs_user", "questions": []})
+    assert not run.hermes_ends({"status": "failed"})
+    assert run.hermes_ends({"status": "failed", "audit_flags": ["x"]})
+
+
+def test_hermes_run_reads_like_a_claude_run():
+    calls = [{"name": "mcp__playwright__browser_snapshot", "input": {}},
+             {"name": "mcp__playwright__browser_navigate", "input": {"url": "https://www.linkedin.com/feed/"}, "refused": True}]
+    status = {"status": "completed", "output": 'ok ```json\n{"status": "done", "summary": "Enviado"}\n```',
+              "usage": {"input_tokens": 900, "output_tokens": 40}, "runtime": {"model": "tencent/hy4-flash:free"}}
+    res = run.outcome(hermes_agent.to_parsed(calls, status), 0, ACTION)
+    assert res["status"] == "done" and res["summary"].startswith("Enviado")
+    assert res["audit_flags"] == []                      # the refused call did nothing
+    assert "mcp__playwright__browser_navigate" in res["transcript"]["refused"]
+    assert res["usage"]["input_tokens"] == 900 and "hermes:tencent/hy4-flash:free" in res["usage"]["model"]
+    failed = run.outcome(hermes_agent.to_parsed([], {"status": "failed", "error": "rate limit"}), 1, ACTION)
+    assert failed["status"] == "failed"
+
+
+class FakeBrowser(BaseHTTPRequestHandler):
+    """A Playwright MCP stand-in: answers initialize, tools/list and tools/call in SSE like the real one."""
+    seen = []
+
+    def log_message(self, *a):
+        pass
+
+    def do_POST(self):
+        req = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+        if req.get("id") is None:
+            self.send_response(202); self.end_headers(); return
+        if req["method"] == "tools/list":
+            result = {"tools": [{"name": n, "inputSchema": {"type": "object"}} for n in ("browser_click", "browser_evaluate", "browser_snapshot")]}
+        elif req["method"] == "tools/call":
+            FakeBrowser.seen.append(req["params"]["name"])
+            result = {"content": [{"type": "text", "text": "clicked"}]}
+        else:
+            result = {}
+        body = f"event: message\ndata: {json.dumps({'jsonrpc': '2.0', 'id': req['id'], 'result': result})}\n\n".encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Mcp-Session-Id", "s1")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+
+def _post(url, body, token=TOKEN):
+    req = urllib.request.Request(url, data=json.dumps(body).encode(), method="POST",
+                                 headers={"Content-Type": "application/json", "Authorization": f"Bearer {token}"})
+    with urllib.request.urlopen(req, timeout=10) as r:
+        raw = r.read()
+    return json.loads(raw) if raw else {}
+
+
+def test_bridge_end_to_end(tmp_path, monkeypatch):
+    up = ThreadingHTTPServer(("127.0.0.1", 0), FakeBrowser)
+    threading.Thread(target=up.serve_forever, daemon=True).start()
+    monkeypatch.setattr(mcp_bridge, "TOOLS_CACHE", tmp_path / "tools.json")
+    env = {"CAREEROPS_BRIDGE_TOKEN": TOKEN, "CAREEROPS_BRIDGE_HOST": "127.0.0.1", "CAREEROPS_BRIDGE_PORT": "0",
+           "CAREEROPS_BRIDGE_CONTROL_PORT": "0", "CAREEROPS_MCP_PORT_ATS": str(up.server_address[1])}
+    public, control, task = mcp_bridge.serve(env)
+    pub = f"http://127.0.0.1:{public.server_address[1]}"
+    ctl = f"http://127.0.0.1:{control.server_address[1]}"
+    try:
+        # only the runner's tools are listed; a wrong token gets nothing
+        listed = _post(f"{pub}/browser/mcp", {"jsonrpc": "2.0", "id": 1, "method": "tools/list"})["result"]["tools"]
+        assert [t["name"] for t in listed] == ["browser_click", "browser_snapshot"]
+        try:
+            _post(f"{pub}/browser/mcp", {"jsonrpc": "2.0", "id": 1, "method": "tools/list"}, token="x" * 32)
+            assert False, "a wrong token must be refused"
+        except urllib.error.HTTPError as e:
+            assert e.code == 401
+        click = {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "browser_click", "arguments": {"ref": "e1"}}}
+        # no task open: refused, nothing reaches the browser
+        assert _post(f"{pub}/browser/mcp", click)["result"]["isError"] and FakeBrowser.seen == []
+        _post(f"{ctl}/run", {"action": ACTION})
+        assert _post(f"{pub}/browser/mcp", click)["result"]["content"][0]["text"] == "clicked"
+        evil = {"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "browser_evaluate", "arguments": {"function": "x"}}}
+        assert "REFUSED" in _post(f"{pub}/browser/mcp", evil)["result"]["content"][0]["text"]
+        assert FakeBrowser.seen == ["browser_click"]
+        calls = _post(f"{ctl}/end", {})["calls"]
+        assert [(c["name"], c["refused"]) for c in calls] == [("mcp__playwright__browser_click", False), ("mcp__playwright__browser_evaluate", True)]
+        assert task.action is None
+    finally:
+        public.shutdown(); control.shutdown(); up.shutdown()
+
+
+def test_snapshot_compaction_keeps_every_named_ref():
+    snap = "\n".join([
+        "### Page", "- Page URL: https://jobs.example.com/apply?" + "x" * 300,
+        "- generic [ref=e1]:", "  - generic [ref=e2]:", "    - emphasis [ref=e3]", "    - generic [ref=e4]: ",
+        '    - textbox "First name" [ref=e5] [cursor=pointer]', '    - button "Submit application" [ref=e6] [cursor=pointer]:',
+        "    - generic [ref=e7]: Required", '    - img "Company logo" [ref=e8]'])
+    out = mcp_bridge.compact(snap)
+    for ref in ("e5", "e6", "e7", "e8"):
+        assert f"ref={ref}]" in out
+    for ref in ("e1", "e2", "e3", "e4"):
+        assert f"ref={ref}]" not in out
+    assert "[cursor=pointer]" not in out and "x" * 100 not in out
+    long = mcp_bridge.compact("\n".join(f'- button "b{i}" [ref=e{i}]' for i in range(5000)))
+    assert len(long) < mcp_bridge.SNAPSHOT_MAX + 300 and "browser_find" in long
+
+
+def test_tool_schemas_are_slim_but_complete():
+    click = {"name": "browser_click", "description": "Perform click on a web page",
+             "inputSchema": {"$schema": "x", "type": "object", "additionalProperties": False, "required": ["target"],
+                             "properties": {"target": {"type": "string", "description": "Exact target element reference from the page snapshot, or a unique element selector"},
+                                            "doubleClick": {"type": "boolean"}, "modifiers": {"type": "array"}}},
+             "annotations": {"title": "Click"}}
+    slim = mcp_bridge.slim_tool(click)
+    assert slim == {"name": "browser_click", "description": "Perform click on a web page",
+                    "inputSchema": {"type": "object", "properties": {"target": {"type": "string", "description": "ref from the snapshot, e.g. e12"}},
+                                    "required": ["target"]}}
+
+
+def _fake_action(**kw):
+    return {**ACTION, "dossier": {"kind": "apply", "files": {"resume": "/data/run/7/cv.pdf"}}, **kw}
+
+
+def test_hermes_tokens_stay_off_the_budget_and_wait_for_claude_during_the_breaker(monkeypatch):
+    status = {"status": "completed", "output": '{"status": "needs_user", "summary": "parei", "questions": []}',
+              "usage": {"input_tokens": 50000, "output_tokens": 900}}
+    monkeypatch.setattr(run.hermes_agent, "configured", lambda env: True)
+    monkeypatch.setattr(run.hermes_agent, "bridge_ready", lambda env: True)
+    monkeypatch.setattr(run.hermes_agent, "run_hermes", lambda *a, **k: (hermes_agent.to_parsed([], status), 0))
+    monkeypatch.setattr(run.ats_helpers, "probe_mcp_http", lambda *a, **k: True)
+    monkeypatch.setattr(run, "server_tools", lambda port: ["browser_click"])
+    res, _ = run._run_action(_fake_action(claude_paused=True), {"CAREEROPS_RUNNER_PROVIDER": "auto"})
+    assert res["status"] == "deferred"                                    # Claude takes it after the pause
+    assert not any(res["usage"].get(k) for k in ("input_tokens", "output_tokens"))   # free tokens: not in the budget
+    assert res["transcript"]["hermes_usage"]["input_tokens"] == 50000

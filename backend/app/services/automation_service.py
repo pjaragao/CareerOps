@@ -1218,8 +1218,10 @@ class AutomationService:
 
     # ── Claude fallback ──────────────────────────────────────────────────
     @staticmethod
-    def claude_claim(runner: str) -> dict:
-        """The next stuck action for the routine on the host, or why there is none. One attempt per action."""
+    def claude_claim(runner: str, hermes: bool = False) -> dict:
+        """The next stuck action for the routine on the host, or why there is none. One attempt per action.
+        `hermes`: the runner has Lolo's Hermes (a free model). While the breaker pauses Claude, it still gets company forms,
+        marked claude_paused: Hermes alone works them, and what it does not finish waits for Claude (status "deferred")."""
         cfg = config().get("claude") or {}
         conn = get_db_connection()
         try:
@@ -1236,9 +1238,12 @@ class AutomationService:
                 only_now = not AutomationService.in_window()   # outside the window, only what you approved or asked for
                 halted = state["halted_lanes"] or []
                 lanes = [l for l in (cfg.get("lanes") or []) if "all" not in halted and l not in halted]
-                if state.get("claude_paused_until") and state["claude_paused_until"] > now():
+                claude_paused = bool(state.get("claude_paused_until") and state["claude_paused_until"] > now())
+                if claude_paused and not hermes:
                     conn.commit()
                     return {"action": None, "reason": "breaker"}
+                if claude_paused:
+                    lanes = [l for l in lanes if l == "ats"]
                 live = AutomationService.captcha_session_active(state)
                 cur.execute("""SELECT * FROM public.automation_actions
                                 WHERE status = 'escalated' AND lane = ANY(%s)
@@ -1264,7 +1269,7 @@ class AutomationService:
                     _event(cur, candidate["id"], "backend", f"claude_gate:{code}", {"text": text})
                 if action is None:
                     conn.commit()
-                    return {"action": None, "reason": "outside_window" if only_now else "empty"}
+                    return {"action": None, "reason": "outside_window" if only_now else ("breaker" if claude_paused else "empty")}
                 cur.execute("""UPDATE public.automation_actions
                                   SET status = 'running_claude', executor = 'claude', claude_attempts = claude_attempts + 1,
                                       last_run_fingerprint = %s,
@@ -1277,7 +1282,7 @@ class AutomationService:
         finally:
             conn.close()
         return {"action": {**AutomationService._run_info(action, state), "run_id": run_id, "dossier": AutomationService._dossier(action),
-                           "models": AutomationService.model_hint(action)}, "reason": None}
+                           "models": AutomationService.model_hint(action), "claude_paused": claude_paused}, "reason": None}
 
     @staticmethod
     def model_hint(action: dict) -> dict:
@@ -1345,6 +1350,12 @@ class AutomationService:
             return _one("""UPDATE public.automation_actions SET status = 'escalated', claude_attempts = GREATEST(claude_attempts - 1, 0),
                                   last_run_fingerprint = NULL, scheduled_for = NOW() + make_interval(mins => %s), lease_owner = NULL,
                                   lease_until = NULL, updated_at = NOW() WHERE id = %s RETURNING *""", (minutes, action_id))
+        if status == "deferred":   # Hermes worked it while Claude was paused and did not finish: Claude takes it after the pause
+            state = _one("SELECT claude_paused_until FROM public.automation_state WHERE id = 1") or {}
+            AutomationService.add_event(action_id, "claude", "hermes_deferred", {"summary": summary[:300]})
+            return _one("""UPDATE public.automation_actions SET status = 'escalated', claude_attempts = GREATEST(claude_attempts - 1, 0),
+                                  last_run_fingerprint = NULL, scheduled_for = GREATEST(COALESCE(%s, NOW()), NOW()), lease_owner = NULL,
+                                  lease_until = NULL, updated_at = NOW() WHERE id = %s RETURNING *""", (state.get("claude_paused_until"), action_id))
         if block:
             SiteService.record_block(host, summary)
             if (action.get("result") or {}).get("live_captcha") and AutomationService.captcha_session_active():

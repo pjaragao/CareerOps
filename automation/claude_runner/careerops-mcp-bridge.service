@@ -1,0 +1,17 @@
+# systemd USER unit: the bridge between Lolo's Hermes (container) and the apply tools on the host (browser + careerops).
+# Install: cp careerops-mcp-bridge.service ~/.config/systemd/user/ && systemctl --user daemon-reload && systemctl --user enable --now careerops-mcp-bridge
+[Unit]
+Description=CareerOps MCP bridge for the Hermes apply agent
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/paulojr/linkedin_resume/automation/claude_runner
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+ExecStart=/usr/bin/python3 /home/paulojr/linkedin_resume/automation/claude_runner/mcp_bridge.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target
