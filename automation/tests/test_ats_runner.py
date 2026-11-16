@@ -260,6 +260,12 @@ def test_verify_external_sent_checks_successfully_modifier_and_other_page_frames
         proof, ev = asyncio.run(verify.prove(blank, {"kind": "apply", "lane": "ats", "target_url": "https://career.skybornrenewables.com/Vacancies/995/Description/2"}))
         assert proof is True
         assert ev["url"] == "https://career.skybornrenewables.com/Vacancies/995/Done"
+        # another company's tab showing "submitted" is not proof for this job
+        other_job = FakePage("https://job-boards.greenhouse.io/acme/confirmation", "Thank you, your application has been successfully submitted to us.")
+        blank2 = FakePage("about:blank", "")
+        blank2.context = SimpleNamespace(pages=[other_job, blank2])
+        proof2, _ = asyncio.run(verify.prove(blank2, {"kind": "apply", "lane": "ats", "target_url": "https://app.ashbyhq.com/citizen/1"}))
+        assert proof2 is False
     finally:
         for mod in injected:
             sys.modules.pop(mod, None)

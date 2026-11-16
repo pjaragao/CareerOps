@@ -90,6 +90,17 @@ async def _external_sent_url(target_page) -> Optional[str]:
     return None
 
 
+def same_site(url_a: str, url_b: str) -> bool:
+    """Same registrable-ish domain (last two host labels, last three for co.uk-like suffixes): a confirmation page on another
+    company's site is not proof for this job (2026-11-15: another action's tab was taken as this one's page)."""
+    def key(url: str) -> str:
+        host = (urlparse(url or "").hostname or "").lower().split(".")
+        keep = 3 if len(host) >= 3 and len(host[-1]) == 2 and host[-2] in ("co", "com", "org", "gov", "ac") else 2
+        return ".".join(host[-keep:])
+    a, b = key(url_a), key(url_b)
+    return bool(a) and a == b
+
+
 async def prove(page, action: dict) -> Tuple[bool, dict]:
     """Opens the target again and looks. Returns (proof, evidence). The page is left there for a screenshot."""
     kind = action["kind"]
@@ -102,6 +113,8 @@ async def prove(page, action: dict) -> Tuple[bool, dict]:
         if ctx is not None:
             for other in reversed(list(getattr(ctx, "pages", ()))):
                 if other is page or (hasattr(other, "is_closed") and other.is_closed()):
+                    continue
+                if not same_site(getattr(other, "url", ""), url):   # another job's tab: never proof for this one
                     continue
                 found_url = await _external_sent_url(other)
                 if found_url is not None:

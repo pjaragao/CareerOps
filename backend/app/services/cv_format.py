@@ -86,12 +86,14 @@ def rebuild_contact(line: str, personal: Dict[str, str], portfolio_link: Optiona
         text = (MD_LINK_RE.match(seg).group("text") if MD_LINK_RE.match(seg) else seg).strip()
         if "portf" in seg.lower() and ("vercel.app" in seg.lower() or MD_LINK_RE.match(seg)):
             continue   # rebuilt below from the job's link
-        if EMAIL_RE.search(text):
-            email = EMAIL_RE.search(text).group(0)
-        elif LINKEDIN_RE.search(text):
-            linkedin = LINKEDIN_RE.search(text).group(0)
-        elif GITHUB_RE.search(text):
-            github = GITHUB_RE.search(text).group(0)
+        # a link labelled "LinkedIn" / "GitHub" carries the address only in its href: look at the whole segment, or the
+        # labelled link is kept as "other" and the rebuilt one is added again (the reviewer then finds both, every round)
+        if EMAIL_RE.search(text) or EMAIL_RE.search(seg):
+            email = (EMAIL_RE.search(text) or EMAIL_RE.search(seg)).group(0)
+        elif LINKEDIN_RE.search(text) or LINKEDIN_RE.search(seg):
+            linkedin = (LINKEDIN_RE.search(text) or LINKEDIN_RE.search(seg)).group(0)
+        elif GITHUB_RE.search(text) or GITHUB_RE.search(seg):
+            github = (GITHUB_RE.search(text) or GITHUB_RE.search(seg)).group(0)
         elif PHONE_RE.match(text) or PLACEHOLDER_PHONE_RE.search(text):
             phone = text
         else:

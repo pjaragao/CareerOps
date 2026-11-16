@@ -117,7 +117,8 @@ class Runner:
                     p for p in reversed(list(getattr(ctx, "pages", ())))
                     if not (hasattr(p, "is_closed") and p.is_closed()) and getattr(p, "url", "") and p.url != "about:blank"
                 ]
-                shot_page = next((p for p in candidates if target_url and p.url == target_url), candidates[0] if candidates else page)
+                same = [p for p in candidates if verify.same_site(p.url, action.get("target_url") or "")]
+                shot_page = next((p for p in same if target_url and p.url == target_url), same[0] if same else page)
         shot = await self.artifact(shot_page, action["id"], "proof" if proof else "no-proof")
         await self.api.post(f"/automation/actions/{action['id']}/verify", {"proof": proof, "evidence": {**evidence, "screenshot": shot}})
 
