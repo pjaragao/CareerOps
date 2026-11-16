@@ -30,7 +30,9 @@ YOURS = {"needs_user": ("precisa de você", "precisam de você"), "review_docs":
 WAITING = ("proposed",) + tuple(YOURS)
 # all else is counted in the summary, never sent on its own. "inbox" (2026-11-08): an invitation with a message, a recruiter's
 # answer, a service offer turned down — each one told as it comes, with the translation and the suggestion
-SENT_KINDS = ("summary", "halt", "inbox")
+# sent one by one (2026-11-16: portal passwords and CAPTCHA notices were only counted in the summary, never sent);
+# "question" is a live question from the apply agent, waiting for your answer with the form open
+SENT_KINDS = ("summary", "halt", "inbox", "site_password", "captcha", "question")
 
 
 def _and(parts: List[str]) -> str:

@@ -595,6 +595,42 @@ def _content_guard() -> Dict[str, Any]:
             "patterns": [re.compile(p, re.I) for p in guard.get("patterns") or []]}
 
 
+ASK_WAIT_SECONDS = 600   # how long the agent waits, form open, for your WhatsApp answer
+
+
+def ask_candidate(action_id: Any, question: str, options: Optional[list], field_type: str, env: Dict[str, str],
+                  wait_seconds: int = ASK_WAIT_SECONDS, poll: int = 10) -> Dict[str, Any]:
+    """A required question nothing answers: Lolo asks the candidate on WhatsApp and this waits for the answer
+    (2026-11-16). {answer} to type as given; {answer: null, ...} when there is none (night, no reply in time)."""
+    if not action_id or not (question or "").strip():
+        return {"answer": None, "note": "no question or no task"}
+    asked = _api_call(f"/automation/actions/{int(action_id)}/ask",
+                      {"question": question[:1000], "options": [str(o)[:200] for o in (options or [])][:30],
+                       "field_type": (field_type or "text")[:20]}, env)
+    if asked.get("answer"):
+        return {"answer": asked["answer"], "source": asked.get("source") or "candidate"}
+    qid = asked.get("question_id")
+    if not qid:
+        return {"answer": None, "note": f"the candidate cannot be asked now ({asked.get('unavailable') or 'no answer from CareerOps'}): "
+                                        "return needs_user with this question"}
+    raw_base = (env.get("CAREEROPS_API_BASE") or env.get("CAREEROPS_API_URL") or "http://127.0.0.1:8005/api").rstrip("/")
+    api_base = raw_base if raw_base.endswith("/api") else f"{raw_base}/api"
+    deadline = time.monotonic() + max(0, wait_seconds)
+    while time.monotonic() < deadline:
+        time.sleep(poll)
+        req = urllib.request.Request(f"{api_base}/automation/live-questions/{int(qid)}",
+                                     headers={"X-CareerOps-Token": env.get("CAREEROPS_WORKER_TOKEN") or ""})
+        try:
+            with urllib.request.urlopen(req, timeout=15) as res:
+                got = json.loads(res.read().decode("utf-8") or "{}")
+        except (OSError, ValueError):
+            continue
+        if got.get("answer"):
+            return {"answer": got["answer"], "source": "candidate (WhatsApp)"}
+    return {"answer": None, "note": f"no answer within {wait_seconds // 60} min: return needs_user with this question "
+                                    "(the candidate's later answer sends the form back to the queue)"}
+
+
 def lookup_answer(question: str, env: Dict[str, str]) -> Dict[str, Any]:
     raw_base = (env.get("CAREEROPS_API_BASE") or env.get("CAREEROPS_API_URL") or "http://127.0.0.1:8005/api").rstrip("/")
     api_base = raw_base if raw_base.endswith("/api") else f"{raw_base}/api"
@@ -701,6 +737,19 @@ class CareerOpsMcpServer:
             "inputSchema": {"type": "object", "properties": {"question": {"type": "string"}}, "required": ["question"]},
         },
         {
+            "name": "ask_candidate",
+            "description": "A REQUIRED form question that the dossier, standing answers and lookup_answer do not answer: the candidate is asked on WhatsApp and this waits (up to 10 min) with the form open. Returns {answer} to fill in exactly as given; {answer: null} means stop with needs_user and this question. Never for open motivation texts (use write_answer).",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "question": {"type": "string", "description": "The question exactly as the form shows it"},
+                    "options": {"type": "array", "items": {"type": "string"}, "description": "The form's options, if it is a choice"},
+                    "field_type": {"type": "string", "enum": ["text", "select", "radio", "checkbox", "number", "date"]},
+                },
+                "required": ["question"],
+            },
+        },
+        {
             "name": "write_answer",
             "description": "Write an open motivation answer (e.g. 'Why do you want to work at X?', 'Why are you interested in us?') for the form. Uses the job and the resume; returns {text} to paste as is, no approval needed.",
             "inputSchema": {
@@ -754,6 +803,9 @@ class CareerOpsMcpServer:
             seconds = max(10, min(int(args.get("seconds") or 60), 120))
             time.sleep(seconds)
             return {"waited": seconds}
+        if name == "ask_candidate":
+            return ask_candidate((self.context or {}).get("_action_id"), str(args.get("question") or ""), args.get("options") or [],
+                                 str(args.get("field_type") or "text"), self.env)
         if name == "lookup_answer":
             return lookup_answer(str(args.get("question") or ""), self.env)
         if name == "write_answer":

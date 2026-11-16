@@ -755,6 +755,37 @@ async def set_suggestion(suggestion_id: int, req: SuggestionIn):
     return _found(BotService.set_suggestion(suggestion_id, req.status))
 
 
+# ── Live questions: the apply agent asks, you answer on WhatsApp (2026-11-16) ──
+class AskIn(BaseModel):
+    question: str = Field(..., min_length=1, max_length=1000)
+    options: List[str] = Field(default_factory=list, max_length=30)
+    field_type: str = Field("text", max_length=20)
+
+
+@router.post("/actions/{action_id}/ask", dependencies=[Depends(require_worker)])
+async def ask_live(action_id: int, req: AskIn):
+    return Auto.ask_live(action_id, req.question, req.options, req.field_type)
+
+
+@router.get("/live-questions/{question_id}", dependencies=[Depends(require_worker)])
+async def live_answer(question_id: int):
+    return _found(Auto.live_answer(question_id))
+
+
+class LiveAnswerIn(BaseModel):
+    answer: str = Field(..., min_length=1, max_length=3000)
+
+
+@router.post("/bot/live-questions/{question_id}/answer", dependencies=[Depends(require_bot)])
+async def bot_live_answer(question_id: int, req: LiveAnswerIn):
+    return _found(Auto.answer_live(question_id, req.answer))
+
+
+@router.get("/bot/live-questions", dependencies=[Depends(require_bot)])
+async def bot_live_questions():
+    return {"items": Auto.open_live_questions()}
+
+
 # ── Lolo (WhatsApp) ──────────────────────────────────────────────────────
 @router.get("/bot/notifications", dependencies=[Depends(require_bot)])
 async def bot_notifications(limit: int = Query(20, ge=1, le=50)):

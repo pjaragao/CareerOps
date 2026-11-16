@@ -172,13 +172,13 @@ def question_key(text: str) -> str:
 
 
 def ensure_schema() -> None:
-    """Applies migrations_v15.sql through migrations_v21.sql (idempotent)."""
+    """Applies migrations_v15.sql through migrations_v22.sql (idempotent)."""
     folder = Path(__file__).resolve().parent.parent / "db" / "migrations"
     conn = get_db_connection()
     try:
         with conn.cursor() as cur:
             for name in ("migrations_v15.sql", "migrations_v17.sql", "migrations_v18.sql", "migrations_v19.sql",
-                         "migrations_v20.sql", "migrations_v21.sql"):
+                         "migrations_v20.sql", "migrations_v21.sql", "migrations_v22.sql"):
                 cur.execute((folder / name).read_text(encoding="utf-8"))
         conn.commit()
     finally:
@@ -553,6 +553,70 @@ class AutomationService:
             return dict(row) if row else None
         finally:
             conn.close()
+
+    # ── Live questions (2026-11-16): the apply agent asks, Lolo asks you on WhatsApp, the agent waits with the form open ──
+    @staticmethod
+    def ask_live(action_id: int, question: str, options: Optional[list] = None, field_type: str = "text") -> dict:
+        """{answer} at once when the answer bank has it; else the question goes to you on WhatsApp and {question_id} comes
+        back for the agent to wait on. Never at night (quiet hours) and never for an action that is not running."""
+        question = (question or "").strip()[:1000]
+        if not question:
+            return {"answer": None, "unavailable": "empty question"}
+        known = AutomationService.known_answer(question, field_type or "text")
+        if known:
+            return {"answer": known, "source": "saved"}
+        from app.services.bot_service import BotService
+        if BotService.quiet():
+            return {"answer": None, "unavailable": "quiet hours: the candidate is not asked at night"}
+        action = _one("SELECT id, title, status FROM public.automation_actions WHERE id = %s", (action_id,))
+        if not action or action["status"] != "running_claude":
+            return {"answer": None, "unavailable": "the action is not running"}
+        q = _one("""SELECT * FROM public.automation_live_questions WHERE action_id = %s AND answer IS NULL AND question = %s
+                     ORDER BY id DESC LIMIT 1""", (action_id, question))
+        if not q:
+            opts = [str(o)[:200] for o in (options or [])][:30]
+            q = _one("""INSERT INTO public.automation_live_questions (action_id, question, options, field_type)
+                        VALUES (%s, %s, %s, %s) RETURNING *""", (action_id, question, Json(opts), (field_type or "text")[:20]))
+            listed = ("\nOpções: " + " / ".join(opts)) if opts else ""
+            BotService.notify("question", f"❓ Pergunta da vaga {action.get('title') or f'#{action_id}'} (#{action_id}):\n{question}{listed}\n"
+                              "Responda citando esta mensagem: o formulário está aberto esperando, e a resposta fica salva para as próximas.",
+                              {"reply": "live_question", "action_id": action_id, "question_id": q["id"]}, urgent=True, key=f"liveq:{q['id']}")
+            AutomationService.add_event(action_id, "claude", "live_question", {"question": question[:300], "question_id": q["id"]})
+        AutomationService._hold_lease(action_id)
+        return {"answer": None, "question_id": q["id"]}
+
+    @staticmethod
+    def _hold_lease(action_id: int) -> None:
+        _rows("""UPDATE public.automation_actions SET lease_until = GREATEST(lease_until, NOW() + interval '20 minutes')
+                  WHERE id = %s AND status = 'running_claude'""", (action_id,))
+
+    @staticmethod
+    def live_answer(question_id: int) -> Optional[dict]:
+        q = _one("SELECT id, action_id, answer FROM public.automation_live_questions WHERE id = %s", (question_id,))
+        if q and q["answer"] is None:
+            AutomationService._hold_lease(q["action_id"])
+        return q
+
+    @staticmethod
+    def answer_live(question_id: int, answer: str) -> Optional[dict]:
+        """Your answer: to the waiting agent, and to the answer bank for good. If the agent gave up waiting meanwhile, the
+        action is waiting for you: the answer also sends it back to the queue."""
+        answer = (answer or "").strip()[:3000]
+        q = _one("""UPDATE public.automation_live_questions SET answer = %s, answered_at = NOW()
+                     WHERE id = %s AND answer IS NULL RETURNING *""", (answer, question_id)) if answer else None
+        if not q:
+            return None
+        AutomationService.save_answer(q["question"], answer, q.get("field_type") or "text")
+        AutomationService.add_event(q["action_id"], "user", "live_answer", {"question_id": question_id})
+        if (_one("SELECT status FROM public.automation_actions WHERE id = %s", (q["action_id"],)) or {}).get("status") == "needs_user":
+            AutomationService.answer(q["action_id"], [{"question": q["question"], "answer": answer, "save": False}])
+        return q
+
+    @staticmethod
+    def open_live_questions() -> List[dict]:
+        return _rows("""SELECT q.id, q.action_id, q.question, q.options, a.title FROM public.automation_live_questions q
+                          JOIN public.automation_actions a ON a.id = q.action_id
+                         WHERE q.answer IS NULL AND q.asked_at > NOW() - interval '1 day' ORDER BY q.id""")
 
     @staticmethod
     def known_answer(label: str, field_type: str) -> Optional[str]:
@@ -1350,11 +1414,11 @@ class AutomationService:
             return _one("""UPDATE public.automation_actions SET status = 'escalated', claude_attempts = GREATEST(claude_attempts - 1, 0),
                                   last_run_fingerprint = NULL, scheduled_for = NOW() + make_interval(mins => %s), lease_owner = NULL,
                                   lease_until = NULL, updated_at = NOW() WHERE id = %s RETURNING *""", (minutes, action_id))
-        if status == "deferred":   # Hermes worked it while Claude was paused and did not finish: Claude takes it after the pause
+        if status == "deferred":   # Hermes did not finish it (Claude paused or off, or Hermes down): tried again later, no attempt spent
             state = _one("SELECT claude_paused_until FROM public.automation_state WHERE id = 1") or {}
             AutomationService.add_event(action_id, "claude", "hermes_deferred", {"summary": summary[:300]})
             return _one("""UPDATE public.automation_actions SET status = 'escalated', claude_attempts = GREATEST(claude_attempts - 1, 0),
-                                  last_run_fingerprint = NULL, scheduled_for = GREATEST(COALESCE(%s, NOW()), NOW()), lease_owner = NULL,
+                                  last_run_fingerprint = NULL, scheduled_for = GREATEST(COALESCE(%s, NOW()), NOW() + interval '15 minutes'), lease_owner = NULL,
                                   lease_until = NULL, updated_at = NOW() WHERE id = %s RETURNING *""", (state.get("claude_paused_until"), action_id))
         if block:
             SiteService.record_block(host, summary)

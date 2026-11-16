@@ -162,3 +162,41 @@ def test_hermes_tokens_stay_off_the_budget_and_wait_for_claude_during_the_breake
     assert res["status"] == "deferred"                                    # Claude takes it after the pause
     assert not any(res["usage"].get(k) for k in ("input_tokens", "output_tokens"))   # free tokens: not in the budget
     assert res["transcript"]["hermes_usage"]["input_tokens"] == 50000
+
+
+def test_hermes_only_never_runs_claude(monkeypatch):
+    monkeypatch.setattr(run.hermes_agent, "configured", lambda env: True)
+    monkeypatch.setattr(run.hermes_agent, "bridge_ready", lambda env: True)
+    monkeypatch.setattr(run.ats_helpers, "probe_mcp_http", lambda *a, **k: True)
+    monkeypatch.setattr(run, "server_tools", lambda port: ["browser_click"])
+    monkeypatch.setattr(run, "_claude_attempt", lambda *a, **k: (_ for _ in ()).throw(AssertionError("Claude ran")))
+    env = {"CAREEROPS_RUNNER_PROVIDER": "hermes"}
+    down = {"status": "failed", "error": "Hermes unreachable"}
+    monkeypatch.setattr(run.hermes_agent, "run_hermes", lambda *a, **k: (hermes_agent.to_parsed([], down), 1))
+    assert run._run_action(_fake_action(), env)[0]["status"] == "deferred"          # Hermes down: later, not to you
+    stopped = {"status": "completed", "output": '{"status": "needs_user", "summary": "travou no passo 3", "questions": []}'}
+    monkeypatch.setattr(run.hermes_agent, "run_hermes",
+                        lambda *a, **k: (hermes_agent.to_parsed([{"name": "mcp__playwright__browser_snapshot"}], stopped), 0))
+    assert run._run_action(_fake_action(), env)[0]["status"] == "needs_user"        # it worked and stopped: to you
+    li = {**_fake_action(), "lane": "linkedin_write"}
+    assert run._run_action(li, env)[0]["status"] == "deferred"                      # never a Claude run
+
+
+def test_ask_candidate_waits_for_the_whatsapp_answer(monkeypatch):
+    import ats_helpers
+    monkeypatch.setattr(ats_helpers, "_api_call", lambda path, body, env, timeout=15: {"answer": "Yes", "source": "saved"})
+    assert ats_helpers.ask_candidate(7, "Clean driving record?", [], "text", {})["answer"] == "Yes"
+    monkeypatch.setattr(ats_helpers, "_api_call", lambda *a, **k: {"answer": None, "unavailable": "quiet hours"})
+    assert ats_helpers.ask_candidate(7, "German?", [], "text", {})["answer"] is None
+    monkeypatch.setattr(ats_helpers, "_api_call", lambda *a, **k: {"answer": None, "question_id": 3})
+    replies = iter([b'{"answer": null}', b'{"answer": "B1"}'])
+
+    class R:
+        def __init__(self): self.body = next(replies)
+        def read(self): return self.body
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+    monkeypatch.setattr(ats_helpers.urllib.request, "urlopen", lambda *a, **k: R())
+    got = ats_helpers.ask_candidate(7, "German?", ["A1", "B1"], "select", {"CAREEROPS_WORKER_TOKEN": "t"}, wait_seconds=5, poll=0)
+    assert got == {"answer": "B1", "source": "candidate (WhatsApp)"}
+    assert mcp_bridge.guard(ACTION, "mcp__careerops__ask_candidate", {"question": "x"}) is None

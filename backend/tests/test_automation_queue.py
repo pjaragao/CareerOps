@@ -836,3 +836,29 @@ def test_hermes_keeps_working_company_forms_while_claude_is_paused(db, sql):
                     FROM public.automation_actions WHERE id = %s""", (a["id"],))
     assert row == {"status": "escalated", "claude_attempts": 0, "later": True}
     assert Auto.claude_claim("r", hermes=True) == {"action": None, "reason": "breaker"}   # not again during the same pause
+
+
+def test_a_live_question_goes_to_whatsapp_and_the_answer_back_to_the_agent(db, sql, monkeypatch):
+    """2026-11-16: the apply agent asks what nothing answers; Lolo asks you; the answer reaches the waiting agent and stays."""
+    from app.services.bot_service import BotService
+    monkeypatch.setattr(BotService, "quiet", staticmethod(lambda: False))
+    a = Auto.create_action("apply", "apply:41", "Vaga X", "https://jobs.example/apply/41", {}, status="escalated", target_type="job", target_id=41, lane="ats")
+    assert Auto.ask_live(a["id"], "German level?")["unavailable"] == "the action is not running"
+    got = Auto.claude_claim("r", hermes=True)["action"]
+    asked = Auto.ask_live(got["id"], "German level?", ["None", "A1", "B1"], "select")
+    qid = asked["question_id"]
+    assert asked["answer"] is None and Auto.ask_live(got["id"], "German level?")["question_id"] == qid   # asked once
+    note = [n for n in BotService.pending() if n["kind"] == "question"]
+    assert len(note) == 1 and "German level?" in note[0]["text"] and note[0]["data"] == {"reply": "live_question", "action_id": a["id"], "question_id": qid}
+    assert Auto.live_answer(qid)["answer"] is None
+    Auto.answer_live(qid, "None")
+    assert Auto.live_answer(qid)["answer"] == "None"
+    assert Auto.ask_live(got["id"], "German level?", [], "select") == {"answer": "None", "source": "saved"}   # for good
+    assert Auto.answer_live(qid, "A1") is None                                                                 # answered once
+
+
+def test_portal_passwords_and_captcha_notices_are_sent_not_just_counted(db):
+    from app.services.bot_service import BotService
+    BotService.notify("site_password", "🔐 Senha de portal", urgent=True, key="t-pwd")
+    BotService.notify("captcha", "🧩 CAPTCHA", urgent=True, key="t-cap")
+    assert {"site_password", "captcha"} <= {n["kind"] for n in BotService.pending()}
