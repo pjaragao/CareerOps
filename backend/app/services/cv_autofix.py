@@ -16,7 +16,10 @@ from typing import Dict, Optional
 MONTHS = {"en": ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"],
           "pt": ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"]}
 NUMERIC_MONTH = re.compile(r"\b(0?[1-9]|1[0-2])/((?:19|20)\d{2})\b")
-YEAR_RANGE = re.compile(r"(?<![\w/])((?:19|20)\d{2})\s*[-–—]\s*((?:19|20)\d{2}|present|presente|atual|current|now)\b", re.I)
+# a year range NOT already preceded by a month name (2026-11-16: "Feb 2026 - Present" became "Feb Feb 2026 – Present")
+YEAR_RANGE = re.compile(r"(?<![\w/])(?<!(?:jan|feb|fev|mar|apr|abr|may|mai|jun|jul|aug|ago|sep|set|oct|out|nov|dec|dez)\s)(?<!(?:jan|feb|fev|mar|apr|abr|may|mai|jun|jul|aug|ago|sep|set|oct|out|nov|dec|dez)\.\s)"
+                        r"((?:19|20)\d{2})\s*[-–—]\s*((?:19|20)\d{2}|present|presente|atual|current|now)\b", re.I)
+DOUBLE_MONTH = re.compile(r"\b((?:jan|feb|fev|mar|apr|abr|may|mai|jun|jul|aug|ago|sep|set|oct|out|nov|dec|dez)[a-z]*\.?)\s+\1\b", re.I)
 MONTH_RANGE = re.compile(r"\b([A-Za-z]{3,9}\.?\s+((?:19|20)\d{2}))\s*[-–—]\s*([A-Za-z]{3,9}\.?\s+((?:19|20)\d{2})|present|presente|atual|current)\b", re.I)
 
 # first person singular -> third person, the verbs a CV bullet starts with (Portuguese)
@@ -64,7 +67,7 @@ def year_ranges(markdown: str, base: str) -> str:
     def swap(m):
         end = m.group(2).lower()
         end = "present" if end in ("presente", "atual", "current", "now") else end
-        return known.get((m.group(1), end), m.group(0))
+        return re.sub(r"\s*[–—]\s*", " - ", known.get((m.group(1), end), m.group(0)))
     has_months = re.search(r"\b(?:jan|feb|fev|mar|apr|abr|may|mai|jun|jul|aug|ago|sep|set|oct|out|nov|dec|dez)[a-z]*\.?\s+\d{4}", markdown, re.I)
     return YEAR_RANGE.sub(swap, markdown) if has_months else markdown
 
@@ -88,8 +91,10 @@ def autofix(markdown: str, base: str = "", portfolio_link: Optional[str] = None,
     text = year_ranges(text, base)
     if lang == "pt":
         text = impersonal_pt(text)
+    text = DOUBLE_MONTH.sub(r"\1", text)   # repairs CVs already saved with "Feb Feb 2026"
     keeps_portfolio = "[Portf" in text
-    text = cv_format.normalize(text, portfolio_link, lang == "pt", personal) if not keeps_portfolio else text
+    # the contact line keeps a portfolio link it already has; the plain-character cleanup runs on every CV
+    text = cv_format.normalize(text, portfolio_link, lang == "pt", personal) if not keeps_portfolio else cv_format.ascii_clean(text)
     if fit:
         fitted = fit(text)
         if fitted:

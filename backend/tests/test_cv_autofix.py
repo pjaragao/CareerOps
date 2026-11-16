@@ -56,3 +56,10 @@ def test_a_cv_still_rejected_after_every_round_falls_back_to_a_known_good_one(db
     verdict = asyncio.run(CvReviewService.run(job["id"], rounds=1))
     assert verdict["approved"] and verdict["fallback"] == "archetype"
     assert "Approved family CV" in crs._job(job["id"])["resume_markdown"]
+
+
+
+def test_a_month_range_is_never_doubled_and_dashes_are_plain():
+    cv = "# Paulo\n## Experience\n**Data & AI Engineer** | Feb 2026 - Present\n**Old** | Feb Feb 2026 – Present\n[Portfolio: x](https://x)"
+    out = autofix(cv, base="**Data** | Feb 2026 – Present")
+    assert "Feb Feb" not in out and "–" not in out and out.count("Feb 2026 - Present") == 2
