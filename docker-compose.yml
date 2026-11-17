@@ -97,6 +97,7 @@ services:
       - "127.0.0.1:${CAREEROPS_NOVNC_PORT:-6080}:6080"
       - "127.0.0.1:${CAREEROPS_MCP_LINKEDIN_PORT:-8931}:8931"
       - "127.0.0.1:${CAREEROPS_MCP_ATS_PORT:-8932}:8932"
+      - "127.0.0.1:${CAREEROPS_MCP_ATS2_PORT:-8933}:8933"   # second company-site agent, in parallel
     volumes:
       - careerops_browser:/data
       - careerops_output:/app/output

@@ -11,8 +11,8 @@ careerops tools (mailbox, portal passwords, answers) live on the host. This brid
   * every call is logged with its full arguments, and the runner reads the log to audit and report the run
   * the bridge keeps its own session with the browser and reconnects when the worker restarts it
 
-Public  (CAREEROPS_BRIDGE_HOST:CAREEROPS_BRIDGE_PORT, Bearer token):  /browser/mcp + /careerops/mcp (company sites),
-        /linkedin/mcp + /careerops-linkedin/mcp (LinkedIn); one task per lane, the two lanes in parallel
+Public  (CAREEROPS_BRIDGE_HOST:CAREEROPS_BRIDGE_PORT, Bearer token):  /browser/mcp + /careerops/mcp and /browser2/mcp +
+        /careerops2/mcp (two company-site slots), /linkedin/mcp + /careerops-linkedin/mcp (LinkedIn); one task per slot
 Control (127.0.0.1:CAREEROPS_BRIDGE_CONTROL_PORT, Bearer token):     POST /run, GET /calls, POST /end, GET /health
 
 Only the standard library. Runs as a systemd user service (careerops-mcp-bridge.service)."""
@@ -109,11 +109,11 @@ class BrowserUpstream:
                     pass
         return last
 
-    def _connect(self) -> None:
+    def _connect(self, timeout: int = 20) -> None:
         self.session = None
         self._post("initialize", {"protocolVersion": "2025-03-26", "capabilities": {},
-                                  "clientInfo": {"name": "careerops-bridge", "version": "1"}}, timeout=20)
-        self._post("notifications/initialized", notify=True, timeout=20)
+                                  "clientInfo": {"name": "careerops-bridge", "version": "1"}}, timeout=timeout)
+        self._post("notifications/initialized", notify=True, timeout=timeout)
 
     def reset(self) -> None:
         with self.lock:
@@ -121,11 +121,15 @@ class BrowserUpstream:
 
     def tools(self) -> List[dict]:
         """The runner's browser tools only (runner.TOOLS), live when the browser answers, else from the cache."""
+        # Hermes waits ~20 s for a tool list at boot: a browser that does not answer in 4 s is served from the cache, and is
+        # not asked again for 2 minutes (2026-11-17: port 8933 before the worker had it hung the whole 20 s)
         try:
+            if time.time() < getattr(self, "_down_until", 0):
+                raise OSError("browser recently down")
             with self.lock:
                 if not self.session:
-                    self._connect()
-                listed = ((self._post("tools/list", {}, timeout=20).get("result") or {}).get("tools")) or []
+                    self._connect(timeout=4)
+                listed = ((self._post("tools/list", {}, timeout=6).get("result") or {}).get("tools")) or []
             keep = [t for t in listed if t.get("name") in runner.TOOLS]
             if keep:
                 try:
@@ -136,10 +140,13 @@ class BrowserUpstream:
                 return keep
         except Exception:
             self.session = None
-        try:
-            return json.loads(self.cache.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            return []
+            self._down_until = time.time() + 120
+        for cache in (self.cache, TOOLS_CACHE):   # the second company-site server offers the same tools as the first
+            try:
+                return json.loads(cache.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+        return []
 
     def call(self, name: str, args: dict) -> dict:
         """The JSON-RPC result of one call. Reconnects and retries only when the call surely never ran (no session, the
@@ -258,10 +265,14 @@ def lane_of(action: Optional[dict]) -> str:
     return "ats" if (action or {}).get("lane") == "ats" else "linkedin"
 
 
+# slots: where a task runs. Two on company sites (2026-11-17: the second in its own isolated browser context), one on LinkedIn
+SLOT_LANE = {"ats": "ats", "ats2": "ats", "linkedin": "linkedin"}
+
+
 def make_public_handler(tasks: Dict[str, Task], token: str, browsers: Dict[str, Tuple["BrowserUpstream", str]]):
     """One task per lane, running in parallel (2026-11-17): a company form and a LinkedIn action at the same time, each in
     its own browser. browsers: endpoint path -> (upstream, lane); careerops tools have one endpoint per lane too."""
-    careerops_paths = {"/careerops/mcp": "ats", "/careerops-linkedin/mcp": "linkedin"}
+    careerops_paths = {"/careerops/mcp": "ats", "/careerops2/mcp": "ats2", "/careerops-linkedin/mcp": "linkedin"}
 
     class Handler(BaseHTTPRequestHandler):
         server_version = "careerops-bridge/1"
@@ -342,7 +353,7 @@ def make_public_handler(tasks: Dict[str, Task], token: str, browsers: Dict[str, 
                 args = params.get("arguments") or {}
                 name = f"mcp__playwright__{tool}"
                 why = guard(task.action, name, args)
-                if not why and lane_of(task.action) != lane:
+                if not why and lane_of(task.action) != SLOT_LANE[lane]:
                     why = f"este navegador é da frente {lane}; a tarefa aberta é da outra frente (use o outro conjunto de ferramentas)"
                 task.log({"name": name, "input": args, "refused": bool(why), "reason": why or "", "at": time.time()})
                 if why:
@@ -402,7 +413,8 @@ def make_control_handler(tasks: Dict[str, Task], token: str, env_loader, browser
             if not self._ok():
                 return
             if self.path.startswith("/calls"):
-                task = tasks["linkedin" if "lane=linkedin" in self.path else "ats"]
+                slot = self.path.split("slot=", 1)[1].split("&")[0] if "slot=" in self.path else "ats"
+                task = tasks.get(slot) or tasks["ats"]
                 with task.lock:
                     return self._json(200, {"action_id": (task.action or {}).get("id"), "calls": list(task.calls)})
             self._json(404, {"error": "not found"})
@@ -416,16 +428,19 @@ def make_control_handler(tasks: Dict[str, Task], token: str, env_loader, browser
                 action = body.get("action") or {}
                 if not action.get("id"):
                     return self._json(400, {"error": "action required"})
-                lane = lane_of(action)
-                busy = tasks[lane].action
-                if busy and busy.get("id") != action["id"] and time.time() - tasks[lane].opened_at < 3600:
-                    # never two tasks on one browser: the second runner waits (an hour-old task is a dead runner's)
-                    return self._json(409, {"error": f"lane {lane} busy with action {busy.get('id')}"})
-                tasks[lane].open(action, env_loader())
-                browsers[lane].reset()   # a fresh browser session per task, like a new Claude run
-                return self._json(200, {"ok": True, "action_id": action["id"], "lane": lane})
+                slot = body.get("slot") or lane_of(action)
+                if SLOT_LANE.get(slot) != lane_of(action):
+                    return self._json(400, {"error": f"slot {slot} does not serve lane {action.get('lane')}"})
+                busy = tasks[slot].action
+                if busy and busy.get("id") != action["id"] and time.time() - tasks[slot].opened_at < 3600:
+                    # never two tasks on one slot: the second runner waits (an hour-old task is a dead runner's)
+                    return self._json(409, {"error": f"slot {slot} busy with action {busy.get('id')}"})
+                tasks[slot].open(action, env_loader())
+                browsers[slot].reset()   # a fresh browser session per task, like a new Claude run
+                return self._json(200, {"ok": True, "action_id": action["id"], "slot": slot})
             if self.path == "/end":
-                return self._json(200, {"calls": tasks["linkedin" if body.get("lane") == "linkedin" else "ats"].close()})
+                slot = body.get("slot") or ("linkedin" if body.get("lane") == "linkedin" else "ats")
+                return self._json(200, {"calls": (tasks.get(slot) or tasks["ats"]).close()})
             self._json(404, {"error": "not found"})
 
     return Handler
@@ -436,16 +451,19 @@ def serve(env: Optional[dict] = None) -> Tuple[ThreadingHTTPServer, ThreadingHTT
     token = env.get("CAREEROPS_BRIDGE_TOKEN") or ""
     if len(token) < 16:
         raise SystemExit("CAREEROPS_BRIDGE_TOKEN missing or too short (runner.env)")
-    tasks = {"ats": Task(), "linkedin": Task()}
+    tasks = {slot: Task() for slot in SLOT_LANE}
     browser = BrowserUpstream(f"http://127.0.0.1:{int(env.get('CAREEROPS_MCP_PORT_ATS') or 8932)}/mcp")
     # LinkedIn's browser (2026-11-17: Hermes finishes LinkedIn Easy Apply forms too)
     linkedin = BrowserUpstream(f"http://127.0.0.1:{int(env.get('CAREEROPS_MCP_PORT_LINKEDIN') or 8931)}/mcp",
                                TOOLS_CACHE.with_name("bridge-linkedin-tools.json"))
-    browsers = {"/browser/mcp": (browser, "ats"), "/linkedin/mcp": (linkedin, "linkedin")}
+    # the second company-site agent: its own playwright-mcp (--isolated: each session a fresh context in the same Chrome)
+    browser2 = BrowserUpstream(f"http://127.0.0.1:{int(env.get('CAREEROPS_MCP_PORT_ATS2') or 8933)}/mcp",
+                               TOOLS_CACHE.with_name("bridge-browser2-tools.json"))
+    browsers = {"/browser/mcp": (browser, "ats"), "/browser2/mcp": (browser2, "ats2"), "/linkedin/mcp": (linkedin, "linkedin")}
     public = ThreadingHTTPServer((env.get("CAREEROPS_BRIDGE_HOST") or "172.26.0.1", int(env.get("CAREEROPS_BRIDGE_PORT") or 18933)),
                                  make_public_handler(tasks, token, browsers))
     control = ThreadingHTTPServer(("127.0.0.1", int(env.get("CAREEROPS_BRIDGE_CONTROL_PORT") or 18934)),
-                                  make_control_handler(tasks, token, lambda: ats_helpers.load_runtime_env(runner.load_env()), {"ats": browser, "linkedin": linkedin}))
+                                  make_control_handler(tasks, token, lambda: ats_helpers.load_runtime_env(runner.load_env()), {"ats": browser, "ats2": browser2, "linkedin": linkedin}))
     for srv in (public, control):
         srv.daemon_threads = True
         threading.Thread(target=srv.serve_forever, daemon=True).start()

@@ -897,3 +897,44 @@ def test_one_runner_per_lane_and_the_panel(db):
     ops = Auto.ops()
     assert [r["id"] for r in ops["running"]] == [a["id"]] and ops["running"][0]["elapsed_s"] >= 0
     assert ops["queue"]["running_claude"] == 1 and "hourly" in ops["applies"] and ops["engine"]["agent"] == "hermes"
+
+
+def test_documents_are_made_for_several_jobs_at_once(db, add_job, sql, monkeypatch):
+    import threading
+    import time as _time
+    live, peak, lock = [0], [0], threading.Lock()
+
+    async def slow_docs(job_id):
+        with lock:
+            live[0] += 1
+            peak[0] = max(peak[0], live[0])
+        _time.sleep(0.3)
+        sql("UPDATE public.job_listings SET resume_markdown = 'CV gerado', cover_letter = 'Carta' WHERE id = %s", (job_id,))
+        with lock:
+            live[0] -= 1
+
+    monkeypatch.setattr("app.services.job_pipeline_service.JobPipelineService.generate_docs", staticmethod(slow_docs))
+    ids = []
+    for n in range(3):
+        a = Auto.propose_job(add_job(job_id=f"30{n}", resume=None, cover=None, company=f"Acme {n}"))
+        Auto.approve(a["id"])
+        ids.append(a["id"])
+    assert Auto.prepare_documents() == 3 and peak[0] == 3
+    assert all(status_of(i) == "queued" for i in ids)
+
+
+def test_a_writer_that_answers_nothing_is_tried_again_before_it_comes_to_you(db, add_job, sql, monkeypatch):
+    async def nothing(job_id):
+        pass
+
+    monkeypatch.setattr("app.services.job_pipeline_service.JobPipelineService.generate_docs", staticmethod(nothing))
+    a = Auto.propose_job(add_job(resume=None, cover=None))
+    Auto.approve(a["id"])
+    Auto.prepare_documents()
+    assert status_of(a["id"]) == "approved"                    # Sonnet out: it waits
+    assert Auto.prepare_documents() == 0                       # not again within 10 minutes
+    sql("UPDATE public.automation_events SET at = at - interval '11 minutes' WHERE action_id = %s", (a["id"],))
+    Auto.prepare_documents()
+    sql("UPDATE public.automation_events SET at = at - interval '11 minutes' WHERE action_id = %s", (a["id"],))
+    Auto.prepare_documents()
+    assert status_of(a["id"]) == "needs_user"                  # the third failure in a row comes to you

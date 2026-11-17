@@ -1586,7 +1586,7 @@ class AutomationService:
 
     @staticmethod
     def prepare_documents() -> int:
-        """Approved jobs: the CV and the cover letter are generated now, one at a time (blocking: call it from a thread), and
+        """Approved jobs: the CV and the cover letter are generated now, a few jobs at once (blocking: call it from a thread), and
         read by the reviewer agent (cv_review: agent) or by you (cv_review: you, the first 20 on the main account)."""
         import asyncio
         from app.services.cv_review_service import CvReviewService, reasons
@@ -1595,22 +1595,28 @@ class AutomationService:
         state = AutomationService.state()
         by_agent = (config().get("jobs") or {}).get("cv_review", "agent") == "agent"
         from app.services.site_service import SiteService, TextCache, archetype_of, text_key
-        for action in _rows("SELECT * FROM public.automation_actions WHERE kind = 'apply' AND status = 'approved' ORDER BY rank, sort_at DESC LIMIT 2"):
+        def one(action: dict) -> int:
             try:
                 # token plan, phase 3: no documents for a site that only you can pass, nor for a page another action holds
                 block = SiteService.human_block(action.get("target_url") or "")
                 if block:
                     AutomationService._to_user(action["id"], "captcha", "Este site pediu CAPTCHA nas últimas tentativas: os documentos esperam você resolver.")
-                    continue
+                    return 0
                 made = asyncio.run(JobPipelineService.generate_docs(action["target_id"])) or []
                 job = _one("SELECT job_title, resume_markdown, cover_letter, language, description FROM public.job_listings WHERE id = %s", (action["target_id"],)) or {}
                 if not job.get("resume_markdown"):
-                    raise RuntimeError("o CV não foi gerado")
+                    # the writer (Sonnet) answered nothing: usually a session limit. The job stays approved and is tried
+                    # again 10 min later; only the third failure in a row goes to you (2026-11-17)
+                    tries = (_one("""SELECT COUNT(*) AS n FROM public.automation_events WHERE action_id = %s AND event = 'docs_retry'
+                                       AND at > NOW() - interval '6 hours'""", (action["id"],)) or {}).get("n") or 0
+                    if tries < 2:
+                        AutomationService.add_event(action["id"], "reviewer", "docs_retry", {"try": tries + 1}, level="warning")
+                        return 0
+                    raise RuntimeError("o CV não foi gerado (3 tentativas)")
                 if "resume_archetype" in made:   # the CV the reviewer already approved for this family: no new review
                     AutomationService.add_event(action["id"], "reviewer", "cv_archetype", {"archetype": archetype_of(job.get("job_title") or "")})
                     _rows("UPDATE public.automation_actions SET status = 'queued', updated_at = NOW() WHERE id = %s", (action["id"],))
-                    done += 1
-                    continue
+                    return 1
                 if by_agent:
                     verdict = asyncio.run(CvReviewService.run(action["target_id"]))
                     AutomationService.add_event(action["id"], "reviewer", "cv_review", {k: verdict[k] for k in ("approved", "rounds", "history")},
@@ -1632,10 +1638,24 @@ class AutomationService:
                     review = state["account_kind"] == "main" and state["review_cv_left"] > 0
                     _rows("UPDATE public.automation_actions SET status = %s, updated_at = NOW() WHERE id = %s",
                           ("review_docs" if review else "queued", action["id"]))
-                done += 1
+                return 1
             except Exception as e:
                 log.warning("documents for action %s not generated: %s", action["id"], e)
                 AutomationService._to_user(action["id"], "documents_failed", f"Não consegui gerar os documentos: {e}")
+                return 0
+
+        # 2026-11-17: several jobs at once (each is minutes of Sonnet: CV, letter, review rounds), as many as the Claude shim
+        # runs in parallel; one at a time took half an hour for 14 approved jobs
+        parallel = max(1, int((config().get("jobs") or {}).get("docs_parallel", 3)))
+        rows = _rows("""SELECT * FROM public.automation_actions a WHERE kind = 'apply' AND status = 'approved'
+                           AND NOT EXISTS (SELECT 1 FROM public.automation_events e WHERE e.action_id = a.id AND e.event = 'docs_retry'
+                                            AND e.at > NOW() - interval '10 minutes')
+                         ORDER BY rank, sort_at DESC LIMIT %s""", (parallel,))
+        if len(rows) <= 1:
+            return sum(one(a) for a in rows)
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=parallel) as pool:
+            done = sum(pool.map(one, rows))
         return done
 
     @staticmethod
@@ -1808,9 +1828,8 @@ class AutomationService:
         AutomationService.expire_stale_proposals()
         if AutomationService.state().get("mode") != "off":
             AutomationService.schedule_reads()
-            # documents for jobs you already approved first: reading new jobs may wait on a model that is out of quota
-            # (2026-11-16: with AGY out, triage took 165 s per job and the approved jobs never got their CV)
-            AutomationService.prepare_documents()
+            # documents for approved jobs run in their own loop (main._documents, 2026-11-17): minutes of Sonnet per job
+            # never hold the books, the job reading or the notifications
             JobSearchService.triage_pending()
             AutomationService.sync_proposals()
             JobSearchService.score_proposed()

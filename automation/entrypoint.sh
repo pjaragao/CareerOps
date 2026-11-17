@@ -42,6 +42,11 @@ playwright-mcp --cdp-endpoint http://127.0.0.1:9223 --host 0.0.0.0 --port 8932 -
     --allow-unrestricted-file-access \
     --snapshot-mode none --image-responses omit --console-level error \
     --blocked-origins 'https://www.linkedin.com;https://linkedin.com' >/dev/null 2>&1 &
+# a second agent on company sites in parallel (2026-11-17): same browser, each session in its own fresh context (--isolated)
+playwright-mcp --cdp-endpoint http://127.0.0.1:9223 --host 0.0.0.0 --port 8933 --allowed-hosts '*' \
+    --allow-unrestricted-file-access --isolated \
+    --snapshot-mode none --image-responses omit --console-level error \
+    --blocked-origins 'https://www.linkedin.com;https://linkedin.com' >/dev/null 2>&1 &
 
 cd /app
 exec python -m worker.main

@@ -257,3 +257,31 @@ def test_a_busy_lane_refuses_a_second_task(tmp_path, monkeypatch):
         assert tasks["ats"].action["id"] == 7
     finally:
         public.shutdown(); control.shutdown()
+
+
+def test_two_company_slots_run_side_by_side(tmp_path, monkeypatch):
+    monkeypatch.setattr(mcp_bridge, "TOOLS_CACHE", tmp_path / "tools.json")
+    env = {"CAREEROPS_BRIDGE_TOKEN": TOKEN, "CAREEROPS_BRIDGE_HOST": "127.0.0.1", "CAREEROPS_BRIDGE_PORT": "0",
+           "CAREEROPS_BRIDGE_CONTROL_PORT": "0", "CAREEROPS_MCP_PORT_ATS": "1", "CAREEROPS_MCP_PORT_ATS2": "1", "CAREEROPS_MCP_PORT_LINKEDIN": "1"}
+    public, control, tasks = mcp_bridge.serve(env)
+    ctl = f"http://127.0.0.1:{control.server_address[1]}"
+    try:
+        _post(f"{ctl}/run", {"action": ACTION})
+        _post(f"{ctl}/run", {"action": {**ACTION, "id": 71}, "slot": "ats2"})
+        assert tasks["ats"].action["id"] == 7 and tasks["ats2"].action["id"] == 71
+        try:
+            _post(f"{ctl}/run", {"action": {**ACTION, "id": 72, "lane": "linkedin_write"}, "slot": "ats2"})
+            assert False, "a LinkedIn action never runs in a company-site slot"
+        except urllib.error.HTTPError as e:
+            assert e.code in (400, 409)
+        _post(f"{ctl}/end", {"slot": "ats2"})
+        assert tasks["ats2"].action is None and tasks["ats"].action["id"] == 7
+    finally:
+        public.shutdown(); control.shutdown()
+
+
+def test_the_runner_slot_picks_its_browser_and_tool_names():
+    act = {"lane": "ats"}
+    assert hermes_agent.slot_of(act, {}) == "ats" and hermes_agent.slot_of(act, {"CAREEROPS_RUNNER_SLOT": "2"}) == "ats2"
+    assert hermes_agent.slot_of({"lane": "linkedin_write"}, {"CAREEROPS_RUNNER_SLOT": "2"}) == "linkedin"
+    assert run.mcp_port("ats", {"CAREEROPS_RUNNER_SLOT": "2"}) == 8933 and run.mcp_port("ats", {}) == 8932

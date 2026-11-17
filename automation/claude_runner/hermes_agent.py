@@ -72,6 +72,17 @@ def to_parsed(calls: list, status: dict, model_hint: str = "") -> Dict[str, Any]
     return {"calls": out_calls, "final": final}
 
 
+def slot_of(action: dict, env: dict) -> str:
+    """The bridge slot of this run: ats, ats2 (the second company-site runner, --slot 2) or linkedin."""
+    if action.get("lane") != "ats":
+        return "linkedin"
+    return "ats2" if str(env.get("CAREEROPS_RUNNER_SLOT") or "1") == "2" else "ats"
+
+
+PREFIXES = {"ats": ("mcp__careerops_browser__", "mcp__careerops__"), "ats2": ("mcp__careerops_browser2__", "mcp__careerops2__"),
+            "linkedin": ("mcp__careerops_linkedin__", "mcp__careerops_li__")}
+
+
 def run_hermes(action: dict, system: str, prompt: str, env: dict, timeout_s: int = 480) -> Tuple[Dict[str, Any], int]:
     """(parsed, returncode) like run._claude_attempt. Never raises: a Hermes that is down reads as a failed attempt."""
     base = env["CAREEROPS_HERMES_URL"].rstrip("/")
@@ -81,14 +92,14 @@ def run_hermes(action: dict, system: str, prompt: str, env: dict, timeout_s: int
     status: dict = {}
     calls: list = []
     try:
-        _http("POST", f"{bridge}/run", btoken, {"action": action})
+        slot = slot_of(action, env)
+        _http("POST", f"{bridge}/run", btoken, {"action": action, "slot": slot})
     except (OSError, ValueError) as exc:
         return {"calls": [], "final": {"is_error": True, "result": f"bridge unreachable: {exc}"}}, 1
     run_id = ""
     try:
         started = _http("POST", f"{base}/v1/runs", key, {
-            "input": prompt + (OUTPUT_RULES.replace("{browser}", "mcp__careerops_browser__" if action.get("lane") == "ats" else "mcp__careerops_linkedin__")
-                               .replace("{careerops}", "mcp__careerops__" if action.get("lane") == "ats" else "mcp__careerops_li__")),
+            "input": prompt + OUTPUT_RULES.replace("{browser}", PREFIXES[slot][0]).replace("{careerops}", PREFIXES[slot][1]),
             "instructions": system,
             "session_id": f"careerops-apply-{action.get('id')}-{action.get('run_id') or int(time.time())}",
             "model_options": {"reasoning_effort": "low"},   # a form needs steps, not long thinking: fewer output tokens
@@ -123,7 +134,7 @@ def run_hermes(action: dict, system: str, prompt: str, env: dict, timeout_s: int
         status = {"status": "failed", "error": f"Hermes unreachable: {exc}"}
     finally:
         try:
-            calls = _http("POST", f"{bridge}/end", btoken, {"lane": "ats" if action.get("lane") == "ats" else "linkedin"}).get("calls") or []
+            calls = _http("POST", f"{bridge}/end", btoken, {"slot": slot_of(action, env)}).get("calls") or []
         except (OSError, ValueError):
             calls = []
     parsed = to_parsed(calls, status, env.get("CAREEROPS_HERMES_MODEL") or "lolo")

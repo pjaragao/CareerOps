@@ -25,7 +25,12 @@ LEAN_MCP = ["--snapshot-mode", "none", "--image-responses", "omit", "--console-l
 MCP_PORTS = {
     "linkedin": {"port": 8931, "cdp": 9222, "blocked": "", "extra": []},
     "ats": {"port": 8932, "cdp": 9223, "blocked": "https://www.linkedin.com;https://linkedin.com", "extra": LEAN_MCP},
+    # a second agent on company sites at the same time (2026-11-17): same browser, but every session in its own fresh
+    # context (--isolated), so the two agents never share or switch each other's tabs; no extra Chrome in memory
+    "ats2": {"port": 8933, "cdp": 9223, "blocked": "https://www.linkedin.com;https://linkedin.com", "extra": LEAN_MCP + ["--isolated"]},
 }
+# servers that live and die with a browser: the second company-site server follows the company-site browser
+MCP_COMPANIONS = {"ats": ["ats2"]}
 
 
 async def _stop_mcp(name: str) -> None:
@@ -114,6 +119,8 @@ class Browsers:
             await self._configure_extension(context)
             self.contexts[name] = context
             await _restart_mcp(name)
+            for extra in MCP_COMPANIONS.get(name, []):
+                await _restart_mcp(extra)
             log.info("browser %s started (%s)", name, BROWSER_MODE)
             return context
 
@@ -137,6 +144,8 @@ class Browsers:
         async with self.lock:
             context = self.contexts.pop(name, None)
         await _stop_mcp(name)
+        for extra in MCP_COMPANIONS.get(name, []):
+            await _stop_mcp(extra)
         if context:
             await context.close()
             log.info("browser %s closed", name)

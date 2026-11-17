@@ -92,6 +92,18 @@ async def _automation():
         await asyncio.sleep(60)
 
 
+async def _documents():
+    """Every 20 s: CV and cover letter for approved jobs, a few at once (AutomationService.prepare_documents)."""
+    from app.services.automation_service import AutomationService
+    while True:
+        try:
+            if AutomationService.state().get("mode") != "off":
+                await asyncio.to_thread(AutomationService.prepare_documents)
+        except Exception as e:
+            logging.getLogger("automation").warning("documents loop failed: %s", e)
+        await asyncio.sleep(20)
+
+
 async def _email_monitor():
     """Every 5 minutes: is today's reading of the mailbox due?"""
     from app.services.email_monitor_service import EmailMonitorService
@@ -151,6 +163,7 @@ async def start_scheduler():
         logging.getLogger("portfolio").warning("migrations_v16 not applied: %s", e)
     app.state.portfolio_pull = asyncio.create_task(_portfolio_pull())
     app.state.automation = asyncio.create_task(_automation())
+    app.state.documents = asyncio.create_task(_documents())
     app.state.email_monitor = asyncio.create_task(_email_monitor())
     app.state.linkedin_scheduler = asyncio.create_task(_publish_scheduled_posts())
     app.state.job_pipeline = asyncio.create_task(_job_pipeline())
