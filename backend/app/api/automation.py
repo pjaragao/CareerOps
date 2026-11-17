@@ -605,11 +605,12 @@ async def artifact(action_id: int, name: str):
 class ClaudeClaimIn(BaseModel):
     runner: str = Field("claude-runner", max_length=100)
     hermes: bool = False   # the runner can run Lolo's Hermes (free): it may claim company forms while Claude is paused
+    lanes: Optional[List[str]] = Field(None, max_length=5)   # one runner per lane, in parallel (2026-11-17)
 
 
 @router.post("/escalated/claim", dependencies=[Depends(require_worker)])
 async def claude_claim(req: ClaudeClaimIn):
-    return Auto.claude_claim(req.runner, hermes=req.hermes)
+    return Auto.claude_claim(req.runner, hermes=req.hermes, lanes=req.lanes)
 
 
 class ClaudeResultIn(BaseModel):
@@ -753,6 +754,29 @@ class SuggestionIn(BaseModel):
 @router.patch("/suggestions/{suggestion_id}", dependencies=[Depends(require_decider)])
 async def set_suggestion(suggestion_id: int, req: SuggestionIn):
     return _found(BotService.set_suggestion(suggestion_id, req.status))
+
+
+@router.get("/ops", dependencies=[Depends(require_approver)])
+async def ops():
+    return Auto.ops()
+
+
+# ── Which engine does each kind of AI work (2026-11-17) ──
+@router.get("/ai-engine", dependencies=[Depends(require_approver)])
+async def ai_engine():
+    return {"engine": Auto.ai_engine(fresh=True), "choices": {k: list(v) for k, v in Auto.AI_ENGINE_CHOICES.items()}}
+
+
+class AiEngineIn(BaseModel):
+    agent: Optional[Literal["hermes", "auto", "claude"]] = None
+    documents: Optional[Literal["claude", "hermes"]] = None
+    forms: Optional[Literal["claude", "hermes"]] = None
+    texts: Optional[Literal["hermes", "agy"]] = None
+
+
+@router.post("/ai-engine", dependencies=[Depends(require_decider)])
+async def set_ai_engine(req: AiEngineIn):
+    return {"engine": Auto.set_ai_engine(req.model_dump(exclude_none=True))}
 
 
 # ── Live questions: the apply agent asks, you answer on WhatsApp (2026-11-16) ──

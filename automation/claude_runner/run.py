@@ -173,6 +173,10 @@ TASKS = {
     "comment": "publish the comment in payload.text on the post at the target address, exactly as written, and nothing else",
     "follow": "click Follow on the page at the target address",
     "connect": "send a connection invitation, without a note, to the person at the target address",
+    "reply": ("on the post at the target address, reply to the comment of payload.reply_author (it starts with payload.reply_head) with the text in payload.text, exactly "
+              "as written (also like that comment when payload.like is true), and nothing else"),
+    "like": "like the comment of payload.reply_author (it starts with payload.reply_head) on the post at the target address, and nothing else",
+    "message": "in the conversation at the target address, send the message in payload.text, exactly as written, and nothing else",
 }
 
 
@@ -434,8 +438,9 @@ def _claude_attempt(action: dict, env: dict, prompt: str, mcp_url: str, port, mo
 
 
 def hermes_works(action: dict) -> bool:
-    """Company forms, and since 2026-11-17 LinkedIn applications (Easy Apply) too; never other LinkedIn actions."""
-    return action.get("lane") == "ats" or (action.get("lane") == "linkedin_write" and action.get("kind") == "apply")
+    """Every action the Claude routine took (2026-11-17): company forms, and on LinkedIn applications, follows,
+    invitations, comments, replies and messages, under the same audit (the target page only)."""
+    return action.get("lane") in ("ats", "linkedin_write")
 
 
 def hermes_ends(result: dict) -> bool:
@@ -465,7 +470,8 @@ def _run_action(action: dict, env: dict) -> tuple:
         return {"status": "failed", "summary": "As ferramentas do navegador não responderam: nada foi feito; tento de novo depois",
                 "questions": [], "audit_flags": [], "cost_usd": None, "transcript": {}, "provider_error": True}, 0
 
-    provider = (env.get("CAREEROPS_RUNNER_PROVIDER") or "auto").lower()
+    # the dashboard's choice (automation_state.ai_engine.agent) wins over runner.env when the backend sends it
+    provider = (action.get("agent_engine") or env.get("CAREEROPS_RUNNER_PROVIDER") or "auto").lower()
     if provider == "hydrogen":
         try:
             res, tr = hydrogen_agent.run_hydrogen_agent(action, system_prompt(action) + "\n\n" + prompt, mcp_url, TOOLS, env)
@@ -582,13 +588,21 @@ def _wait_for_worker_verify(env: dict, action_id: int, timeout: int = 35) -> Non
 
 def _claim_and_run(env: dict, wait_verify: bool = False):
     hermes = hermes_agent.configured(env) and hermes_agent.bridge_ready(env) and (env.get("CAREEROPS_RUNNER_PROVIDER") or "auto").lower() in ("auto", "hermes")
-    claimed = api(env, "/automation/escalated/claim", {"runner": os.uname().nodename, "hermes": hermes})
+    body = {"runner": os.uname().nodename, "hermes": hermes}
+    if env.get("CAREEROPS_RUNNER_LANES"):   # one runner per lane, in parallel (2026-11-17)
+        body["lanes"] = [l.strip() for l in env["CAREEROPS_RUNNER_LANES"].split(",") if l.strip()]
+    claimed = api(env, "/automation/escalated/claim", body)
     action = claimed.get("action")
     if not action:
         print(f"nothing to do ({claimed.get('reason')})")
         return None
+    lanes = body.get("lanes") or []
     try:
-        result, tool_count = _run_action(action, env)
+        if lanes and action.get("lane") not in lanes:   # an older backend ignored the lane filter: never two runners on one lane
+            result, tool_count = {"status": "deferred", "summary": f"Outra frente ({action.get('lane')}): fica para o runner dela",
+                                  "questions": [], "audit_flags": [], "cost_usd": None, "transcript": {}}, 0
+        else:
+            result, tool_count = _run_action(action, env)
     except Exception as exc:
         result, tool_count = {
             "status": "failed",
@@ -614,10 +628,13 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="CareerOps escalated automation runner")
     parser.add_argument("--batch", type=int, default=1, help="Max escalated actions to process per invocation")
     parser.add_argument("--provider", choices=("auto", "claude", "hydrogen", "hermes"), default=None)
+    parser.add_argument("--lane", default=None, help="Only this lane (ats, linkedin_write): one runner per lane runs in parallel")
     args, _ = parser.parse_known_args(argv)
     env = ats_helpers.load_runtime_env(load_env())
     if args.provider:
         env["CAREEROPS_RUNNER_PROVIDER"] = args.provider
+    if args.lane:
+        env["CAREEROPS_RUNNER_LANES"] = args.lane
     if not env.get("CAREEROPS_API_BASE") or not env.get("CAREEROPS_WORKER_TOKEN"):
         print(f"CAREEROPS_API_BASE / CAREEROPS_WORKER_TOKEN missing ({ENV_FILE})", file=sys.stderr)
         return 2

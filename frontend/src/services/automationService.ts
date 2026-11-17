@@ -119,8 +119,29 @@ const data = <T,>(p: Promise<{ data: T }>) => p.then((r) => r.data);
 export interface SavedImportSettings { enabled: boolean; day_start: number; day_end: number; day_every: number; night_every: number }
 export interface SavedImportRun { id: number; status: string; run_now: boolean; created_at: string; finished_at: string | null; result: Record<string, any>; error_code: string | null; error_text: string | null }
 
+// The operations panel (2026-11-17)
+export type EngineKind = 'agent' | 'documents' | 'forms' | 'texts';
+export type AiEngine = Record<EngineKind, string>;
+export interface OpsRunning { id: number; kind: string; lane: string; status: string; title?: string; target_url?: string; executor?: string;
+  run_started_at?: string | null; run_model?: string | null; elapsed_s: number }
+export interface Ops {
+  now: string;
+  running: OpsRunning[];
+  applies: { d24: number; h1: number; today: number; d7: number; hourly: { hour: string; ats: number; linkedin: number }[] };
+  queue: Record<string, number>;
+  agent_outcomes: { agent: string; result: string; n: number; avg_s: string | null }[];
+  tokens_24h: { agent: string; tokens: string }[];
+  needs_you: { code: string; n: number }[];
+  other_actions: { kind: string; done_24h: number; waiting: number }[];
+  engine: AiEngine;
+  state: { mode: string; halted_lanes: string[]; claude_paused_until?: string | null; captcha_session_until?: string | null };
+}
+
 export const automationService = {
   status: () => data(api.get<AutomationStatus>(`${base}/status`)),
+  ops: () => data(api.get<Ops>(`${base}/ops`)),
+  aiEngine: () => data(api.get<{ engine: AiEngine; choices: Record<EngineKind, string[]> }>(`${base}/ai-engine`)),
+  setAiEngine: (patch: Partial<AiEngine>) => data(api.post<{ engine: AiEngine }>(`${base}/ai-engine`, patch)),
   setState: (patch: Partial<Pick<AutomationStatus['state'], 'mode' | 'account_kind' | 'allow_final_submit' | 'ramp_step' | 'ramp_auto'>>) => data(api.patch(`${base}/state`, patch)),
   halt: () => data(api.post(`${base}/halt`, { reason: 'Parado por você' })),
   resume: () => data(api.post(`${base}/resume`)),

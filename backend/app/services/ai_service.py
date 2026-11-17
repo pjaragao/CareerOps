@@ -229,18 +229,50 @@ class ClaudeShimProvider(AgyShimProvider):
         return text
 
 
+class HermesProvider(AgyShimProvider):
+    """Lolo's Hermes (a free Nous model) through the host shim (claude_shim.py forwards model "hermes" to Lolo's API):
+    one call, no model chain. Chosen per kind of work in the Automation dashboard (automation_state.ai_engine)."""
+    MODEL = "hermes"
+
+    def __init__(self):
+        OpenAICompatibleProvider.__init__(self, os.getenv("CLAUDE_SHIM_TOKEN") or os.getenv("AGY_SHIM_TOKEN") or "no-token",
+                                          os.getenv("CLAUDE_SHIM_URL", "http://172.26.0.1:8788/v1"), self.MODEL)
+
+    def list_models(self) -> List[Dict[str, Any]]:
+        return [{"id": self.MODEL, "name": "Hermes (Lolo)"}]
+
+    def generate_text(self, prompt: str, model: Optional[str] = None, temperature: float = 0.7) -> str:
+        return OpenAICompatibleProvider.generate_text(self, prompt, model=self.MODEL, temperature=temperature)
+
+
+def _engine(kind: str) -> str:
+    try:
+        from app.services.automation_service import AutomationService
+        return AutomationService.ai_engine().get(kind, "")
+    except Exception:
+        return ""
+
+
 class AIService:
     @staticmethod
     def get_document_provider(model_key: Optional[str] = None, model: Optional[str] = None) -> AIProvider:
-        """Provider for the skills that write documents: Claude CLI (Sonnet medium) unless CLAUDE_SHIM_URL=off."""
-        base = AIService.get_provider(model_key)
+        """Provider for the skills that write documents: Claude CLI (Sonnet medium) unless CLAUDE_SHIM_URL=off, or Hermes
+        when the dashboard says so (documents, or forms for the small form-answer calls that pass a model)."""
+        if _engine("forms" if model else "documents") == "hermes":
+            return HermesProvider()
+        base = AIService.get_provider(model_key, raw=True)
         url = os.getenv("CLAUDE_SHIM_URL", "http://172.26.0.1:8788/v1")   # "off" turns it off
         if not url or url.lower() == "off" or not isinstance(base, AgyShimProvider):
             return base
         return ClaudeShimProvider(os.getenv("CLAUDE_SHIM_TOKEN") or os.getenv("AGY_SHIM_TOKEN", ""), url, base, model=model)
 
     @staticmethod
-    def get_provider(model_key: Optional[str] = None) -> AIProvider:
+    def get_provider(model_key: Optional[str] = None, raw: bool = False) -> AIProvider:
+        """The provider for texts and analyses (triage, scores, comments, messages, inbox, e-mails...): Hermes when the
+        dashboard says so (the default since 2026-11-17, AGY being out of quota), else the configured one.
+        raw=True skips that choice (the document provider's own fallback)."""
+        if not raw and _engine("texts") == "hermes":
+            return HermesProvider()
         from app.services.settings_service import SettingsService
         # Load dynamic settings
         live_settings = SettingsService.get_settings()

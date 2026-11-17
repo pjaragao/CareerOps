@@ -29,6 +29,47 @@ EFFORTS = ("low", "medium", "high", "xhigh", "max")
 _slots = threading.Semaphore(int(os.environ.get("CLAUDE_SHIM_PARALLEL", "3")))
 
 
+# Model "hermes" (2026-11-17): the text goes to Lolo's Hermes (a free Nous model), through its API on this host. Its
+# address and key come from the CareerOps runner's env (the same file the apply runner reads), so nothing is copied.
+HERMES_ENV = os.path.expanduser(os.environ.get("CAREEROPS_RUNNER_ENV", "~/.config/careerops/runner.env"))
+HERMES_TIMEOUT = int(os.environ.get("HERMES_SHIM_TIMEOUT", "300"))
+_hermes_slots = threading.Semaphore(int(os.environ.get("HERMES_SHIM_PARALLEL", "4")))
+HERMES_RULES = ("You are a text engine for CareerOps, not an assistant in a chat. Do NOT call any tool. Read the request "
+                "below and answer it directly, in exactly the format it asks for (JSON when it asks for JSON).")
+
+
+def _hermes_env() -> dict:
+    out = {}
+    try:
+        for line in open(HERMES_ENV, encoding="utf-8"):
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                k, v = line.split("=", 1)
+                out[k.strip()] = v.strip().strip('"')
+    except OSError:
+        pass
+    return out
+
+
+def run_hermes(prompt: str) -> str:
+    import urllib.request
+    env = _hermes_env()
+    url, key = env.get("CAREEROPS_HERMES_URL"), env.get("CAREEROPS_HERMES_KEY")
+    if not url or not key:
+        raise RuntimeError("Hermes not configured (CAREEROPS_HERMES_URL/KEY in the runner env)")
+    body = {"model": "hermes-agent", "messages": [{"role": "system", "content": HERMES_RULES}, {"role": "user", "content": prompt}],
+            "stream": False, "model_options": {"reasoning_effort": "low"}}
+    req = urllib.request.Request(url.rstrip("/") + "/v1/chat/completions", data=json.dumps(body).encode("utf-8"), method="POST",
+                                 headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"})
+    with _hermes_slots:
+        with urllib.request.urlopen(req, timeout=HERMES_TIMEOUT) as res:
+            data = json.loads(res.read().decode("utf-8"))
+    text = (((data.get("choices") or [{}])[0].get("message") or {}).get("content") or "").strip()
+    if not text:
+        raise RuntimeError(f"Hermes gave no text: {str(data)[:200]}")
+    return text
+
+
 def split_model(model_id: str) -> tuple:
     name, _, tail = (model_id or DEFAULT_MODEL).rpartition("-")
     return (name, tail) if tail in EFFORTS and name else (model_id or DEFAULT_MODEL, "")
@@ -90,9 +131,13 @@ class Handler(BaseHTTPRequestHandler):
         try:
             body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
             model_id = body.get("model") or DEFAULT_MODEL
-            text = run_claude(render(body.get("messages")), model_id)
+            if model_id.startswith("hermes"):
+                text = run_hermes(render(body.get("messages")))
+            else:
+                text = run_claude(render(body.get("messages")), model_id)
         except Exception as e:
-            return self._send(502, {"error": {"message": f"claude: {e}", "type": "upstream_error"}})
+            who = "hermes" if str(model_id).startswith("hermes") else "claude"
+            return self._send(502, {"error": {"message": f"{who}: {e}", "type": "upstream_error"}})
         self._send(200, {"id": f"chatcmpl-{uuid.uuid4().hex[:12]}", "object": "chat.completion", "created": int(time.time()), "model": model_id,
                          "choices": [{"index": 0, "message": {"role": "assistant", "content": text}, "finish_reason": "stop"}]})
 

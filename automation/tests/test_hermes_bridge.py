@@ -91,7 +91,7 @@ def test_bridge_end_to_end(tmp_path, monkeypatch):
     monkeypatch.setattr(mcp_bridge, "TOOLS_CACHE", tmp_path / "tools.json")
     env = {"CAREEROPS_BRIDGE_TOKEN": TOKEN, "CAREEROPS_BRIDGE_HOST": "127.0.0.1", "CAREEROPS_BRIDGE_PORT": "0",
            "CAREEROPS_BRIDGE_CONTROL_PORT": "0", "CAREEROPS_MCP_PORT_ATS": str(up.server_address[1])}
-    public, control, task = mcp_bridge.serve(env)
+    public, control, tasks = mcp_bridge.serve(env)
     pub = f"http://127.0.0.1:{public.server_address[1]}"
     ctl = f"http://127.0.0.1:{control.server_address[1]}"
     try:
@@ -109,14 +109,13 @@ def test_bridge_end_to_end(tmp_path, monkeypatch):
         _post(f"{ctl}/run", {"action": ACTION})
         assert _post(f"{pub}/browser/mcp", click)["result"]["content"][0]["text"] == "clicked"
         other = _post(f"{pub}/linkedin/mcp", click)["result"]
-        assert other["isError"] and "outra frente" in other["content"][0]["text"]
+        assert other["isError"] and "REFUSED" in other["content"][0]["text"]   # no LinkedIn task open
         evil = {"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "browser_evaluate", "arguments": {"function": "x"}}}
         assert "REFUSED" in _post(f"{pub}/browser/mcp", evil)["result"]["content"][0]["text"]
         assert FakeBrowser.seen == ["browser_click"]
-        calls = _post(f"{ctl}/end", {})["calls"]
-        assert [(c["name"], c["refused"]) for c in calls] == [("mcp__playwright__browser_click", False), ("mcp__playwright__browser_click", True),
-                                                              ("mcp__playwright__browser_evaluate", True)]
-        assert task.action is None
+        calls = _post(f"{ctl}/end", {"lane": "ats"})["calls"]
+        assert [(c["name"], c["refused"]) for c in calls] == [("mcp__playwright__browser_click", False), ("mcp__playwright__browser_evaluate", True)]
+        assert tasks["ats"].action is None and tasks["linkedin"].action is None
     finally:
         public.shutdown(); control.shutdown(); up.shutdown()
 
@@ -181,8 +180,8 @@ def test_hermes_only_never_runs_claude(monkeypatch):
     monkeypatch.setattr(run.hermes_agent, "run_hermes",
                         lambda *a, **k: (hermes_agent.to_parsed([{"name": "mcp__playwright__browser_snapshot"}], stopped), 0))
     assert run._run_action(_fake_action(), env)[0]["status"] == "needs_user"        # it worked and stopped: to you
-    follow = {**_fake_action(), "lane": "linkedin_write", "kind": "follow"}
-    assert run._run_action(follow, env)[0]["status"] == "deferred"                  # not an application: never a Claude run
+    other = {**_fake_action(), "lane": "linkedin_read", "kind": "feed_scan"}
+    assert run._run_action(other, env)[0]["status"] == "deferred"                   # not Hermes's: never a Claude run
     seen = {}
     monkeypatch.setattr(run.hermes_agent, "run_hermes", lambda action, system, prompt, *a, **k: (seen.update(prompt=prompt) or
                         (hermes_agent.to_parsed([{"name": "mcp__playwright__browser_snapshot"}], stopped), 0)))
@@ -219,3 +218,42 @@ def test_linkedin_applications_get_the_answer_tools_and_stay_on_the_job():
     assert mcp_bridge.guard(li, "mcp__playwright__browser_navigate", {"url": "https://www.linkedin.com/feed/"})
     follow = {**li, "kind": "follow"}
     assert mcp_bridge.guard(follow, "mcp__careerops__ask_candidate", {"question": "x"})        # only applications
+
+
+def test_the_two_lanes_run_in_parallel_each_with_its_own_task(tmp_path, monkeypatch):
+    monkeypatch.setattr(mcp_bridge, "TOOLS_CACHE", tmp_path / "tools.json")
+    env = {"CAREEROPS_BRIDGE_TOKEN": TOKEN, "CAREEROPS_BRIDGE_HOST": "127.0.0.1", "CAREEROPS_BRIDGE_PORT": "0",
+           "CAREEROPS_BRIDGE_CONTROL_PORT": "0", "CAREEROPS_MCP_PORT_ATS": "1", "CAREEROPS_MCP_PORT_LINKEDIN": "1"}
+    public, control, tasks = mcp_bridge.serve(env)
+    ctl = f"http://127.0.0.1:{control.server_address[1]}"
+    pub = f"http://127.0.0.1:{public.server_address[1]}"
+    try:
+        li = {"id": 9, "run_id": 1, "kind": "follow", "lane": "linkedin_write", "target_url": "https://www.linkedin.com/company/acme/", "dossier": {}}
+        _post(f"{ctl}/run", {"action": ACTION})
+        _post(f"{ctl}/run", {"action": li})
+        assert tasks["ats"].action["id"] == 7 and tasks["linkedin"].action["id"] == 9      # both open at once
+        ask = {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "check_email", "arguments": {"domain": "x"}}}
+        out = _post(f"{pub}/careerops-linkedin/mcp", ask)["result"]
+        assert out["isError"] and "REFUSED" in out["content"][0]["text"]                     # the LinkedIn task's rules
+        assert _post(f"{ctl}/end", {"lane": "linkedin"})["calls"][0]["name"] == "mcp__careerops__check_email"
+        assert tasks["ats"].action["id"] == 7                                                 # the other lane untouched
+    finally:
+        public.shutdown(); control.shutdown()
+
+
+def test_a_busy_lane_refuses_a_second_task(tmp_path, monkeypatch):
+    monkeypatch.setattr(mcp_bridge, "TOOLS_CACHE", tmp_path / "tools.json")
+    env = {"CAREEROPS_BRIDGE_TOKEN": TOKEN, "CAREEROPS_BRIDGE_HOST": "127.0.0.1", "CAREEROPS_BRIDGE_PORT": "0",
+           "CAREEROPS_BRIDGE_CONTROL_PORT": "0", "CAREEROPS_MCP_PORT_ATS": "1", "CAREEROPS_MCP_PORT_LINKEDIN": "1"}
+    public, control, tasks = mcp_bridge.serve(env)
+    ctl = f"http://127.0.0.1:{control.server_address[1]}"
+    try:
+        _post(f"{ctl}/run", {"action": ACTION})
+        try:
+            _post(f"{ctl}/run", {"action": {**ACTION, "id": 70}})
+            assert False, "a second task on a busy lane must be refused"
+        except urllib.error.HTTPError as e:
+            assert e.code == 409
+        assert tasks["ats"].action["id"] == 7
+    finally:
+        public.shutdown(); control.shutdown()

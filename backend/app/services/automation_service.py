@@ -172,13 +172,13 @@ def question_key(text: str) -> str:
 
 
 def ensure_schema() -> None:
-    """Applies migrations_v15.sql through migrations_v22.sql (idempotent)."""
+    """Applies migrations_v15.sql through migrations_v23.sql (idempotent)."""
     folder = Path(__file__).resolve().parent.parent / "db" / "migrations"
     conn = get_db_connection()
     try:
         with conn.cursor() as cur:
             for name in ("migrations_v15.sql", "migrations_v17.sql", "migrations_v18.sql", "migrations_v19.sql",
-                         "migrations_v20.sql", "migrations_v21.sql", "migrations_v22.sql"):
+                         "migrations_v20.sql", "migrations_v21.sql", "migrations_v22.sql", "migrations_v23.sql"):
                 cur.execute((folder / name).read_text(encoding="utf-8"))
         conn.commit()
     finally:
@@ -553,6 +553,96 @@ class AutomationService:
             return dict(row) if row else None
         finally:
             conn.close()
+
+    # ── The operations panel (2026-11-17): what runs now, the last 24 h, the queue, how the agents do ──
+    @staticmethod
+    def ops() -> dict:
+        running = _rows("""
+            SELECT a.id, a.kind, a.lane, a.status, a.title, a.target_url, a.executor, a.updated_at,
+                   r.started_at AS run_started_at, r.model AS run_model,
+                   EXTRACT(EPOCH FROM (NOW() - COALESCE(r.started_at, a.updated_at)))::int AS elapsed_s
+              FROM public.automation_actions a
+              LEFT JOIN LATERAL (SELECT started_at, model FROM public.automation_runs
+                                  WHERE action_id = a.id AND kind = 'claude' AND finished_at IS NULL
+                                  ORDER BY id DESC LIMIT 1) r ON a.status = 'running_claude'
+             WHERE a.status IN ('running_ext', 'running_claude', 'verifying', 'approved')
+             ORDER BY COALESCE(r.started_at, a.updated_at)""")
+        hourly = _rows("""
+            SELECT to_char(date_trunc('hour', finished_at) AT TIME ZONE 'America/Sao_Paulo', 'HH24') AS hour,
+                   COUNT(*) FILTER (WHERE lane = 'ats') AS ats, COUNT(*) FILTER (WHERE lane <> 'ats') AS linkedin
+              FROM public.automation_actions
+             WHERE kind = 'apply' AND status = 'done' AND finished_at > NOW() - interval '24 hours'
+             GROUP BY date_trunc('hour', finished_at) ORDER BY date_trunc('hour', finished_at)""")
+        done = _one("""
+            SELECT COUNT(*) FILTER (WHERE finished_at > NOW() - interval '24 hours') AS d24,
+                   COUNT(*) FILTER (WHERE finished_at > NOW() - interval '1 hour') AS h1,
+                   COUNT(*) FILTER (WHERE finished_at >= date_trunc('day', NOW() AT TIME ZONE 'America/Sao_Paulo') AT TIME ZONE 'America/Sao_Paulo') AS today,
+                   COUNT(*) FILTER (WHERE finished_at > NOW() - interval '7 days') AS d7
+              FROM public.automation_actions WHERE kind = 'apply' AND status = 'done'""") or {}
+        queue = {r["status"]: r["n"] for r in _rows("""
+            SELECT status, COUNT(*) AS n FROM public.automation_actions
+             WHERE kind = 'apply' AND status IN ('proposed', 'approved', 'review_docs', 'queued', 'running_ext', 'escalated',
+                                                 'running_claude', 'verifying', 'unknown_outcome', 'awaiting_confirm', 'needs_user')
+             GROUP BY status""")}
+        outcomes = _rows("""
+            SELECT CASE WHEN model LIKE 'hermes%%' THEN 'hermes' WHEN model LIKE 'claude%%' THEN 'claude' ELSE COALESCE(model, '—') END AS agent,
+                   COALESCE(result_class, 'em andamento') AS result, COUNT(*) AS n,
+                   ROUND(AVG(EXTRACT(EPOCH FROM (finished_at - started_at)))::numeric) AS avg_s
+              FROM public.automation_runs
+             WHERE kind = 'claude' AND started_at > NOW() - interval '24 hours' AND COALESCE(result_class, '') <> 'deferred'
+             GROUP BY 1, 2 ORDER BY 1, 3 DESC""")
+        tokens = _rows("""
+            SELECT CASE WHEN model LIKE 'hermes%%' THEN 'hermes' WHEN model LIKE 'claude%%' THEN 'claude' ELSE COALESCE(model, '—') END AS agent,
+                   SUM(COALESCE(input_tokens, 0) + COALESCE(output_tokens, 0) + COALESCE(cache_read_tokens, 0) + COALESCE(cache_write_tokens, 0)
+                       + COALESCE((summary->'hermes_usage'->>'input_tokens')::bigint, 0) + COALESCE((summary->'hermes_usage'->>'output_tokens')::bigint, 0)) AS tokens
+              FROM public.automation_runs WHERE kind = 'claude' AND started_at > NOW() - interval '24 hours' GROUP BY 1""")
+        stuck = _rows("""
+            SELECT COALESCE(error_code, '—') AS code, COUNT(*) AS n FROM public.automation_actions
+             WHERE kind = 'apply' AND status = 'needs_user' GROUP BY 1 ORDER BY 2 DESC LIMIT 8""")
+        others = _rows("""
+            SELECT kind, COUNT(*) FILTER (WHERE status = 'done' AND finished_at > NOW() - interval '24 hours') AS done_24h,
+                   COUNT(*) FILTER (WHERE status IN ('queued', 'escalated', 'running_ext', 'running_claude')) AS waiting
+              FROM public.automation_actions WHERE kind IN ('comment', 'reply', 'like', 'follow', 'connect', 'message')
+             GROUP BY kind ORDER BY kind""")
+        state = AutomationService.state()
+        return {"now": now().isoformat(), "running": running, "applies": {**done, "hourly": hourly}, "queue": queue,
+                "agent_outcomes": outcomes, "tokens_24h": tokens, "needs_you": stuck, "other_actions": others,
+                "engine": AutomationService.ai_engine(),
+                "state": {"mode": state.get("mode"), "halted_lanes": state.get("halted_lanes") or [],
+                          "claude_paused_until": state.get("claude_paused_until"), "captcha_session_until": state.get("captcha_session_until")}}
+
+    # ── Which engine does each kind of AI work (2026-11-17): Lolo's Hermes (free Nous model), Claude or AGY ──
+    AI_ENGINE_DEFAULT = {"agent": "hermes", "documents": "claude", "forms": "claude", "texts": "hermes"}
+    AI_ENGINE_CHOICES = {"agent": ("hermes", "auto", "claude"), "documents": ("claude", "hermes"),
+                         "forms": ("claude", "hermes"), "texts": ("hermes", "agy")}
+    _engine_cache: Dict[str, Any] = {"at": 0.0, "value": None}
+
+    @staticmethod
+    def ai_engine(fresh: bool = False) -> Dict[str, str]:
+        import time as _t
+        cache = AutomationService._engine_cache
+        if fresh or cache["value"] is None or _t.time() - cache["at"] > 30:
+            try:
+                row = _one("SELECT ai_engine FROM public.automation_state WHERE id = 1") or {}
+                saved = row.get("ai_engine") or {}
+            except Exception:
+                saved = {}
+            value = {k: (saved.get(k) if saved.get(k) in AutomationService.AI_ENGINE_CHOICES[k] else v)
+                     for k, v in AutomationService.AI_ENGINE_DEFAULT.items()}
+            cache.update(at=_t.time(), value=value)
+        return dict(cache["value"])
+
+    @staticmethod
+    def set_ai_engine(changes: Dict[str, str]) -> Dict[str, str]:
+        clean = {k: v for k, v in (changes or {}).items() if v in AutomationService.AI_ENGINE_CHOICES.get(k, ())}
+        if clean:
+            _rows("UPDATE public.automation_state SET ai_engine = ai_engine || %s WHERE id = 1", (Json(clean),))
+            AutomationService.add_event_global("ai_engine", clean)
+        return AutomationService.ai_engine(fresh=True)
+
+    @staticmethod
+    def add_event_global(event: str, data: dict) -> None:
+        log.info("automation %s: %s", event, data)
 
     # ── Live questions (2026-11-16): the apply agent asks, Lolo asks you on WhatsApp, the agent waits with the form open ──
     @staticmethod
@@ -1282,7 +1372,7 @@ class AutomationService:
 
     # ── Claude fallback ──────────────────────────────────────────────────
     @staticmethod
-    def claude_claim(runner: str, hermes: bool = False) -> dict:
+    def claude_claim(runner: str, hermes: bool = False, lanes: Optional[List[str]] = None) -> dict:
         """The next stuck action for the routine on the host, or why there is none. One attempt per action.
         `hermes`: the runner has Lolo's Hermes (a free model). While the breaker pauses Claude, it still gets company forms,
         marked claude_paused: Hermes alone works them, and what it does not finish waits for Claude (status "deferred")."""
@@ -1301,7 +1391,8 @@ class AutomationService:
                     return {"action": None, "reason": "daily_cap"}
                 only_now = not AutomationService.in_window()   # outside the window, only what you approved or asked for
                 halted = state["halted_lanes"] or []
-                lanes = [l for l in (cfg.get("lanes") or []) if "all" not in halted and l not in halted]
+                wanted = lanes
+                lanes = [l for l in (cfg.get("lanes") or []) if "all" not in halted and l not in halted and (not wanted or l in wanted)]
                 claude_paused = bool(state.get("claude_paused_until") and state["claude_paused_until"] > now())
                 if claude_paused and not hermes:
                     conn.commit()
@@ -1346,7 +1437,8 @@ class AutomationService:
         finally:
             conn.close()
         return {"action": {**AutomationService._run_info(action, state), "run_id": run_id, "dossier": AutomationService._dossier(action),
-                           "models": AutomationService.model_hint(action), "claude_paused": claude_paused}, "reason": None}
+                           "models": AutomationService.model_hint(action), "claude_paused": claude_paused,
+                           "agent_engine": AutomationService.ai_engine()["agent"]}, "reason": None}
 
     @staticmethod
     def model_hint(action: dict) -> dict:

@@ -1,11 +1,11 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- JSON bags, as the backend sends them */
 import React, { useCallback, useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Check, CircleStop, Zap, ExternalLink, FileText, Inbox as InboxIcon, ListChecks, Mail, Monitor, Play, RefreshCw, Settings2, UserRound, X } from 'lucide-react';
+import { Activity, Check, CircleStop, Zap, ExternalLink, FileText, Inbox as InboxIcon, ListChecks, Mail, Monitor, Play, RefreshCw, Settings2, UserRound, X } from 'lucide-react';
 import TabbedPage from '../components/TabbedPage';
 import { EligibilityBadge, css as listCss } from './JobBoard';
 import { jobService } from '../services/jobService';
-import { automationService as auto, Action, AutomationStatus, EmailEvent, FoundJob, FunnelRow, Inbox, Limit, Question, SearchRow } from '../services/automationService';
+import { automationService as auto, Action, AiEngine, AutomationStatus, EmailEvent, EngineKind, FoundJob, FunnelRow, Inbox, Limit, Ops, Question, SearchRow } from '../services/automationService';
 
 const muted: React.CSSProperties = { color: 'var(--text-muted)', fontSize: '0.88rem' };
 const stack: React.CSSProperties = { display: 'flex', flexDirection: 'column', gap: '0.8rem' };
@@ -648,6 +648,147 @@ const ActionLine = ({ action, right }: { action: Action; right?: React.ReactNode
   </div>
 );
 
+// ── Panel: what runs now, the last 24 h, the queue, how the agents do (2026-11-17) ─────────────
+const ENGINE_LABEL: Record<EngineKind, { title: string; hint: string }> = {
+  agent: { title: 'Agente no navegador', hint: 'Formulários travados e ações no LinkedIn (seguir, conectar, comentar, mensagens)' },
+  documents: { title: 'CV, carta e revisão do CV', hint: 'Claude = Sonnet no medium' },
+  forms: { title: 'Respostas de formulário', hint: 'O que o mapeamento automático não resolve' },
+  texts: { title: 'Textos e análises', hint: 'Triagem e nota das vagas, comentários, mensagens, caixa de entrada, e-mails' },
+};
+const ENGINE_NAME: Record<string, string> = { hermes: 'Hermes (Lolo, grátis)', claude: 'Claude', auto: 'Hermes, depois Claude', agy: 'AGY' };
+const RESULT_LABEL: Record<string, string> = { done: 'Enviada', needs_user: 'Precisa de você', failed: 'Falhou', captcha: 'CAPTCHA', job_closed: 'Vaga fechada',
+  already_applied: 'Já candidatado', provider_error: 'Limite do modelo', 'em andamento': 'Em andamento' };
+const QUEUE_STEPS: [string, string][] = [['proposed', 'Para aprovar'], ['approved', 'Gerando documentos'], ['review_docs', 'CV para revisar'], ['queued', 'Na fila do worker'],
+  ['running_ext', 'Worker preenchendo'], ['escalated', 'Esperando o agente'], ['running_claude', 'Agente trabalhando'], ['verifying', 'Conferindo'],
+  ['unknown_outcome', 'Vai conferir'], ['awaiting_confirm', 'Aguarda seu envio'], ['needs_user', 'Precisa de você']];
+
+const duration = (s: number) => (s < 60 ? `${s}s` : s < 3600 ? `${Math.floor(s / 60)}min ${s % 60}s` : `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}min`);
+const card: React.CSSProperties = { padding: '0.8rem 1rem', borderRadius: 10, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', minWidth: 130, flex: '1 1 130px' };
+const Stat = ({ label, value, color }: { label: string; value: React.ReactNode; color?: string }) => (
+  <div style={card}><div style={muted}>{label}</div><div style={{ fontSize: '1.6rem', fontWeight: 700, color: color || 'inherit' }}>{value}</div></div>);
+
+const EnginePicker = ({ engine, onChange }: { engine: AiEngine; onChange: () => void }) => {
+  const [choices, setChoices] = useState<Record<EngineKind, string[]> | null>(null);
+  const [err, setErr] = useState('');
+  useEffect(() => { auto.aiEngine().then((r) => setChoices(r.choices)).catch((e) => setErr(errorText(e))); }, []);
+  if (!choices) return err ? <Failure text={err} /> : null;
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: 10 }}>
+      {(Object.keys(ENGINE_LABEL) as EngineKind[]).map((k) => (
+        <label key={k} style={card}>
+          <div style={{ fontWeight: 600 }}>{ENGINE_LABEL[k].title}</div>
+          <div style={{ ...muted, margin: '2px 0 6px' }}>{ENGINE_LABEL[k].hint}</div>
+          <select style={input} value={engine[k]} onChange={(e) => auto.setAiEngine({ [k]: e.target.value }).then(onChange).catch((x) => setErr(errorText(x)))}>
+            {(choices[k] || []).map((c) => <option key={c} value={c} style={{ color: '#000' }}>{ENGINE_NAME[c] || c}</option>)}
+          </select>
+        </label>))}
+      <Failure text={err} />
+    </div>);
+};
+
+const PanelTab = () => {
+  const { data: ops, error, refresh } = useLive<Ops>(auto.ops, 5000);
+  const [clock, setClock] = useState(() => Date.now());
+  useEffect(() => { const t = setInterval(() => setClock(Date.now()), 1000); return () => clearInterval(t); }, []);
+  if (!ops) return error ? <Failure text={error} /> : <p style={muted}>Carregando…</p>;
+  // seconds since the server measured elapsed_s: the timers tick between two loads
+  const since = Math.max(0, Math.floor((clock - Date.parse(ops.now)) / 1000));
+  const waiting = ['approved', 'review_docs', 'queued', 'escalated', 'unknown_outcome'].reduce((n, k) => n + (ops.queue[k] || 0), 0);
+  const maxHour = Math.max(1, ...ops.applies.hourly.map((h) => h.ats + h.linkedin));
+  const agents = Array.from(new Set(ops.agent_outcomes.map((o) => o.agent))).filter((a) => a !== '—');
+  const st = ops.state;
+  return (
+    <div style={stack}>
+      <Failure text={error} />
+      <div style={row}>
+        <span style={badge(st.mode === 'live' ? GREEN : st.mode === 'off' ? RED : YELLOW)}>Modo: {st.mode}</span>
+        {st.halted_lanes.length > 0 && <span style={badge(RED)}>Parado: {st.halted_lanes.join(', ')}</span>}
+        {st.claude_paused_until && Date.parse(st.claude_paused_until) > clock && <span style={badge(YELLOW)}>Claude em pausa até {when(st.claude_paused_until)}</span>}
+        {st.captcha_session_until && Date.parse(st.captcha_session_until) > clock && <span style={badge(YELLOW)}>Sessão de CAPTCHA até {when(st.captcha_session_until)}</span>}
+        <span style={{ ...muted, marginLeft: 'auto' }}>Atualiza a cada 5 s</span>
+      </div>
+
+      <div style={row}>
+        <Stat label="Candidaturas em 24 h" value={ops.applies.d24} color={GREEN} />
+        <Stat label="Na última hora" value={ops.applies.h1} />
+        <Stat label="Hoje" value={ops.applies.today} />
+        <Stat label="Em 7 dias" value={ops.applies.d7} />
+        <Stat label="Na fila (até enviar)" value={waiting} />
+        <Stat label="Precisam de você" value={ops.queue.needs_user || 0} color={YELLOW} />
+      </div>
+
+      <div className="panel">
+        <h3 style={{ marginTop: 0 }}><Activity size={16} /> Agora ({ops.running.length})</h3>
+        {ops.running.length === 0 && <p style={muted}>Nada rodando neste momento.</p>}
+        {ops.running.map((r) => (
+          <div key={r.id} style={{ ...row, padding: '6px 0', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+            <span style={badge(r.status === 'running_claude' ? '#8b85ff' : r.status === 'approved' ? GRAY : GREEN)}>
+              {r.status === 'running_claude' ? `Agente${r.run_model ? ` · ${r.run_model}` : ''}` : STATUS_LABEL[r.status] || r.status}</span>
+            <span style={badge(GRAY)}>{KIND_LABEL[r.kind] || r.kind} · {r.lane === 'ats' ? 'site da empresa' : 'LinkedIn'}</span>
+            <span style={{ flex: '1 1 240px' }}>#{r.id} {r.title}</span>
+            <strong style={{ fontVariantNumeric: 'tabular-nums' }}>{duration(r.elapsed_s + since)}</strong>
+            {r.target_url && <a href={r.target_url} target="_blank" rel="noreferrer" style={muted}><ExternalLink size={14} /></a>}
+          </div>))}
+      </div>
+
+      <div className="panel">
+        <h3 style={{ marginTop: 0 }}>Candidaturas por hora (24 h)</h3>
+        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 4, height: 120 }}>
+          {ops.applies.hourly.map((h) => (
+            <div key={h.hour} title={`${h.hour}h: ${h.ats} em sites de empresa, ${h.linkedin} no LinkedIn`} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+              <div style={{ width: '100%', display: 'flex', flexDirection: 'column-reverse', height: 100 }}>
+                <div style={{ height: `${(h.ats / maxHour) * 100}%`, background: GREEN, borderRadius: '3px 3px 0 0' }} />
+                <div style={{ height: `${(h.linkedin / maxHour) * 100}%`, background: '#0a66c2' }} />
+              </div>
+              <span style={{ ...muted, fontSize: '0.7rem' }}>{h.hour}</span>
+            </div>))}
+          {ops.applies.hourly.length === 0 && <p style={muted}>Nenhuma candidatura nas últimas 24 h.</p>}
+        </div>
+        <div style={{ ...muted, marginTop: 6 }}><span style={{ color: GREEN }}>■</span> sites de empresa · <span style={{ color: '#0a66c2' }}>■</span> LinkedIn</div>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1rem' }}>
+        <div className="panel">
+          <h3 style={{ marginTop: 0 }}>Fila das candidaturas</h3>
+          {QUEUE_STEPS.filter(([k]) => ops.queue[k]).map(([k, label]) => (
+            <div key={k} style={{ ...row, justifyContent: 'space-between' }}><span>{label}</span><strong>{ops.queue[k]}</strong></div>))}
+        </div>
+        <div className="panel">
+          <h3 style={{ marginTop: 0 }}>Agentes nas últimas 24 h</h3>
+          {agents.map((a) => {
+            const rows = ops.agent_outcomes.filter((o) => o.agent === a);
+            const total = rows.reduce((n, o) => n + o.n, 0);
+            const ok = rows.filter((o) => ['done', 'job_closed', 'already_applied'].includes(o.result)).reduce((n, o) => n + o.n, 0);
+            const tokens = Number(ops.tokens_24h.find((t) => t.agent === a)?.tokens || 0);
+            return (
+              <div key={a} style={{ marginBottom: 10 }}>
+                <div style={{ ...row, justifyContent: 'space-between' }}><strong>{a === 'hermes' ? 'Hermes' : a === 'claude' ? 'Claude' : a}</strong>
+                  <span style={muted}>{total} runs · {total ? Math.round((ok / total) * 100) : 0}% resolvidas · {(tokens / 1e6).toFixed(1)} M tokens</span></div>
+                {rows.map((o) => <div key={o.result} style={{ ...row, justifyContent: 'space-between', ...muted }}>
+                  <span>{RESULT_LABEL[o.result] || o.result}</span><span>{o.n}{o.avg_s ? ` · média ${duration(Number(o.avg_s))}` : ''}</span></div>)}
+              </div>);
+          })}
+        </div>
+        <div className="panel">
+          <h3 style={{ marginTop: 0 }}>Por que precisam de você</h3>
+          {ops.needs_you.map((n) => <div key={n.code} style={{ ...row, justifyContent: 'space-between' }}><span>{CODE_LABEL[n.code] || n.code}</span><strong>{n.n}</strong></div>)}
+        </div>
+        <div className="panel">
+          <h3 style={{ marginTop: 0 }}>Outras ações no LinkedIn</h3>
+          {ops.other_actions.map((o) => <div key={o.kind} style={{ ...row, justifyContent: 'space-between' }}>
+            <span>{KIND_LABEL[o.kind] || o.kind}</span><span style={muted}>{o.done_24h} feitas em 24 h · {o.waiting} esperando</span></div>)}
+        </div>
+      </div>
+
+      <div className="panel">
+        <h3 style={{ marginTop: 0 }}>Motor de IA</h3>
+        <p style={muted}>Quem faz cada tipo de trabalho que depende de IA. Muda na hora, sem deploy.</p>
+        <EnginePicker engine={ops.engine} onChange={refresh} />
+      </div>
+    </div>
+  );
+};
+
 const RunningTab = () => {
   const { data: items, error, refresh } = useLive<Action[]>(auto.running, 5000);
   if (!items) return error ? <Failure text={error} /> : <p style={muted}>Carregando…</p>;
@@ -903,6 +1044,7 @@ const Automation = () => (
     </div>
     <StatusBar />
     <TabbedPage tabs={[
+      { id: 'painel', label: 'Painel', icon: <Activity size={16} />, render: () => <PanelTab /> },
       { id: 'aprovar', label: 'Aprovar', icon: <InboxIcon size={16} />, render: () => <ApproveTab /> },
       { id: 'voce', label: 'Precisa de você', icon: <UserRound size={16} />, render: () => <NeedsYouTab /> },
       { id: 'andamento', label: 'Em execução', icon: <RefreshCw size={16} />, render: () => <RunningTab /> },

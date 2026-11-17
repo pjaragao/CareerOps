@@ -21,7 +21,7 @@ FINAL ANSWER: when you stop, reply with ONLY one JSON object, no other text:
 {"status": "done" | "needs_user" | "job_closed" | "already_applied", "summary": "<what you did and where it stopped, in Portuguese>",
  "questions": [{"label": "<question the candidate must answer>", "type": "text|select|radio|checkbox", "options": ["..."]}]}
 TOOL NAMES: here the browser tools are named {browser}X (mcp__playwright__X in the rules above means {browser}X; the other
-browser's tools are refused for this task), and the careerops tools mcp__careerops__X, as written.
+browser's tools are refused for this task), and the careerops tools {careerops}X (mcp__careerops__X in the rules above).
 A tool answer that starts with "REFUSED by CareerOps" did nothing: do not repeat that call."""
 
 
@@ -87,8 +87,8 @@ def run_hermes(action: dict, system: str, prompt: str, env: dict, timeout_s: int
     run_id = ""
     try:
         started = _http("POST", f"{base}/v1/runs", key, {
-            "input": prompt + OUTPUT_RULES.replace("{browser}", "mcp__careerops_browser__" if action.get("lane") == "ats"
-                                                    else "mcp__careerops_linkedin__"),
+            "input": prompt + (OUTPUT_RULES.replace("{browser}", "mcp__careerops_browser__" if action.get("lane") == "ats" else "mcp__careerops_linkedin__")
+                               .replace("{careerops}", "mcp__careerops__" if action.get("lane") == "ats" else "mcp__careerops_li__")),
             "instructions": system,
             "session_id": f"careerops-apply-{action.get('id')}-{action.get('run_id') or int(time.time())}",
             "model_options": {"reasoning_effort": "low"},   # a form needs steps, not long thinking: fewer output tokens
@@ -123,7 +123,7 @@ def run_hermes(action: dict, system: str, prompt: str, env: dict, timeout_s: int
         status = {"status": "failed", "error": f"Hermes unreachable: {exc}"}
     finally:
         try:
-            calls = _http("POST", f"{bridge}/end", btoken, {}).get("calls") or []
+            calls = _http("POST", f"{bridge}/end", btoken, {"lane": "ats" if action.get("lane") == "ats" else "linkedin"}).get("calls") or []
         except (OSError, ValueError):
             calls = []
     parsed = to_parsed(calls, status, env.get("CAREEROPS_HERMES_MODEL") or "lolo")

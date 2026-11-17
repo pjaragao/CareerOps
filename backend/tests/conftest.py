@@ -57,6 +57,7 @@ def db(database, monkeypatch):
     from app.db.session import get_db_connection
     from app.services import automation_service, job_search_service
     monkeypatch.setattr(job_search_service.JobSearchService, "_model_out_until", 0.0)   # the "model out" pause never leaks between tests
+    monkeypatch.setattr(automation_service.AutomationService, "_engine_cache", {"at": 0.0, "value": None})
     base = dict(automation_service.config())
     # the reviewer agent calls an AI: its own tests turn it on (test_cv_review.py)
     cfg = {**base, "automation": {**base["automation"], "window": {"start_hour": 0, "end_hour": 24}, "write_gap_minutes": [0, 0],
@@ -69,7 +70,7 @@ def db(database, monkeypatch):
         cur.execute(f"TRUNCATE {', '.join('public.' + t for t in TABLES)} RESTART IDENTITY CASCADE")
         cur.execute("""UPDATE public.automation_state SET mode = 'live', account_kind = 'main', allow_final_submit = TRUE, halted_at = NULL,
                        halted_reason = NULL, halted_lanes = '{}', invites_paused_until = NULL, ramp_step = 2, ramp_step_at = NOW(), ramp_auto = TRUE,
-                       confirm_submit_left = 0, review_cv_left = 0, next_write_at = NULL, session_status = 'logged_in', claude_paused_until = NULL, captcha_session_until = NULL,
+                       confirm_submit_left = 0, review_cv_left = 0, next_write_at = NULL, session_status = 'logged_in', claude_paused_until = NULL, captcha_session_until = NULL, ai_engine = '{}',
                        saved_import = '{"enabled": false, "day_start": 8, "day_end": 24, "day_every": 1, "night_every": 2}'""")
     conn.commit()
     conn.close()

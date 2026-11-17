@@ -877,3 +877,23 @@ def test_an_out_of_quota_model_stops_the_job_reading_at_once(db, monkeypatch):
     monkeypatch.setattr("app.services.job_search_service._rows", lambda sql, params=(): [{"id": 1}, {"id": 2}, {"id": 3}])
     assert J.triage_pending() == 0 and calls == [1]          # stopped at the first failure
     assert J.triage_pending() == 0 and calls == [1]          # and the next ticks skip it for a while
+
+
+def test_the_ai_engine_is_chosen_per_kind_of_work(db, monkeypatch):
+    from app.services import ai_service
+    assert Auto.ai_engine(fresh=True) == {"agent": "hermes", "documents": "claude", "forms": "claude", "texts": "hermes"}
+    assert isinstance(ai_service.AIService.get_provider("ai_model_chat"), ai_service.HermesProvider)
+    assert Auto.set_ai_engine({"texts": "agy", "documents": "hermes", "agent": "nonsense"})["texts"] == "agy"
+    assert Auto.ai_engine()["agent"] == "hermes"                                    # an invalid choice is ignored
+    assert not isinstance(ai_service.AIService.get_provider("ai_model_chat", raw=True), ai_service.HermesProvider)
+    assert isinstance(ai_service.AIService.get_document_provider("ai_model_resume"), ai_service.HermesProvider)
+
+
+def test_one_runner_per_lane_and_the_panel(db):
+    a = Auto.create_action("apply", "apply:51", "Vaga A", "https://jobs.example/apply/51", {}, status="escalated", target_type="job", target_id=51, lane="ats")
+    assert Auto.claude_claim("r", lanes=["linkedin_write"])["action"] is None
+    got = Auto.claude_claim("r", lanes=["ats"])["action"]
+    assert got["id"] == a["id"] and got["agent_engine"] == "hermes"
+    ops = Auto.ops()
+    assert [r["id"] for r in ops["running"]] == [a["id"]] and ops["running"][0]["elapsed_s"] >= 0
+    assert ops["queue"]["running_claude"] == 1 and "hourly" in ops["applies"] and ops["engine"]["agent"] == "hermes"
