@@ -11,7 +11,8 @@ careerops tools (mailbox, portal passwords, answers) live on the host. This brid
   * every call is logged with its full arguments, and the runner reads the log to audit and report the run
   * the bridge keeps its own session with the browser and reconnects when the worker restarts it
 
-Public  (CAREEROPS_BRIDGE_HOST:CAREEROPS_BRIDGE_PORT, Bearer token):  /browser/mcp  and  /careerops/mcp
+Public  (CAREEROPS_BRIDGE_HOST:CAREEROPS_BRIDGE_PORT, Bearer token):  /browser/mcp (company sites), /linkedin/mcp
+        (LinkedIn) and /careerops/mcp
 Control (127.0.0.1:CAREEROPS_BRIDGE_CONTROL_PORT, Bearer token):     POST /run, GET /calls, POST /end, GET /health
 
 Only the standard library. Runs as a systemd user service (careerops-mcp-bridge.service)."""
@@ -72,8 +73,9 @@ class BrowserUpstream:
     this side reconnects when the worker restarts the browser (it closes it when idle), so a restart never costs Hermes
     its tools. The tool list is cached on disk, so Hermes gets it even if it boots while the browser is down."""
 
-    def __init__(self, url: str):
+    def __init__(self, url: str, cache: Optional[Path] = None):
         self.url = url
+        self.cache = cache or TOOLS_CACHE
         self.session: Optional[str] = None
         self.lock = threading.Lock()
         self._id = 0
@@ -127,15 +129,15 @@ class BrowserUpstream:
             keep = [t for t in listed if t.get("name") in runner.TOOLS]
             if keep:
                 try:
-                    TOOLS_CACHE.parent.mkdir(parents=True, exist_ok=True)
-                    TOOLS_CACHE.write_text(json.dumps(keep), encoding="utf-8")
+                    self.cache.parent.mkdir(parents=True, exist_ok=True)
+                    self.cache.write_text(json.dumps(keep), encoding="utf-8")
                 except OSError:
                     pass
                 return keep
         except Exception:
             self.session = None
         try:
-            return json.loads(TOOLS_CACHE.read_text(encoding="utf-8"))
+            return json.loads(self.cache.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             return []
 
@@ -252,7 +254,12 @@ def refusal(req_id: Any, reason: str) -> dict:
             "result": {"content": [{"type": "text", "text": f"REFUSED by CareerOps (nothing was done): {reason}"}], "isError": True}}
 
 
-def make_public_handler(task: Task, token: str, browser: "BrowserUpstream"):
+def lane_of(action: Optional[dict]) -> str:
+    return "ats" if (action or {}).get("lane") == "ats" else "linkedin"
+
+
+def make_public_handler(task: Task, token: str, browsers: Dict[str, Tuple["BrowserUpstream", str]]):
+    """browsers: endpoint path -> (its upstream, the lane it serves). A call on the other lane's browser is refused."""
 
     class Handler(BaseHTTPRequestHandler):
         server_version = "careerops-bridge/1"
@@ -304,7 +311,7 @@ def make_public_handler(task: Task, token: str, browser: "BrowserUpstream"):
             self._json(code, payload, session)
 
         # ── browser (worker's Playwright MCP, through BrowserUpstream) ──
-        def _browser(self, method: str) -> None:
+        def _browser(self, method: str, browser: "BrowserUpstream", lane: str) -> None:
             if method == "DELETE":
                 return self._json(200, {"ok": True})
             if method != "POST":
@@ -332,6 +339,8 @@ def make_public_handler(task: Task, token: str, browser: "BrowserUpstream"):
                 args = params.get("arguments") or {}
                 name = f"mcp__playwright__{tool}"
                 why = guard(task.action, name, args)
+                if not why and lane_of(task.action) != lane:
+                    why = f"este navegador é da frente {lane}; a tarefa aberta é da outra frente (use o outro conjunto de ferramentas)"
                 task.log({"name": name, "input": args, "refused": bool(why), "reason": why or "", "at": time.time()})
                 if why:
                     return self._json(200, refusal(req_id, why), session)
@@ -349,8 +358,8 @@ def make_public_handler(task: Task, token: str, browser: "BrowserUpstream"):
                 if method == "DELETE":
                     return self._json(200, {"ok": True})
                 return self._json(405, {"error": "method not allowed"})
-            if path == "/browser/mcp":
-                return self._browser(method)
+            if path in browsers:
+                return self._browser(method, *browsers[path])
             self._json(404, {"error": "not found"})
 
         def do_POST(self) -> None:
@@ -365,7 +374,7 @@ def make_public_handler(task: Task, token: str, browser: "BrowserUpstream"):
     return Handler
 
 
-def make_control_handler(task: Task, token: str, env_loader, browser: "BrowserUpstream"):
+def make_control_handler(task: Task, token: str, env_loader, browsers: List["BrowserUpstream"]):
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, fmt: str, *args: Any) -> None:
             return
@@ -404,7 +413,8 @@ def make_control_handler(task: Task, token: str, env_loader, browser: "BrowserUp
                 if not action.get("id"):
                     return self._json(400, {"error": "action required"})
                 task.open(action, env_loader())
-                browser.reset()   # a fresh browser session per task, like a new Claude run
+                for b in browsers:   # a fresh browser session per task, like a new Claude run
+                    b.reset()
                 return self._json(200, {"ok": True, "action_id": action["id"]})
             if self.path == "/end":
                 return self._json(200, {"calls": task.close()})
@@ -420,10 +430,14 @@ def serve(env: Optional[dict] = None) -> Tuple[ThreadingHTTPServer, ThreadingHTT
         raise SystemExit("CAREEROPS_BRIDGE_TOKEN missing or too short (runner.env)")
     task = Task()
     browser = BrowserUpstream(f"http://127.0.0.1:{int(env.get('CAREEROPS_MCP_PORT_ATS') or 8932)}/mcp")
+    # LinkedIn's browser (2026-11-17: Hermes finishes LinkedIn Easy Apply forms too)
+    linkedin = BrowserUpstream(f"http://127.0.0.1:{int(env.get('CAREEROPS_MCP_PORT_LINKEDIN') or 8931)}/mcp",
+                               TOOLS_CACHE.with_name("bridge-linkedin-tools.json"))
+    browsers = {"/browser/mcp": (browser, "ats"), "/linkedin/mcp": (linkedin, "linkedin")}
     public = ThreadingHTTPServer((env.get("CAREEROPS_BRIDGE_HOST") or "172.26.0.1", int(env.get("CAREEROPS_BRIDGE_PORT") or 18933)),
-                                 make_public_handler(task, token, browser))
+                                 make_public_handler(task, token, browsers))
     control = ThreadingHTTPServer(("127.0.0.1", int(env.get("CAREEROPS_BRIDGE_CONTROL_PORT") or 18934)),
-                                  make_control_handler(task, token, lambda: ats_helpers.load_runtime_env(runner.load_env()), browser))
+                                  make_control_handler(task, token, lambda: ats_helpers.load_runtime_env(runner.load_env()), [browser, linkedin]))
     for srv in (public, control):
         srv.daemon_threads = True
         threading.Thread(target=srv.serve_forever, daemon=True).start()

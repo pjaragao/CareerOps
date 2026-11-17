@@ -862,3 +862,18 @@ def test_portal_passwords_and_captcha_notices_are_sent_not_just_counted(db):
     BotService.notify("site_password", "🔐 Senha de portal", urgent=True, key="t-pwd")
     BotService.notify("captcha", "🧩 CAPTCHA", urgent=True, key="t-cap")
     assert {"site_password", "captcha"} <= {n["kind"] for n in BotService.pending()}
+
+
+def test_an_out_of_quota_model_stops_the_job_reading_at_once(db, monkeypatch):
+    """2026-11-16: AGY out of quota made each job reading take 165 s and the approved jobs never got their documents."""
+    from app.services.job_search_service import JobSearchService as J
+    calls = []
+
+    async def out(job):
+        calls.append(job["id"])
+        raise RuntimeError("no triage answer: {'error': 'Error: Error code: 502 - agy: cota do modelo gemini-3.8-flash-low esgotada'}")
+    monkeypatch.setattr(J, "_triage_one", staticmethod(out))
+    monkeypatch.setattr(J, "_model_out_until", 0.0)
+    monkeypatch.setattr("app.services.job_search_service._rows", lambda sql, params=(): [{"id": 1}, {"id": 2}, {"id": 3}])
+    assert J.triage_pending() == 0 and calls == [1]          # stopped at the first failure
+    assert J.triage_pending() == 0 and calls == [1]          # and the next ticks skip it for a while

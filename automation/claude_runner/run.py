@@ -50,6 +50,20 @@ TOOLS = ["browser_snapshot", "browser_navigate", "browser_click", "browser_type"
 ALLOWED_TOOLS = [f"mcp__playwright__{t}" for t in TOOLS]
 ATS_EXTRA_TOOLS = ["mcp__careerops__check_email", "mcp__careerops__site_account", "mcp__careerops__write_answer",
                    "mcp__careerops__lookup_answer", "mcp__careerops__ask_candidate"]
+LINKEDIN_APPLY_TOOLS = ["mcp__careerops__lookup_answer", "mcp__careerops__ask_candidate", "mcp__careerops__write_answer"]
+LINKEDIN_APPLY_RULES = """
+
+LinkedIn Easy Apply rules (this task is a job application on linkedin.com):
+- Stay on the job's page (the target address) and its Easy Apply dialog. Never open the feed, messages, notifications,
+  profiles or settings, never follow, connect, like or message anyone.
+- Go through the dialog step by step (Next / Review / Submit application). Upload the resume from the dossier files when
+  asked. Fill each field from the dossier and the standing answers.
+- A required question the dossier and the standing answers do not answer: call mcp__careerops__lookup_answer(question);
+  if still nothing, call mcp__careerops__ask_candidate(question, options) (the candidate answers on WhatsApp while the
+  dialog stays open) and fill in the answer as given. Only when it returns no answer, stop with "needs_user".
+- Open motivation questions: mcp__careerops__write_answer(question), pasted as is.
+- Uncheck "Follow company" before submitting. Submit only when the dialog shows no empty required field."""
+
 # Claude Code's own plumbing, not actions: loading a tool's definition, and the final answer in the --json-schema format
 HARNESS_TOOLS = {"ToolSearch", "StructuredOutput"}
 
@@ -144,6 +158,8 @@ def slim_dossier(dossier: dict, resume_chars: int = RESUME_IN_PROMPT) -> dict:
 # Hermes has no prompt cache to lean on, and the whole prompt goes again on every turn: the resume shrinks to its head
 # (the PDF is uploaded anyway; open texts come from write_answer, which reads the full resume)
 HERMES_RESUME_CHARS = 1200
+# Hermes runs up to 150 steps on a free model: a long Workday form needs more than the Claude run's 8 minutes
+HERMES_TIMEOUT = 1500
 
 
 def task_prompt(action: dict, resume_chars: int = RESUME_IN_PROMPT) -> str:
@@ -293,6 +309,8 @@ def audit(calls: list, action: dict) -> list:
     flags = []
     allowed = allowed_hosts(action)
     allowed_names = set(ALLOWED_TOOLS) | (set(ATS_EXTRA_TOOLS) if action.get("lane") == "ats" else set())
+    if action.get("lane") != "ats" and action.get("kind") == "apply":   # Easy Apply: the answer tools, nothing else
+        allowed_names |= set(LINKEDIN_APPLY_TOOLS)
     if action.get("live_captcha"):
         allowed_names.add("mcp__careerops__wait_for_human")
     for call in calls:
@@ -415,6 +433,11 @@ def _claude_attempt(action: dict, env: dict, prompt: str, mcp_url: str, port, mo
         shutil.rmtree(folder, ignore_errors=True)
 
 
+def hermes_works(action: dict) -> bool:
+    """Company forms, and since 2026-11-17 LinkedIn applications (Easy Apply) too; never other LinkedIn actions."""
+    return action.get("lane") == "ats" or (action.get("lane") == "linkedin_write" and action.get("kind") == "apply")
+
+
 def hermes_ends(result: dict) -> bool:
     """Whether a Hermes attempt closes the action, or the Claude chain takes it over."""
     if result.get("audit_flags"):
@@ -458,9 +481,9 @@ def _run_action(action: dict, env: dict) -> tuple:
                 "provider_error": bool(PROVIDER_ERROR_RE.search(str(exc))),
             }, 0
 
-    if provider == "hermes" and action.get("lane") != "ats":
-        # Hermes only works company forms; with Claude off, anything else waits (never a Claude run by accident)
-        return {"status": "deferred", "summary": "Claude desligado: só o Hermes roda, e só em formulários de empresa",
+    if provider == "hermes" and not hermes_works(action):
+        # Hermes works applications only; with Claude off, anything else waits (never a Claude run by accident)
+        return {"status": "deferred", "summary": "Claude desligado: só o Hermes roda, e só em candidaturas",
                 "questions": [], "audit_flags": [], "cost_usd": None, "transcript": {}}, 0
     extra = ATS_EXTRA_TOOLS if action.get("lane") == "ats" else ()
     if action.get("live_captcha") and action.get("lane") == "ats":
@@ -471,11 +494,20 @@ def _run_action(action: dict, env: dict) -> tuple:
     # Lolo's Hermes first (free Nous model, 2026-11-16), company forms only: the bridge checks every call before it runs.
     # It ends the action when it finished it, found it closed or already sent, or names the questions only you can answer;
     # anything else (no answer, an error, "needs_user" with no question) goes on to the Claude chain, which continues the form.
-    if action.get("lane") == "ats" and provider in ("auto", "hermes") and hermes_agent.configured(env) and hermes_agent.bridge_ready(env):
-        h_prompt = task_prompt(action, HERMES_RESUME_CHARS) + (LIVE_CAPTCHA_RULES if action.get("live_captcha") else "")
-        parsed, code = hermes_agent.run_hermes(action, system_prompt(action), h_prompt, env,
-                                               TIMEOUT_SECONDS + ats_helpers.ASK_WAIT_SECONDS + (1200 if action.get("live_captcha") else 0))
+    if hermes_works(action) and provider in ("auto", "hermes") and hermes_agent.configured(env) and hermes_agent.bridge_ready(env):
+        h_prompt = (task_prompt(action, HERMES_RESUME_CHARS) + (LIVE_CAPTCHA_RULES if action.get("live_captcha") else "")
+                    + (LINKEDIN_APPLY_RULES if action.get("lane") != "ats" else ""))
+        h_timeout = HERMES_TIMEOUT + ats_helpers.ASK_WAIT_SECONDS + (1200 if action.get("live_captcha") else 0)
+        parsed, code = hermes_agent.run_hermes(action, system_prompt(action), h_prompt, env, h_timeout)
         result = outcome(parsed, code, action)
+        if not hermes_ends(result) and len(parsed["calls"]) >= 8 and not result.get("audit_flags"):
+            # it worked and stopped mid-form with no question for you (step limit, a slow page): one more pass continues
+            # from where it is, the form keeps what it filled (2026-11-17)
+            more = (h_prompt + f"\n\nPREVIOUS ATTEMPT made {len(parsed['calls'])} tool calls and ended: {result['summary'][:600]}\n"
+                    "The form keeps what it filled: take one snapshot and continue from where it stopped; do not redo filled fields.")
+            parsed2, code2 = hermes_agent.run_hermes(action, system_prompt(action), more, env, h_timeout)
+            parsed = {"calls": parsed["calls"] + parsed2["calls"], "final": parsed2["final"]}
+            result = outcome(parsed, code2, action)
         result.pop("provider_error", None)   # Hermes's limits are not Claude's: they never pause the Claude chain
         # Hermes is free: its tokens go to the transcript, not to the action's token budget (which guards Claude's quota)
         hermes_usage = result.get("usage") or {}

@@ -4,6 +4,7 @@ no CV or cover letter is generated before that."""
 import asyncio
 import logging
 import re
+import time
 from datetime import date, datetime, timedelta, timezone
 from typing import List, Optional
 from urllib.parse import urlencode
@@ -313,10 +314,31 @@ class JobSearchService:
         if outcome == "propose":
             AutomationService.propose_job(job)
 
+    # the model that reads jobs is out of quota: this tick stops at the first such failure and the next ones skip the
+    # reading until then, instead of walking every model again for every job (2026-11-16: 165 s per job)
+    _model_out_until = 0.0
+    MODEL_OUT = re.compile(r"cota|esgotad|quota|rate.?limit|usage limit|session limit|\b429\b|\b5\d\d\b", re.I)
+    MODEL_OUT_MINUTES = 20
+
+    @staticmethod
+    def _model_out() -> bool:
+        return time.time() < JobSearchService._model_out_until
+
+    @staticmethod
+    def _note_failure(exc: Exception) -> bool:
+        """True (and a pause) when the failure says the model is out of quota or down."""
+        if JobSearchService.MODEL_OUT.search(str(exc)):
+            JobSearchService._model_out_until = time.time() + JobSearchService.MODEL_OUT_MINUTES * 60
+            log.warning("job reading paused for %s min: the model is out (%s)", JobSearchService.MODEL_OUT_MINUTES, str(exc)[:160])
+            return True
+        return False
+
     @staticmethod
     def triage_pending(limit: int = 10) -> int:
         """Up to `limit` jobs waiting for their first reading, newest ad first (blocking: call it from a thread)."""
         done = 0
+        if JobSearchService._model_out():
+            return 0
         for job in _rows("""SELECT * FROM public.job_listings WHERE status = 'discovered' AND triage_score IS NULL
                              ORDER BY posted_at DESC NULLS LAST, created_at DESC LIMIT %s""", (limit,)):
             try:
@@ -324,6 +346,8 @@ class JobSearchService:
                 done += 1
             except Exception as e:
                 log.warning("job %s not triaged: %s", job["id"], e)
+                if JobSearchService._note_failure(e):
+                    break
         return done
 
     @staticmethod
@@ -334,10 +358,14 @@ class JobSearchService:
         for job in _rows("""SELECT j.* FROM public.job_listings j JOIN public.automation_actions a ON a.target_type = 'job' AND a.target_id = j.id
                              WHERE a.kind = 'apply' AND a.status = 'proposed' AND j.triage_score IS NULL AND COALESCE(j.description, '') <> ''
                              ORDER BY a.id DESC LIMIT %s""", (limit,)):
+            if JobSearchService._model_out():
+                break
             try:
                 triage = asyncio.run(JobSearchService._read(job))
             except Exception as e:
                 log.warning("job %s not scored: %s", job["id"], e)
+                if JobSearchService._note_failure(e):
+                    break
                 continue
             _rows("""UPDATE public.job_listings SET triage_score = %s, triage_reason = %s, employer_market = %s, salary_flag = %s, updated_at = NOW()
                       WHERE id = %s""", (triage["score"], (triage.get("reason") or "")[:1000], triage.get("employer_market") or "unknown",

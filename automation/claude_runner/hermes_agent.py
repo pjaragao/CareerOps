@@ -20,8 +20,8 @@ OUTPUT_RULES = """
 FINAL ANSWER: when you stop, reply with ONLY one JSON object, no other text:
 {"status": "done" | "needs_user" | "job_closed" | "already_applied", "summary": "<what you did and where it stopped, in Portuguese>",
  "questions": [{"label": "<question the candidate must answer>", "type": "text|select|radio|checkbox", "options": ["..."]}]}
-TOOL NAMES: here the browser tools are named mcp__careerops_browser__X (mcp__playwright__X in the rules above means
-mcp__careerops_browser__X), and the careerops tools mcp__careerops__X, as written.
+TOOL NAMES: here the browser tools are named {browser}X (mcp__playwright__X in the rules above means {browser}X; the other
+browser's tools are refused for this task), and the careerops tools mcp__careerops__X, as written.
 A tool answer that starts with "REFUSED by CareerOps" did nothing: do not repeat that call."""
 
 
@@ -53,16 +53,17 @@ def to_parsed(calls: list, status: dict, model_hint: str = "") -> Dict[str, Any]
     """The bridge's log and Hermes's run status, in the shape run.outcome() reads (as parse_stream gives for Claude)."""
     out_calls = [{"id": f"h{i}", "name": c.get("name"), "input": c.get("input") or {}, "refused": bool(c.get("refused"))}
                  for i, c in enumerate(calls or [])]
-    text = str(status.get("output") or "")
-    failed = status.get("status") != "completed"
+    text = str(status.get("output") or status.get("error") or "")
     from hydrogen_agent import _extract_final_json
-    answer = _extract_final_json(text) if not failed else None
+    answer = _extract_final_json(text)
+    # a run cut at the step limit still says where it stopped: its answer counts (2026-11-17: Workday runs at 60 steps)
+    failed = status.get("status") != "completed" and not answer
     usage = status.get("usage") or {}
     runtime = status.get("runtime") or {}
     model = runtime.get("model") or model_hint or "hermes"
     final = {
         "is_error": failed,
-        "result": (status.get("error") or text or status.get("status") or "")[:3000],
+        "result": (text or status.get("status") or "")[:3000],
         "structured_output": answer,
         "usage": {"input_tokens": int(usage.get("input_tokens") or usage.get("prompt_tokens") or 0),
                   "output_tokens": int(usage.get("output_tokens") or usage.get("completion_tokens") or 0)},
@@ -86,7 +87,8 @@ def run_hermes(action: dict, system: str, prompt: str, env: dict, timeout_s: int
     run_id = ""
     try:
         started = _http("POST", f"{base}/v1/runs", key, {
-            "input": prompt + OUTPUT_RULES,
+            "input": prompt + OUTPUT_RULES.replace("{browser}", "mcp__careerops_browser__" if action.get("lane") == "ats"
+                                                    else "mcp__careerops_linkedin__"),
             "instructions": system,
             "session_id": f"careerops-apply-{action.get('id')}-{action.get('run_id') or int(time.time())}",
             "model_options": {"reasoning_effort": "low"},   # a form needs steps, not long thinking: fewer output tokens
@@ -95,8 +97,16 @@ def run_hermes(action: dict, system: str, prompt: str, env: dict, timeout_s: int
         if not run_id:
             raise ValueError(f"no run_id: {str(started)[:200]}")
         deadline = time.monotonic() + timeout_s
+        beat = 0.0
         while time.monotonic() < deadline:
             time.sleep(4)
+            if time.monotonic() - beat > 60:   # keeps the action's lease while Hermes works (a long form outlives 12 min)
+                beat = time.monotonic()
+                try:
+                    import ats_helpers
+                    ats_helpers._api_call(f"/automation/actions/{int(action['id'])}/heartbeat", {}, env)
+                except Exception:
+                    pass
             try:
                 status = _http("GET", f"{base}/v1/runs/{run_id}", key)
             except (OSError, ValueError):

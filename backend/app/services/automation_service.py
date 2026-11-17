@@ -1716,10 +1716,12 @@ class AutomationService:
         AutomationService.expire_stale_proposals()
         if AutomationService.state().get("mode") != "off":
             AutomationService.schedule_reads()
+            # documents for jobs you already approved first: reading new jobs may wait on a model that is out of quota
+            # (2026-11-16: with AGY out, triage took 165 s per job and the approved jobs never got their CV)
+            AutomationService.prepare_documents()
             JobSearchService.triage_pending()
             AutomationService.sync_proposals()
             JobSearchService.score_proposed()
-            AutomationService.prepare_documents()
         try:   # what to tell you on WhatsApp; a failure here never holds the queue
             BotService.collect()
         except Exception as e:

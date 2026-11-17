@@ -204,7 +204,7 @@ class AgyShimProvider(OpenAICompatibleProvider):
 
 class ClaudeShimProvider(AgyShimProvider):
     """Documents (CV, cover letter, CV review) on Claude Sonnet 5.5 medium through the Claude CLI shim
-    (automation/claude_shim/claude_shim.py on the host). If the shim fails, the AGY chain answers instead."""
+    (automation/claude_shim/claude_shim.py on the host). If the shim fails, the document waits (no other model writes it)."""
     MODEL = "claude-sonnet-5-5-medium"
 
     def __init__(self, token: str, base_url: str, agy_provider: "AgyShimProvider", model: Optional[str] = None):
@@ -220,8 +220,13 @@ class ClaudeShimProvider(AgyShimProvider):
         text = OpenAICompatibleProvider.generate_text(self, prompt, model=self.MODEL, temperature=temperature)
         if not text.startswith("Error:"):
             return text
-        logging.getLogger("ai").warning("Claude shim failed, falling back to AGY: %s", text[:160])
-        return self.agy.generate_text(prompt, temperature=temperature)
+        # 2026-11-17: documents are written by Sonnet medium only. When it is out (session limit), the document waits for
+        # the next tick instead of being written by another model; CLAUDE_SHIM_FALLBACK=agy brings the old fallback back
+        if os.getenv("CLAUDE_SHIM_FALLBACK", "").lower() == "agy":
+            logging.getLogger("ai").warning("Claude shim failed, falling back to AGY: %s", text[:160])
+            return self.agy.generate_text(prompt, temperature=temperature)
+        logging.getLogger("ai").warning("Claude shim failed, the document waits for Sonnet: %s", text[:160])
+        return text
 
 
 class AIService:

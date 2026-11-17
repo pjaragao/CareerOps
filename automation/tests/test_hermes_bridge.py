@@ -108,11 +108,14 @@ def test_bridge_end_to_end(tmp_path, monkeypatch):
         assert _post(f"{pub}/browser/mcp", click)["result"]["isError"] and FakeBrowser.seen == []
         _post(f"{ctl}/run", {"action": ACTION})
         assert _post(f"{pub}/browser/mcp", click)["result"]["content"][0]["text"] == "clicked"
+        other = _post(f"{pub}/linkedin/mcp", click)["result"]
+        assert other["isError"] and "outra frente" in other["content"][0]["text"]
         evil = {"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "browser_evaluate", "arguments": {"function": "x"}}}
         assert "REFUSED" in _post(f"{pub}/browser/mcp", evil)["result"]["content"][0]["text"]
         assert FakeBrowser.seen == ["browser_click"]
         calls = _post(f"{ctl}/end", {})["calls"]
-        assert [(c["name"], c["refused"]) for c in calls] == [("mcp__playwright__browser_click", False), ("mcp__playwright__browser_evaluate", True)]
+        assert [(c["name"], c["refused"]) for c in calls] == [("mcp__playwright__browser_click", False), ("mcp__playwright__browser_click", True),
+                                                              ("mcp__playwright__browser_evaluate", True)]
         assert task.action is None
     finally:
         public.shutdown(); control.shutdown(); up.shutdown()
@@ -178,8 +181,14 @@ def test_hermes_only_never_runs_claude(monkeypatch):
     monkeypatch.setattr(run.hermes_agent, "run_hermes",
                         lambda *a, **k: (hermes_agent.to_parsed([{"name": "mcp__playwright__browser_snapshot"}], stopped), 0))
     assert run._run_action(_fake_action(), env)[0]["status"] == "needs_user"        # it worked and stopped: to you
-    li = {**_fake_action(), "lane": "linkedin_write"}
-    assert run._run_action(li, env)[0]["status"] == "deferred"                      # never a Claude run
+    follow = {**_fake_action(), "lane": "linkedin_write", "kind": "follow"}
+    assert run._run_action(follow, env)[0]["status"] == "deferred"                  # not an application: never a Claude run
+    seen = {}
+    monkeypatch.setattr(run.hermes_agent, "run_hermes", lambda action, system, prompt, *a, **k: (seen.update(prompt=prompt) or
+                        (hermes_agent.to_parsed([{"name": "mcp__playwright__browser_snapshot"}], stopped), 0)))
+    li_apply = {**_fake_action(), "lane": "linkedin_write", "target_url": "https://www.linkedin.com/jobs/view/1/"}
+    assert run._run_action(li_apply, env)[0]["status"] == "needs_user"              # LinkedIn applications: Hermes
+    assert "Easy Apply" in seen["prompt"]
 
 
 def test_ask_candidate_waits_for_the_whatsapp_answer(monkeypatch):
@@ -200,3 +209,13 @@ def test_ask_candidate_waits_for_the_whatsapp_answer(monkeypatch):
     got = ats_helpers.ask_candidate(7, "German?", ["A1", "B1"], "select", {"CAREEROPS_WORKER_TOKEN": "t"}, wait_seconds=5, poll=0)
     assert got == {"answer": "B1", "source": "candidate (WhatsApp)"}
     assert mcp_bridge.guard(ACTION, "mcp__careerops__ask_candidate", {"question": "x"}) is None
+
+
+def test_linkedin_applications_get_the_answer_tools_and_stay_on_the_job():
+    li = {"id": 8, "kind": "apply", "lane": "linkedin_write", "target_url": "https://www.linkedin.com/jobs/view/42/", "dossier": {}}
+    assert mcp_bridge.guard(li, "mcp__careerops__ask_candidate", {"question": "x"}) is None
+    assert mcp_bridge.guard(li, "mcp__careerops__check_email", {"domain": "x"})                 # not on LinkedIn
+    assert mcp_bridge.guard(li, "mcp__playwright__browser_navigate", {"url": "https://www.linkedin.com/jobs/view/42/"}) is None
+    assert mcp_bridge.guard(li, "mcp__playwright__browser_navigate", {"url": "https://www.linkedin.com/feed/"})
+    follow = {**li, "kind": "follow"}
+    assert mcp_bridge.guard(follow, "mcp__careerops__ask_candidate", {"question": "x"})        # only applications

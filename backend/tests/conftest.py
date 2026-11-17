@@ -56,6 +56,7 @@ def db(database, monkeypatch):
     """Clean tables, automation live on the main account, any hour, no gap between writes, saved jobs not read on a schedule."""
     from app.db.session import get_db_connection
     from app.services import automation_service, job_search_service
+    monkeypatch.setattr(job_search_service.JobSearchService, "_model_out_until", 0.0)   # the "model out" pause never leaks between tests
     base = dict(automation_service.config())
     # the reviewer agent calls an AI: its own tests turn it on (test_cv_review.py)
     cfg = {**base, "automation": {**base["automation"], "window": {"start_hour": 0, "end_hour": 24}, "write_gap_minutes": [0, 0],
