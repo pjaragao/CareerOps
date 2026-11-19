@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hmac
 import json
+import re
 import os
 import shutil
 import subprocess
@@ -76,7 +77,7 @@ VISION_MODEL = os.environ.get("HERMES_VISION_MODEL", "tencent/hy4-flash:free")
 VISION_PROVIDER = os.environ.get("HERMES_VISION_PROVIDER", "nous")
 
 
-LOCAL_VISION_TIMEOUT = int(os.environ.get("LOCAL_VISION_TIMEOUT", "25"))
+LOCAL_VISION_TIMEOUT = int(os.environ.get("LOCAL_VISION_TIMEOUT", "45"))   # the S22's E4B answers a grid in 15-19 s
 
 
 def run_local_vision(messages: list, env: dict) -> str:
@@ -87,7 +88,19 @@ def run_local_vision(messages: list, env: dict) -> str:
     url = env.get("CAREEROPS_VISION_LOCAL_URL")
     if not url:
         return ""
-    body = {"model": env.get("CAREEROPS_VISION_LOCAL_MODEL") or "local", "messages": messages, "temperature": 0, "max_tokens": 60}
+    # the S22's Gemma ignores a system message and writes prose; with the picture first and the format asked at the end of
+    # the user's text it answers with the list (2026-11-19, E4B: "[1, 3, 7]" instead of a paragraph)
+    images, texts = [], []
+    for m in messages:
+        if m.get("role") != "user":
+            continue
+        parts = m.get("content") if isinstance(m.get("content"), list) else [{"type": "text", "text": str(m.get("content") or "")}]
+        for c in parts:
+            (images if c.get("type") == "image_url" else texts).append(c)
+    question = " ".join(str(c.get("text") or "") for c in texts).strip()
+    local_messages = [{"role": "user", "content": images + [{"type": "text", "text": question +
+                       "\nReply with ONLY the cell numbers as a JSON list, like [2, 6]. [] if none. No other words."}]}]
+    body = {"model": env.get("CAREEROPS_VISION_LOCAL_MODEL") or "local", "messages": local_messages, "temperature": 0, "max_tokens": 40}
     req = urllib.request.Request(url.rstrip("/") + "/chat/completions", data=json.dumps(body).encode("utf-8"), method="POST",
                                  headers={"Authorization": f"Bearer {env.get('CAREEROPS_VISION_LOCAL_KEY') or ''}",
                                           "Content-Type": "application/json"})
@@ -98,7 +111,9 @@ def run_local_vision(messages: list, env: dict) -> str:
         print(f"local vision failed: {e}", flush=True)
         return ""
     text = (((data.get("choices") or [{}])[0].get("message") or {}).get("content") or "").strip()
-    return text if "[" in text else ""
+    # only a list counts: numbers in prose may be the ones it repeats from the question ("cells 1-9")
+    m = re.search(r"\[[\d,\s]*\]", text)
+    return m.group(0) if m else ""
 
 
 def run_hermes_vision(messages: list) -> str:
