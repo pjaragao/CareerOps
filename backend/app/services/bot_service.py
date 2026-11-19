@@ -367,6 +367,16 @@ class BotService:
             BotService.notify("linkedin_alert", text, {"event_id": event_id, "alert_kind": alert}, urgent=alert in ("restriction", "unusual_activity"),
                               key=f"email:{event_id}")
             return
+        if classification == "incomplete":
+            r = reading.get("_reopened") or {}
+            what = {"reopened": "🤖 Voltei a candidatura para o agente terminar o formulário" + (" pelo link do e-mail." if r.get("link") else "."),
+                    "running": "🤖 A candidatura já está na fila do agente: ele continua de onde parou.",
+                    "to_user": "🙋 O agente já tentou 2 vezes e não concluiu: ficou com você (Precisa de você)."}.get(
+                        r.get("outcome"), "📌 Não achei a candidatura no sistema: o e-mail ficou na sua caixa de entrada.")
+            BotService.notify("email_incomplete", "\n".join(l for l in (f"⏳ *Candidatura não concluída*: {where}", summary, what) if l),
+                              {"event_id": event_id, "job_id": (job or {}).get("id"), "action_id": r.get("action_id")},
+                              urgent=r.get("outcome") == "to_user", key=f"email:{event_id}")
+            return
         if not icon:
             return
         lines = [f"{icon}: {where}", summary, BotService._status_line(classification, job, status_change, confidence)]

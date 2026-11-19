@@ -21,7 +21,8 @@ from app.services.skill_service import SkillService
 
 log = logging.getLogger("email_monitor")
 
-CLASSES = ("confirmation", "viewed", "rejection", "interview", "assessment", "recruiter_question", "offer", "linkedin_alert", "other")
+CLASSES = ("confirmation", "viewed", "rejection", "interview", "assessment", "recruiter_question", "offer", "incomplete",
+           "linkedin_alert", "other")
 ALERT_KINDS = ("restriction", "unusual_activity", "verification_code", "new_sign_in", "other")
 # a warning that stops the LinkedIn lanes, as a warning on the page does
 HALTING_ALERTS = ("restriction", "unusual_activity")
@@ -32,7 +33,10 @@ ATS_DOMAINS = ("greenhouse", "lever.co", "workday", "myworkday", "ashbyhq", "gup
 # Words of an answer about an application. Job alerts and newsletters are filtered out below.
 KEYWORDS = re.compile(r"your application|application (for|to|was|received|status|update)|thank you for applying|thanks for applying|"
                       r"interview|next steps?|unfortunately|not moving forward|move forward|we regret|assessment|coding challenge|"
-                      r"candidatura|processo seletivo|entrevista|infelizmente|agradecemos seu interesse|próxima etapa|proxima etapa", re.I)
+                      r"candidatura|processo seletivo|entrevista|infelizmente|agradecemos seu interesse|próxima etapa|proxima etapa|"
+                      # an application started and not sent (2026-11-19, GHD/Oracle: "Continue to apply for the job …")
+                      r"continue (to apply|your application)|(complete|finish|submit) your (job )?application|draft (job )?application|"
+                      r"application (is )?incomplete|incomplete application|conclua sua candidatura|candidatura (incompleta|n[aã]o conclu[ií]da)", re.I)
 NOISE = re.compile(r"job alert|jobs? for you|new jobs|recommended jobs|vagas para voc|alerta de vaga|newsletter|unsubscribe from job|digest", re.I)
 NOISE_SENDERS = re.compile(r"jobalerts?|newsletter|news@|marketing|notifications-noreply", re.I)
 # LinkedIn writing about the account, not about a job
@@ -124,10 +128,12 @@ class EmailMonitorService:
     @staticmethod
     def _jobs() -> List[dict]:
         # also the jobs whose application went out but the page gave no proof: their confirmation e-mail is the proof
+        # and any job with an apply started in the last 60 days: a "finish your draft" reminder is about one of those (2026-11-19)
         return _rows("""SELECT id, company, job_title, status FROM public.job_listings
                          WHERE status IN ('applied', 'interviewing', 'offer', 'rejected', 'done')
                             OR id IN (SELECT target_id FROM public.automation_actions WHERE kind = 'apply' AND target_id IS NOT NULL
-                                        AND (status IN ('unknown_outcome', 'verifying') OR (status = 'needs_user' AND error_code = 'verify_failed')))""")
+                                        AND (status IN ('unknown_outcome', 'verifying') OR (status = 'needs_user' AND error_code = 'verify_failed')
+                                             OR (status NOT IN ('proposed', 'cancelled', 'rejected') AND updated_at > NOW() - INTERVAL '60 days')))""")
 
     @staticmethod
     def fetch_since(since: datetime) -> List[dict]:
@@ -230,6 +236,12 @@ class EmailMonitorService:
                 stats["alerts"] += 1
             if classification in ("confirmation", "viewed"):
                 closed.append(f"{_where(job, m)} — {'recebida' if classification == 'confirmation' else 'visualizada'}")
+            reopened = None
+            if classification == "incomplete" and job and confidence >= 0.7 and not baseline:
+                # the company says the application was not sent: the apply agent picks the form up again (2026-11-19)
+                reopened = AutomationService.reopen_by_email(job_id, row["id"], reading.get("summary") or m["subject"],
+                                                             safe_resume_link(reading.get("resume_link"), m.get("body") or ""))
+                reading = {**reading, "_reopened": reopened}
             if classification == "confirmation" and job and confidence >= 0.7 and not baseline:
                 proved = AutomationService.confirm_by_email(job_id, row["id"], m["subject"], _domain(m["sender"]))
                 if proved:
@@ -312,7 +324,9 @@ class EmailMonitorService:
              LIMIT 40""")) if len(k) >= 4]
         senders = [d.split(".")[0] for d in ATS_DOMAINS] + ["security-noreply@linkedin.com", "jobs-noreply@linkedin.com"] + companies
         words = ['"your application"', '"sua candidatura"', '"thank you for applying"', "interview", "entrevista", '"processo seletivo"',
-                 '"next steps"', "unfortunately", "infelizmente", '"not moving forward"', "assessment"]
+                 '"next steps"', "unfortunately", "infelizmente", '"not moving forward"', "assessment",
+                 '"continue to apply"', '"draft job application"', '"complete your application"', '"finish your application"',
+                 '"incomplete application"', '"conclua sua candidatura"']
         return (f"newer_than:{max(1, min(int(days), 60))}d -in:sent -in:drafts -in:chats -category:promotions "
                 f"(from:({' OR '.join(dict.fromkeys(senders))}) OR {' OR '.join(words)})")
 
@@ -399,6 +413,22 @@ def _mail_action(classification: str, confidence: float, source: str) -> Optiona
     if classification in (cfg.get("archive_classes") or ["confirmation", "viewed", "rejection"]) and confidence >= float(cfg.get("archive_confidence", 0.8)):
         return "archive"
     return "keep" if classification != "other" else None
+
+
+NOT_A_RESUME_LINK = re.compile(r"delete|remove|withdraw|cancel|unsubscribe|opt-?out|retirar|excluir|apagar|cancelar|descadastr", re.I)
+
+
+def safe_resume_link(link: Optional[str], body: str) -> str:
+    """The "continue your application" link the reading chose, only if it is really in the message and is not one that
+    deletes or withdraws (the GHD reminder has both, side by side)."""
+    link = (link or "").strip().rstrip(").,;>")
+    if not re.match(r"https://[^\s]+$", link) or link not in (body or "") or NOT_A_RESUME_LINK.search(link):
+        return ""
+    # the words right before the link in the message must not be about deleting either ("[delete the data](https://…)")
+    at = (body or "").find(link)
+    if at >= 0 and NOT_A_RESUME_LINK.search((body or "")[max(0, at - 40):at]):
+        return ""
+    return link[:1000]
 
 
 def _where(job: Optional[dict], m: dict) -> str:

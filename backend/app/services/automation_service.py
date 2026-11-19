@@ -186,6 +186,16 @@ def ensure_schema() -> None:
         conn.close()
 
 
+def _same_site_link(link: str, action: dict) -> bool:
+    """An e-mail link the agent may open: the form's own site (same registrable domain as the job's page), never another
+    one (the runner's audit would stop the lane on it anyway)."""
+    from urllib.parse import urlparse
+    root = lambda h: ".".join((h or "").lower().rstrip(".").split(".")[-2:])
+    host = urlparse(link).hostname or ""
+    targets = [urlparse(action.get("target_url") or "").hostname or ""]
+    return bool(host) and any(t and root(t) == root(host) for t in targets)
+
+
 def _rows(sql: str, params: tuple = ()) -> List[dict]:
     conn = get_db_connection()
     try:
@@ -997,6 +1007,46 @@ class AutomationService:
             from app.services.site_service import SiteService
             SiteService.count_success(action.get("target_url") or "")
         return AutomationService._finish(action, {"proof": "email", "email_event_id": event_id}, "email")
+
+    @staticmethod
+    def reopen_by_email(job_id: int, event_id: Optional[int], summary: str = "", link: str = "") -> dict:
+        """The company writes that the application was started and not sent ("Continue to apply…", "finish your draft"):
+        the apply goes back to the apply agent, which continues the form (from the e-mail's link when it is on the same
+        site). Twice at most per action: a third reminder means the agent cannot finish it, and it stays with you.
+        Returns {"outcome": "reopened"|"running"|"to_user"|"no_action", "action_id", "link"}."""
+        action = _one("""SELECT * FROM public.automation_actions WHERE kind = 'apply' AND target_id = %s
+                          ORDER BY updated_at DESC LIMIT 1""", (job_id,))
+        if not action:
+            return {"outcome": "no_action"}
+        aid = action["id"]
+        if action["status"] in ("queued", "escalated", "running_ext", "running_claude", "verifying", "approved", "review_docs"):
+            AutomationService.add_event(aid, "email", "incomplete_email", {"event_id": event_id, "while": action["status"]})
+            return {"outcome": "running", "action_id": aid}
+        if action["status"] not in ("done", "unknown_outcome", "needs_user", "discarded"):
+            return {"outcome": "no_action", "action_id": aid}
+        tries = (_one("""SELECT COUNT(*) AS n FROM public.automation_events WHERE action_id = %s AND event = 'incomplete_email'
+                           AND data->>'reopened' = 'true'""", (aid,)) or {}).get("n") or 0
+        if link and not _same_site_link(link, action):
+            link = ""
+        text = (f"E-mail da empresa: a candidatura NÃO foi concluída ({(summary or '')[:200]}). Continue o formulário até o envio final"
+                + (f"; abra primeiro o link do e-mail: {link}" if link else "; abra a página da vaga e entre na conta do portal se pedir") + ".")
+        if tries >= 2:
+            AutomationService.add_event(aid, "email", "incomplete_email", {"event_id": event_id, "reopened": False})
+            AutomationService._to_user(aid, "incomplete_by_email", "A empresa avisou de novo que a candidatura não foi concluída, "
+                                       "e o agente já tentou 2 vezes: termine pelo link do e-mail." + (f" {link}" if link else ""))
+            return {"outcome": "to_user", "action_id": aid, "link": link}
+        AutomationService.add_event(aid, "email", "incomplete_email", {"event_id": event_id, "reopened": True, "link": link,
+                                                                       "was": action["status"]})
+        _rows("""UPDATE public.automation_actions
+                    SET status = 'escalated', error_code = 'incomplete_by_email', error_text = %s, questions = '[]', run_now = TRUE,
+                        claude_attempts = 0, last_run_fingerprint = NULL, scheduled_for = NULL, lease_owner = NULL, lease_until = NULL,
+                        finished_at = NULL, result = COALESCE(result, '{}'::jsonb) || jsonb_build_object('incomplete_email', %s::int),
+                        updated_at = NOW()
+                  WHERE id = %s""", (text, event_id or 0, aid))
+        if action["status"] == "done":   # it was counted as sent: it is not, until the agent finishes it
+            _rows("""UPDATE public.job_listings SET status = 'new', applied_at = NULL, updated_at = NOW()
+                      WHERE id = %s AND status = 'applied'""", (job_id,))
+        return {"outcome": "reopened", "action_id": aid, "link": link}
 
     @staticmethod
     def verify(action_id: int, proof: bool, evidence: Optional[dict] = None) -> Optional[dict]:

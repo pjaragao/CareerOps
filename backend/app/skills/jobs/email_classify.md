@@ -18,12 +18,18 @@ classification, exactly one:
 - "assessment": they ask to do a test, challenge or case.
 - "recruiter_question": a person asks for something (information, availability, salary, documents) without scheduling yet.
 - "offer": a job offer.
+- "incomplete": the candidate's application was started but NOT submitted or NOT completed: a reminder about a draft, "continue
+  to apply", "finish / complete your application", "your application is incomplete", a missing document or step before it
+  counts. Not a confirmation that it was received.
 - "linkedin_alert": LinkedIn writing about the account itself: unusual activity, a restriction or limit, a security check, a verification code, a new sign-in, a password change.
 - "other": anything else: job alerts, marketing, newsletters, messages not about an application.
 
 confidence: from 0 to 1, how sure you are. Below 0.7 when the message is ambiguous.
 summary: one short sentence in Portuguese saying what the message says.
 evidence: the sentence from the message that supports the classification, copied word for word, at most 200 characters. Empty for "other".
+
+resume_link: only for "incomplete": the URL in the message that opens the application to continue or complete it, copied
+exactly. Never a link to delete, withdraw, cancel or unsubscribe. Empty when there is no such link.
 
 alert_kind: only for "linkedin_alert", otherwise empty. Exactly one of:
 - "restriction": the account was restricted, limited, suspended, or some activity was blocked.
@@ -45,4 +51,4 @@ the message does not give. Each item:
 - suggestion: one sentence in Portuguese saying what to improve.
 - evidence: the sentence from the message, word for word, at most 200 characters.
 
-Return JSON: {"classification": "other", "confidence": 0.0, "summary": "", "evidence": "", "alert_kind": "", "feedback": []}
+Return JSON: {"classification": "other", "confidence": 0.0, "summary": "", "evidence": "", "resume_link": "", "alert_kind": "", "feedback": []}
