@@ -346,18 +346,24 @@ async def solve_hcaptcha(page: Page, vision: Optional[Vision]) -> Dict[str, Any]
                 return {"solved": True, "how": "checkbox"}
     if vision is None:
         return {"solved": False, "error": "hCaptcha challenge and no vision model"}
-    for round_ in range(4):
+    canvas_rounds = 0
+    for round_ in range(HCAPTCHA_ROUNDS):
         ch = next((f for f in page.frames if HCAPTCHA_CHALLENGE.search(f.url or "")), None)
         if ch is None:
             break
         try:
-            prompt = (await ch.locator(".prompt-text").first.inner_text(timeout=4000)).strip()
+            prompt = (await ch.locator(".prompt-text, h2").first.inner_text(timeout=4000)).strip()
             tiles = ch.locator(".task-image")
             n = await tiles.count()
         except PlaywrightError:
             return {"solved": False, "error": "hCaptcha challenge of a kind not handled (no prompt)"}
         if n not in (9, 16):
-            return {"solved": False, "error": f"hCaptcha challenge of a kind not handled ({n} tiles)"}
+            # the 2026 challenges are drawn on a canvas (no tiles): a "click on…" one is answered on a numbered grid laid
+            # over the picture; a "drag…" one is swapped for another (2026-11-19: Megaport, adesso stopped on them)
+            canvas_rounds += 1
+            if await _hcaptcha_canvas_round(page, ch, prompt, vision):
+                return {"solved": True, "how": f"vision on canvas ({canvas_rounds} rounds)"}
+            continue
         side = 3 if n == 9 else 4
         try:
             shot = await ch.locator(".task-grid").first.screenshot(timeout=6000)
@@ -376,7 +382,62 @@ async def solve_hcaptcha(page: Page, vision: Optional[Vision]) -> Dict[str, Any]
         await page.wait_for_timeout(2500)
         if await _token(page, "h-captcha-response"):
             return {"solved": True, "how": f"vision ({round_ + 1} rounds)"}
-    return {"solved": bool(await _token(page, "h-captcha-response")), "error": "hCaptcha not passed after 4 rounds"}
+    return {"solved": bool(await _token(page, "h-captcha-response")), "error": f"hCaptcha not passed after {HCAPTCHA_ROUNDS} rounds"}
+
+
+HCAPTCHA_ROUNDS = 4   # 2026-11-19 demo: the canvas puzzles (semantic, tiny items) beat the E4B; few rounds, then you
+HCAPTCHA_DRAG = re.compile(r"\b(drag|arraste|arrastar|arrastre|faites glisser|ziehen)\b", re.I)
+CANVAS_SIDE = 4   # cells per side of the grid laid over a canvas challenge
+
+
+async def _hcaptcha_refresh(ch: Frame, page: Page) -> None:
+    for name in ("refresh", "atualizar", "actualizar", "aktualisieren", "actualiser"):
+        try:
+            btn = ch.get_by_role("button", name=re.compile(name, re.I)).first
+            if await btn.count():
+                await btn.click(timeout=3000)
+                await page.wait_for_timeout(2000)
+                return
+        except PlaywrightError:
+            continue
+
+
+async def _hcaptcha_canvas_round(page: Page, ch: Frame, prompt: str, vision: Vision) -> bool:
+    """One canvas challenge: a drag one is refreshed; a click one gets a numbered grid over its picture, and the centres
+    of the cells the model names are clicked, then submit. True when the token is there."""
+    if not prompt or HCAPTCHA_DRAG.search(prompt):
+        await _hcaptcha_refresh(ch, page)
+        return False
+    try:
+        canvas = ch.locator("canvas").first
+        box = await canvas.bounding_box(timeout=4000) if await canvas.count() else None
+        if not box:
+            await _hcaptcha_refresh(ch, page)
+            return False
+        shot = await canvas.screenshot(timeout=6000)
+    except PlaywrightError:
+        await _hcaptcha_refresh(ch, page)
+        return False
+    n = CANVAS_SIDE * CANVAS_SIDE
+    got = await vision(numbered_grid(shot, CANVAS_SIDE, CANVAS_SIDE),
+                       f"The picture is split into {n} numbered cells. Task: {prompt} "
+                       f"Which cells must be clicked to do the task? Answer with their numbers.", n) or []
+    if not got:
+        await _hcaptcha_refresh(ch, page)
+        return False
+    cw, chh = box["width"] / CANVAS_SIDE, box["height"] / CANVAS_SIDE
+    for i in got[:6]:
+        r, c = divmod(i - 1, CANVAS_SIDE)
+        x, y = box["x"] + (c + 0.5) * cw, box["y"] + (r + 0.5) * chh
+        await page.mouse.move(x, y, steps=8)
+        await page.mouse.click(x, y, delay=80)
+        await page.wait_for_timeout(300)
+    try:
+        await ch.locator(".button-submit").first.click(timeout=4000)
+    except PlaywrightError:
+        pass
+    await page.wait_for_timeout(2500)
+    return bool(await _token(page, "h-captcha-response"))
 
 
 # ── Cloudflare Turnstile (widget or the full-page check) ──
