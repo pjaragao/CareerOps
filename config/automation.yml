@@ -21,8 +21,9 @@ content_guard:
 automation:
   window: {start_hour: 8, end_hour: 23}      # APP_TIMEZONE: nothing is claimed outside it
   write_gap_minutes: [5, 20]                 # between two writes on LinkedIn, picked at random in this range
-  max_windows: 3                             # all browsers together (WSL has little memory to spare)
-  lanes: {linkedin_read: 1, linkedin_write: 1, ats: 2}
+  apply_gap_minutes: [1, 3]                  # after an Easy Apply (~20 an hour; the daily apply limit still holds)
+  max_windows: 6                             # all running actions together (company-site agents are tabs of one Chrome)
+  lanes: {linkedin_read: 1, linkedin_write: 1, ats: 4}   # ats: company-site agents in parallel (cron runs slots 1-4)
   approval_hours: {apply: 168, comment: 48, connect: 168, follow: 168, reply: 48, like: 48, message: 72}
   search_hours: [8, 13, 18]                  # three rounds a day (jobs of the last 48 h, newest first)
   check_hours: [7, 19]                       # who accepted / replied

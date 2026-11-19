@@ -266,13 +266,15 @@ def lane_of(action: Optional[dict]) -> str:
 
 
 # slots: where a task runs. Two on company sites (2026-11-17: the second in its own isolated browser context), one on LinkedIn
-SLOT_LANE = {"ats": "ats", "ats2": "ats", "linkedin": "linkedin"}
+ATS_SLOTS = 4   # company-site agents in parallel (2026-11-19: from 2 to 4)
+SLOT_LANE = {"ats": "ats", **{f"ats{n}": "ats" for n in range(2, ATS_SLOTS + 1)}, "linkedin": "linkedin"}
 
 
 def make_public_handler(tasks: Dict[str, Task], token: str, browsers: Dict[str, Tuple["BrowserUpstream", str]]):
     """One task per lane, running in parallel (2026-11-17): a company form and a LinkedIn action at the same time, each in
     its own browser. browsers: endpoint path -> (upstream, lane); careerops tools have one endpoint per lane too."""
-    careerops_paths = {"/careerops/mcp": "ats", "/careerops2/mcp": "ats2", "/careerops-linkedin/mcp": "linkedin"}
+    careerops_paths = {"/careerops/mcp": "ats", **{f"/careerops{n}/mcp": f"ats{n}" for n in range(2, ATS_SLOTS + 1)},
+                       "/careerops-linkedin/mcp": "linkedin"}
 
     class Handler(BaseHTTPRequestHandler):
         server_version = "careerops-bridge/1"
@@ -456,14 +458,15 @@ def serve(env: Optional[dict] = None) -> Tuple[ThreadingHTTPServer, ThreadingHTT
     # LinkedIn's browser (2026-11-17: Hermes finishes LinkedIn Easy Apply forms too)
     linkedin = BrowserUpstream(f"http://127.0.0.1:{int(env.get('CAREEROPS_MCP_PORT_LINKEDIN') or 8931)}/mcp",
                                TOOLS_CACHE.with_name("bridge-linkedin-tools.json"))
-    # the second company-site agent: its own playwright-mcp (--isolated: each session a fresh context in the same Chrome)
-    browser2 = BrowserUpstream(f"http://127.0.0.1:{int(env.get('CAREEROPS_MCP_PORT_ATS2') or 8933)}/mcp",
-                               TOOLS_CACHE.with_name("bridge-browser2-tools.json"))
-    browsers = {"/browser/mcp": (browser, "ats"), "/browser2/mcp": (browser2, "ats2"), "/linkedin/mcp": (linkedin, "linkedin")}
+    # the other company-site agents: their own playwright-mcp each (--isolated: each session a fresh context in the same Chrome)
+    extra = {f"ats{n}": BrowserUpstream(f"http://127.0.0.1:{int(env.get(f'CAREEROPS_MCP_PORT_ATS{n}') or 8931 + n)}/mcp",
+                                        TOOLS_CACHE.with_name(f"bridge-browser{n}-tools.json")) for n in range(2, ATS_SLOTS + 1)}
+    browsers = {"/browser/mcp": (browser, "ats"), **{f"/browser{n}/mcp": (extra[f"ats{n}"], f"ats{n}") for n in range(2, ATS_SLOTS + 1)},
+                "/linkedin/mcp": (linkedin, "linkedin")}
     public = ThreadingHTTPServer((env.get("CAREEROPS_BRIDGE_HOST") or "172.26.0.1", int(env.get("CAREEROPS_BRIDGE_PORT") or 18933)),
                                  make_public_handler(tasks, token, browsers))
     control = ThreadingHTTPServer(("127.0.0.1", int(env.get("CAREEROPS_BRIDGE_CONTROL_PORT") or 18934)),
-                                  make_control_handler(tasks, token, lambda: ats_helpers.load_runtime_env(runner.load_env()), {"ats": browser, "ats2": browser2, "linkedin": linkedin}))
+                                  make_control_handler(tasks, token, lambda: ats_helpers.load_runtime_env(runner.load_env()), {"ats": browser, **extra, "linkedin": linkedin}))
     for srv in (public, control):
         srv.daemon_threads = True
         threading.Thread(target=srv.serve_forever, daemon=True).start()

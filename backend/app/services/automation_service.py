@@ -186,6 +186,35 @@ def ensure_schema() -> None:
         conn.close()
 
 
+VERIFY_TRIES = 3   # checks of an "unknown" write with no verdict before it goes to you
+
+# One job posted in many places (2026-11-19: "AI ML Engineer - Remote - Latin America" 10 times, one per Brazilian city):
+# the same company and the same title are one job, whatever the place
+JOB_KEY_SQL = "lower(regexp_replace(coalesce(company, ''), '\\W', '', 'g')) || '|' || lower(regexp_replace(coalesce(job_title, ''), '\\W', '', 'g'))"
+PLACE_REASON = "Local fora do foco"   # a copy discarded for its place says nothing about a copy in a good place
+# an application in one of these is the job's application: a twin of it is never sent
+TWIN_APPLY_STATUSES = ("done", "running_ext", "running_claude", "verifying", "unknown_outcome", "escalated", "needs_user", "awaiting_confirm")
+
+
+def job_key(company: Optional[str], title: Optional[str]) -> str:
+    """Python side of JOB_KEY_SQL (same result for the same strings)."""
+    norm = lambda x: re.sub(r"\W", "", x or "").lower()
+    return f"{norm(company)}|{norm(title)}"
+
+
+def _twin_apply(cur, action: dict, statuses=TWIN_APPLY_STATUSES) -> Optional[dict]:
+    """Another application to the same job (same company and title, another place), in one of `statuses`."""
+    if action.get("kind") != "apply" or not action.get("target_id"):
+        return None
+    cur.execute(f"""SELECT a.id, a.status, j.location FROM public.automation_actions a JOIN public.job_listings j ON j.id = a.target_id
+                      WHERE a.kind = 'apply' AND a.id <> %s AND a.target_id <> %s AND a.status = ANY(%s)
+                        AND {JOB_KEY_SQL.replace('company', 'j.company').replace('job_title', 'j.job_title')} =
+                            (SELECT {JOB_KEY_SQL} FROM public.job_listings WHERE id = %s)
+                      ORDER BY a.updated_at DESC LIMIT 1""", (action["id"] or 0, action["target_id"], list(statuses), action["target_id"]))
+    row = cur.fetchone()
+    return dict(row) if row else None
+
+
 def _same_site_link(link: str, action: dict) -> bool:
     """An e-mail link the agent may open: the form's own site (same registrable domain as the job's page), never another
     one (the runner's audit would stop the lane on it anyway)."""
@@ -511,6 +540,15 @@ class AutomationService:
 
     @staticmethod
     def propose_job(job: dict) -> Optional[dict]:
+        conn = get_db_connection()
+        try:
+            with get_db_cursor(conn) as cur:   # the same job in another place already has its application (or its proposal)
+                twin = _twin_apply(cur, {"id": 0, "kind": "apply", "target_id": job["id"]}, TWIN_APPLY_STATUSES + ("proposed", "approved", "review_docs", "queued"))
+        finally:
+            conn.close()
+        if twin:
+            log.info("job %s not proposed: same job as apply #%s (%s)", job["id"], twin["id"], twin.get("location"))
+            return None
         return AutomationService.create_action(
             "apply", f"apply:{job['id']}", f"{job.get('job_title') or 'Vaga'} · {job.get('company') or ''}", job.get("url"),
             {"job_id": job["id"], "linkedin_job_id": job.get("linkedin_job_id"), "title": job.get("job_title"), "company": job.get("company")},
@@ -859,6 +897,19 @@ class AutomationService:
                 limits = AutomationService.limits(state)
                 exhausted = [l["kind"] for l in limits if l["left"] <= 0]   # holds back only the automations
                 paused = ["connect"] if state["invites_paused_until"] and state["invites_paused_until"] > now() else []   # holds back all
+                # a check that never gives a verdict (the worker hung or lost the browser) would hold the lane forever: after
+                # VERIFY_TRIES checks with no answer it is yours, "confira antes de repetir" (2026-11-19: one action was
+                # re-checked ~35 times in 8 h while 28 applications waited behind it)
+                cur.execute("""
+                    UPDATE public.automation_actions a
+                       SET status = 'needs_user', error_code = 'verify_failed', lease_owner = NULL, lease_until = NULL, updated_at = NOW(),
+                           error_text = 'Tentei conferir várias vezes se foi enviado e a verificação não respondeu: confira na página antes de repetir'
+                     WHERE a.lane = %s AND a.status = 'unknown_outcome'
+                       AND (SELECT COUNT(*) FROM public.automation_events e
+                             WHERE e.action_id = a.id AND e.event = 'claimed' AND (e.data->>'verify_only')::boolean IS TRUE
+                               AND e.at > COALESCE((SELECT MAX(v.at) FROM public.automation_events v
+                                                     WHERE v.action_id = a.id AND v.event IN ('verified', 'retry')), '-infinity')) >= %s""",
+                            (lane, VERIFY_TRIES))
                 # what may already have gone out is looked at first: it does not count as a new action
                 cur.execute("""
                     SELECT * FROM public.automation_actions
@@ -880,6 +931,14 @@ class AutomationService:
                     conn.commit()
                     return {"action": None, "reason": "empty"}
                 action = dict(row)
+                twin = _twin_apply(cur, action) if not verify_only else None
+                if twin:
+                    cur.execute("""UPDATE public.automation_actions SET status = 'discarded', error_code = 'duplicate', finished_at = NOW(),
+                                          error_text = %s, lease_owner = NULL, updated_at = NOW() WHERE id = %s""",
+                                (f"Mesma vaga em outro local: a candidatura #{twin['id']} ({twin['status']}) já cuida dela", action["id"]))
+                    _event(cur, action["id"], "backend", "duplicate_job", {"twin": twin["id"]})
+                    conn.commit()
+                    return {"action": None, "reason": "duplicate"}
                 if action["payload_hash"] != payload_hash(action["payload"]):
                     cur.execute("""UPDATE public.automation_actions SET status = 'needs_user', error_code = 'payload_changed',
                                           error_text = 'O conteúdo mudou depois da aprovação: nada foi feito', updated_at = NOW() WHERE id = %s""", (action["id"],))
@@ -905,7 +964,11 @@ class AutomationService:
                      WHERE id = %s RETURNING *""", (status, worker, nonce, 0 if verify_only else 1, action["id"]))
                 action = dict(cur.fetchone())
                 if lane == "linkedin_write" and not verify_only:
-                    low, high = (config().get("automation") or {}).get("write_gap_minutes") or [5, 20]
+                    auto_cfg = config().get("automation") or {}
+                    # applications have their own, shorter gap (2026-11-19, you asked for ~20 an hour); comments, invites and
+                    # messages keep the long one
+                    low, high = (auto_cfg.get("apply_gap_minutes") if action["kind"] == "apply" else None) \
+                        or auto_cfg.get("write_gap_minutes") or [5, 20]
                     cur.execute("UPDATE public.automation_state SET next_write_at = %s WHERE id = 1",
                                 (now() + timedelta(minutes=random.uniform(low, high)),))
                 _event(cur, action["id"], "backend", "claimed", {"worker": worker, "verify_only": verify_only})
@@ -1321,6 +1384,10 @@ class AutomationService:
             return None
         AutomationService.add_event(action_id, "worker", "aborted", {"reason": reason}, level="warning")
         status = "unknown_outcome" if action["kind"] in WRITE_KINDS else "queued"
+        if reason == "no browser" and action["status"] == "running_ext" and not (action["result"] or {}).get("executed"):
+            # no window ever opened: nothing can have gone out, so it is a new attempt, not one more check (2026-11-19:
+            # these piled up as "unknown" and the LinkedIn lane spent the day re-checking them)
+            status = "queued"
         return _one("""UPDATE public.automation_actions SET status = %s, scheduled_for = NOW() + make_interval(secs => %s), lease_owner = NULL, lease_until = NULL, updated_at = NOW()
                         WHERE id = %s RETURNING *""", (status, retry_after, action_id))
 
@@ -1406,6 +1473,9 @@ class AutomationService:
         block = SiteService.human_block(action.get("target_url") or "") if not (action.get("result") or {}).get("live_captcha") else None
         if block:
             return ("captcha", "Este site pediu CAPTCHA e o solver automático não passou nas últimas tentativas: resolva pelo noVNC e use Tentar de novo.", False)
+        twin = _twin_apply(cur, action)
+        if twin:
+            return ("duplicate", f"Mesma vaga em outro local: a candidatura #{twin['id']} ({twin['status']}) já cuida dela.", True)
         key = AutomationService._url_key(action.get("target_url") or "")
         if key:
             cur.execute("""SELECT id, status, target_url FROM public.automation_actions

@@ -437,6 +437,8 @@ class IdsIn(BaseModel):
 
 class SearchCard(BaseModel):
     id: str = Field(..., max_length=50)
+    title: Optional[str] = Field(None, max_length=500)     # with the company: the same job in another place is not read again
+    company: Optional[str] = Field(None, max_length=300)
     location: Optional[str] = Field(None, max_length=300)
     posted: Optional[str] = Field(None, max_length=100)
 

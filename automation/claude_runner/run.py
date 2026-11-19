@@ -442,8 +442,9 @@ def mcp_port(lane: str, env: dict):
     """The browser tools of this runner: LinkedIn, the company sites, or the second company-site slot (--slot 2)."""
     if lane != "ats":
         return env.get("CAREEROPS_MCP_PORT_LINKEDIN", 8931)
-    if str(env.get("CAREEROPS_RUNNER_SLOT") or "1") == "2":
-        return env.get("CAREEROPS_MCP_PORT_ATS2", 8933)
+    slot = int(env.get("CAREEROPS_RUNNER_SLOT") or 1)
+    if slot >= 2:   # company-site slot n on 8931 + n (2026-11-19: up to 4 in parallel)
+        return env.get(f"CAREEROPS_MCP_PORT_ATS{slot}", 8931 + slot)
     return env.get("CAREEROPS_MCP_PORT_ATS", 8932)
 
 
@@ -601,11 +602,11 @@ def _claim_and_run(env: dict, wait_verify: bool = False):
     body = {"runner": os.uname().nodename, "hermes": hermes}
     if env.get("CAREEROPS_RUNNER_LANES"):   # one runner per lane, in parallel (2026-11-17)
         body["lanes"] = [l.strip() for l in env["CAREEROPS_RUNNER_LANES"].split(",") if l.strip()]
-    if str(env.get("CAREEROPS_RUNNER_SLOT") or "1") == "2":
-        # the second company-site slot only works when its browser tools answer (a worker without port 8933 yet)
+    if int(env.get("CAREEROPS_RUNNER_SLOT") or 1) >= 2:
+        # a further company-site slot only works when its browser tools answer (a worker without that port yet)
         port = mcp_port("ats", env)
         if not ats_helpers.probe_mcp_http(f"http://127.0.0.1:{port}/mcp", timeout=8):
-            print(f"nothing to do (slot 2: browser tools on {port} not answering)")
+            print(f"nothing to do (slot {env.get('CAREEROPS_RUNNER_SLOT')}: browser tools on {port} not answering)")
             return None
     claimed = api(env, "/automation/escalated/claim", body)
     action = claimed.get("action")
@@ -645,7 +646,7 @@ def main(argv=None) -> int:
     parser.add_argument("--batch", type=int, default=1, help="Max escalated actions to process per invocation")
     parser.add_argument("--provider", choices=("auto", "claude", "hydrogen", "hermes"), default=None)
     parser.add_argument("--lane", default=None, help="Only this lane (ats, linkedin_write): one runner per lane runs in parallel")
-    parser.add_argument("--slot", default=None, help="2 = the second company-site agent (its own isolated browser context)")
+    parser.add_argument("--slot", default=None, help="2-4 = a further company-site agent (its own isolated browser context)")
     args, _ = parser.parse_known_args(argv)
     env = ats_helpers.load_runtime_env(load_env())
     if args.provider:

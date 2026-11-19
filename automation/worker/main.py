@@ -21,8 +21,9 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname
 log = logging.getLogger("worker")
 
 WORKER_ID = os.environ.get("WORKER_ID", "automation-1")
-IDLE_SECONDS = {"off": 60, "halted": 30, "outside_window": 120, "gap": 30, "empty": 20, "lane_busy": 15, "max_windows": 15}
+IDLE_SECONDS = {"off": 60, "halted": 30, "outside_window": 120, "gap": 30, "empty": 20, "lane_busy": 15, "max_windows": 15, "duplicate": 2}
 ATS_IDLE_SECONDS = 1800
+VERIFY_TIMEOUT = 150   # seconds for one "did it go out?" check
 ARTIFACT_DAYS = 30
 
 
@@ -62,7 +63,18 @@ class Worker:
         if browser_of(action["lane"]) == "ats":
             self.ats_last_used = time.monotonic()
         log.info("action %s (%s, verify_only=%s)", action["id"], action["kind"], action.get("verify_only"))
-        await self.runner.handle(action)
+        if not action.get("verify_only"):
+            await self.runner.handle(action)
+            return
+        # a check only opens a page and reads it: if it hangs, it says so instead of holding the lane until its lease runs out
+        try:
+            await asyncio.wait_for(self.runner.handle(action), timeout=VERIFY_TIMEOUT)
+        except asyncio.TimeoutError:
+            log.warning("action %s: check took more than %ss", action["id"], VERIFY_TIMEOUT)
+            try:
+                await self.api.post(f"/automation/actions/{action['id']}/abort", {"reason": "check timed out", "retry_after": 300})
+            except httpx.HTTPError:
+                pass
 
     async def session_loop(self) -> None:
         """A window at LinkedIn's login page while there is no session, for you to sign in through noVNC. Once signed in it

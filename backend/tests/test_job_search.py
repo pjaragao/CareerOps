@@ -85,7 +85,7 @@ def test_unseen_leaves_out_old_and_off_place_cards(db):
     cards = [{"id": "1", "location": "Brazil (Remote)", "posted": "2 hours ago"}, {"id": "2", "location": "Brazil (Remote)", "posted": "5 days ago"},
              {"id": "3", "location": "United States (Remote)", "posted": "1 hour ago"}, {"id": "4"}]
     out = Search.unseen(["1", "2", "3", "4"], cards, "ia:remoto-br")
-    assert out["unseen"] == ["1", "4"] and out["skipped"] == {"old": 1, "place": 1}
+    assert out["unseen"] == ["1", "4"] and out["skipped"] == {"old": 1, "place": 1, "duplicate": 0}
     assert Search.unseen(["1", "2", "3"])["unseen"] == ["1", "2", "3"]   # without cards (saved jobs): only what is known
 
 

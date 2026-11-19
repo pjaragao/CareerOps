@@ -76,7 +76,8 @@ def slot_of(action: dict, env: dict) -> str:
     """The bridge slot of this run: ats, ats2 (the second company-site runner, --slot 2) or linkedin."""
     if action.get("lane") != "ats":
         return "linkedin"
-    return "ats2" if str(env.get("CAREEROPS_RUNNER_SLOT") or "1") == "2" else "ats"
+    slot = int(env.get("CAREEROPS_RUNNER_SLOT") or 1)
+    return f"ats{slot}" if slot >= 2 else "ats"
 
 
 # The apply subagent's model (2026-11-19, user: "a parte de apply num subagent com o modelo free da Nous hy4 flash"):
@@ -93,7 +94,8 @@ def model_fields(env: dict) -> dict:
     return {"model": model, "provider": (env.get("CAREEROPS_HERMES_PROVIDER") or APPLY_PROVIDER).strip()}
 
 
-PREFIXES = {"ats": ("mcp__careerops_browser__", "mcp__careerops__"), "ats2": ("mcp__careerops_browser2__", "mcp__careerops2__"),
+PREFIXES = {"ats": ("mcp__careerops_browser__", "mcp__careerops__"),
+            **{f"ats{n}": (f"mcp__careerops_browser{n}__", f"mcp__careerops{n}__") for n in range(2, 5)},
             "linkedin": ("mcp__careerops_linkedin__", "mcp__careerops_li__")}
 
 

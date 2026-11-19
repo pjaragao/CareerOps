@@ -60,7 +60,7 @@ def db(database, monkeypatch):
     monkeypatch.setattr(automation_service.AutomationService, "_engine_cache", {"at": 0.0, "value": None})
     base = dict(automation_service.config())
     # the reviewer agent calls an AI: its own tests turn it on (test_cv_review.py)
-    cfg = {**base, "automation": {**base["automation"], "window": {"start_hour": 0, "end_hour": 24}, "write_gap_minutes": [0, 0],
+    cfg = {**base, "automation": {**base["automation"], "window": {"start_hour": 0, "end_hour": 24}, "write_gap_minutes": [0, 0], "apply_gap_minutes": [0, 0],
                                   "reply_scan_hours": [], "inbox_scan_hours": []},   # tests that need them set them
            "jobs": {**base["jobs"], "cv_review": "you", "external_apply": False}}
     monkeypatch.setattr(automation_service, "config", lambda: cfg)

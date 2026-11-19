@@ -84,7 +84,7 @@ services:
       additional_contexts:
         extension: ./extension
     restart: unless-stopped
-    mem_limit: 2500m
+    mem_limit: 3500m   # 4 company-site agents (isolated contexts of one Chrome) + LinkedIn
     shm_size: 1g
     stop_grace_period: 120s
     # Only what the browser needs, no env_file: a page must never be one step from the database password or the AI keys
@@ -97,7 +97,9 @@ services:
       - "127.0.0.1:${CAREEROPS_NOVNC_PORT:-6080}:6080"
       - "127.0.0.1:${CAREEROPS_MCP_LINKEDIN_PORT:-8931}:8931"
       - "127.0.0.1:${CAREEROPS_MCP_ATS_PORT:-8932}:8932"
-      - "127.0.0.1:${CAREEROPS_MCP_ATS2_PORT:-8933}:8933"   # second company-site agent, in parallel
+      - "127.0.0.1:${CAREEROPS_MCP_ATS2_PORT:-8933}:8933"   # company-site agents 2-4, in parallel
+      - "127.0.0.1:${CAREEROPS_MCP_ATS3_PORT:-8934}:8934"
+      - "127.0.0.1:${CAREEROPS_MCP_ATS4_PORT:-8935}:8935"
       - "127.0.0.1:${CAREEROPS_CAPTCHA_PORT:-8940}:8940"   # CAPTCHA solver for the apply agent (worker/captcha_server.py)
     volumes:
       - careerops_browser:/data

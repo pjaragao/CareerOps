@@ -365,7 +365,7 @@ def test_a_retry_after_keeps_it_out_of_the_queue_for_a_while(db):
     queued_follow()
     got = claim()["action"]
     Auto.abort(got["id"], "no browser", 120)
-    assert status_of(got["id"]) == "unknown_outcome"
+    assert status_of(got["id"]) == "queued"   # no window ever opened: a new attempt, not a check (2026-11-19)
     assert claim()["action"] is None
 
 
@@ -511,7 +511,7 @@ def test_proposals_come_from_what_is_ready(db, sql, add_job):
 
 def test_newest_job_first(db, add_job):
     old = add_job("1", posted_at=now() - timedelta(hours=40))
-    new = add_job("2", posted_at=now() - timedelta(hours=2))
+    new = add_job("2", posted_at=now() - timedelta(hours=2), title="Another role")   # same title = the same job (2026-11-19)
     Auto.propose_job(old), Auto.propose_job(new)
     assert [a["target_id"] for a in Auto.inbox()["apply"]] == [new["id"], old["id"]]
 

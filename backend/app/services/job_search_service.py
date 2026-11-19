@@ -12,7 +12,7 @@ from urllib.parse import urlencode
 from psycopg2.extras import Json
 
 from app.core.config import settings
-from app.services.automation_service import AutomationService, _one, _rows, config
+from app.services.automation_service import JOB_KEY_SQL, PLACE_REASON, AutomationService, _one, _rows, config, job_key
 from app.services.skill_service import SkillService
 
 log = logging.getLogger("job_search")
@@ -198,18 +198,39 @@ class JobSearchService:
         known = {r["linkedin_job_id"] for r in _rows("SELECT linkedin_job_id FROM public.job_listings WHERE linkedin_job_id = ANY(%s)", (ids,))}
         by_id = {str(c.get("id")): c for c in cards or []}
         mode = _mode(search_slug)
-        out, old, place = [], 0, 0
+        # the same job in another place (company and title on the card): its ad is not read again (2026-11-19)
+        card_key = lambda c: job_key(c.get("company"), c.get("title")) if (c.get("company") and c.get("title")) else ""
+        have = JobSearchService.known_keys([card_key(c) for c in by_id.values() if card_key(c)])
+        out, old, place, twins = [], 0, 0, 0
         for i in ids:
             if i in known:
                 continue
             c = by_id.get(i) or {}
+            key = card_key(c)
             if not recent(c.get("posted")):
                 old += 1
             elif not place_ok(c.get("location"), mode):
                 place += 1
+            elif key and key in have:
+                twins += 1
             else:
                 out.append(i)
-        return {"unseen": out, "budget": AutomationService.job_read_budget(), "skipped": {"old": old, "place": place}}
+                if key:
+                    have[key] = 0
+        return {"unseen": out, "budget": AutomationService.job_read_budget(), "skipped": {"old": old, "place": place, "duplicate": twins}}
+
+    @staticmethod
+    def known_keys(keys: List[str], days: int = 60) -> dict:
+        """{company|title key: job id} of the jobs already here (last `days`), except copies discarded only for their place."""
+        if not keys:
+            return {}
+        rows = _rows(f"""SELECT id, {JOB_KEY_SQL} AS k FROM public.job_listings
+                          WHERE created_at > NOW() - make_interval(days => %s) AND {JOB_KEY_SQL} = ANY(%s)
+                            AND COALESCE(triage_reason, '') NOT LIKE %s ORDER BY id""", (days, list(set(keys)), PLACE_REASON + "%"))
+        out: dict = {}
+        for r in rows:
+            out.setdefault(r["k"], r["id"])
+        return out
 
     @staticmethod
     def add_discovered(jobs: List[dict], search_slug: Optional[str]) -> int:
@@ -218,11 +239,23 @@ class JobSearchService:
         it does not come back in the next search."""
         added = 0
         mode = _mode(search_slug)
+        have = JobSearchService.known_keys([job_key(j.get("company"), j.get("title")) for j in jobs if j.get("company") and j.get("title")])
         for j in jobs:
             job_id = str(j.get("linkedin_job_id") or "").strip()
             if not job_id or not (j.get("description") or "").strip():
                 continue
             off = not place_ok(j.get("location"), mode)
+            key = job_key(j.get("company"), j.get("title")) if (j.get("company") and j.get("title")) else ""
+            twin = have.get(key) if key and not off else None
+            if twin:   # the same job in another place: kept as discarded, so it neither reaches the triage nor comes back
+                _one("""INSERT INTO public.job_listings (linkedin_job_id, url, job_title, company, location, description, status, scraped_at,
+                                                         easy_apply, posted_at, search_slug, triage_score, triage_reason, triage_outcome)
+                        VALUES (%s, %s, %s, %s, %s, %s, 'discovered', NOW(), %s, %s, %s, 0, %s, 'discarded')
+                        ON CONFLICT DO NOTHING RETURNING id""",
+                     (job_id, f"https://www.linkedin.com/jobs/view/{job_id}/", j.get("title") or "", j.get("company") or "", j.get("location") or "",
+                      j["description"], bool(j.get("easy_apply")), parse_posted(j.get("posted")), search_slug,
+                      f"Mesma vaga já encontrada em outro local (#{twin})"))
+                continue
             row = _one("""
                 INSERT INTO public.job_listings (linkedin_job_id, url, job_title, company, location, description, status, scraped_at,
                                                  easy_apply, posted_at, search_slug, triage_score, triage_reason, triage_outcome)
@@ -230,8 +263,10 @@ class JobSearchService:
                 ON CONFLICT DO NOTHING RETURNING id""",
                        (job_id, f"https://www.linkedin.com/jobs/view/{job_id}/", j.get("title") or "", j.get("company") or "", j.get("location") or "",
                         j["description"], bool(j.get("easy_apply")), parse_posted(j.get("posted")), search_slug,
-                        0 if off else None, f"Local fora do foco da busca: {j.get('location')}" if off else None, "discarded" if off else None))
+                        0 if off else None, f"{PLACE_REASON} da busca: {j.get('location')}" if off else None, "discarded" if off else None))
             added += bool(row)
+            if row and key and not off:
+                have[key] = row["id"]
         if search_slug:
             _rows("UPDATE public.job_searches SET last_run_at = NOW(), jobs_found = jobs_found + %s WHERE slug = %s", (added, search_slug))
         return added

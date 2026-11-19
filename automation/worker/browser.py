@@ -27,10 +27,15 @@ MCP_PORTS = {
     "ats": {"port": 8932, "cdp": 9223, "blocked": "https://www.linkedin.com;https://linkedin.com", "extra": LEAN_MCP},
     # a second agent on company sites at the same time (2026-11-17): same browser, but every session in its own fresh
     # context (--isolated), so the two agents never share or switch each other's tabs; no extra Chrome in memory
-    "ats2": {"port": 8933, "cdp": 9223, "blocked": "https://www.linkedin.com;https://linkedin.com", "extra": LEAN_MCP + ["--isolated"]},
 }
-# servers that live and die with a browser: the second company-site server follows the company-site browser
-MCP_COMPANIONS = {"ats": ["ats2"]}
+# more company-site agents in parallel (2026-11-19: "o mais rápido possível, só o limite do servidor"): slot n on port
+# 8931 + n, each session in its own isolated context of the same Chrome
+ATS_SLOTS = 4
+for _n in range(2, ATS_SLOTS + 1):
+    MCP_PORTS[f"ats{_n}"] = {"port": 8931 + _n, "cdp": 9223, "blocked": "https://www.linkedin.com;https://linkedin.com",
+                             "extra": LEAN_MCP + ["--isolated"]}
+# servers that live and die with a browser: the other company-site servers follow the company-site browser
+MCP_COMPANIONS = {"ats": [f"ats{_n}" for _n in range(2, ATS_SLOTS + 1)]}
 
 
 async def _stop_mcp(name: str) -> None:

@@ -2094,7 +2094,7 @@
         }
         const search = managedRun.info.payload.search || null;
         const seen = await managedApi('POST', '/automation/discovered/unseen', {
-            ids: cards.map((c) => c.id), search, cards: cards.map((c) => ({ id: c.id, location: c.location, posted: c.posted })) });
+            ids: cards.map((c) => c.id), search, cards: cards.map((c) => ({ id: c.id, title: c.title, company: c.company, location: c.location, posted: c.posted })) });
         if (!seen.ok) { managedStuck('unexpected_layout', errText(seen)); return; }
         const fresh = cards.filter((c) => seen.data.unseen.includes(c.id)).slice(0, Math.max(seen.data.budget, 0));
         const jobs = [];
