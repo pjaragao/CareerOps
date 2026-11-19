@@ -285,3 +285,10 @@ def test_the_runner_slot_picks_its_browser_and_tool_names():
     assert hermes_agent.slot_of(act, {}) == "ats" and hermes_agent.slot_of(act, {"CAREEROPS_RUNNER_SLOT": "2"}) == "ats2"
     assert hermes_agent.slot_of({"lane": "linkedin_write"}, {"CAREEROPS_RUNNER_SLOT": "2"}) == "linkedin"
     assert run.mcp_port("ats", {"CAREEROPS_RUNNER_SLOT": "2"}) == 8933 and run.mcp_port("ats", {}) == 8932
+
+
+def test_apply_runs_ask_lolo_for_the_free_hy4_flash_model():
+    assert hermes_agent.model_fields({}) == {"model": "tencent/hy4-flash:free", "provider": "nous"}
+    assert hermes_agent.model_fields({"CAREEROPS_HERMES_MODEL": "x/y:free", "CAREEROPS_HERMES_PROVIDER": "openrouter"}) == \
+        {"model": "x/y:free", "provider": "openrouter"}
+    assert hermes_agent.model_fields({"CAREEROPS_HERMES_MODEL": "default"}) == {}

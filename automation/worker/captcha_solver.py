@@ -1,0 +1,438 @@
+"""CAPTCHAs on company-site forms (2026-11-19), solved by the machine before anyone is called. Never on LinkedIn: the
+LinkedIn browser and lane never come here (account risk).
+
+Layers, cheapest first; each one stops as soon as the challenge is gone:
+1. the checkbox (reCAPTCHA v2, hCaptcha, Cloudflare Turnstile) clicked like a person in the real, headful Chrome: often
+   enough on its own;
+2. reCAPTCHA challenge by audio: Playwright-reCAPTCHA (github.com/Xewdy444/Playwright-reCAPTCHA, MIT), free Google
+   speech recognition;
+3. image grids (reCAPTCHA when the audio is refused, hCaptcha): the same library's image flow, with its paid CapSolver
+   call swapped for a vision model on Lolo (the free Nous model), reached through the backend (`vision`, below).
+
+A miss says so (`solved: False` with `error`) and the caller goes on as before: the live session on noVNC + WhatsApp,
+or the action goes to you. Nothing here ever submits a form."""
+from __future__ import annotations
+
+import asyncio
+import base64
+import io
+import logging
+import re
+import time
+from typing import Any, Awaitable, Callable, Dict, List, Optional
+
+from playwright.async_api import Error as PlaywrightError, Frame, Page
+
+log = logging.getLogger("worker.captcha")
+
+# (image png bytes, instruction, number of cells) -> cell numbers (1-based) or None when the model gave nothing usable
+Vision = Callable[[bytes, str, int], Awaitable[Optional[List[int]]]]
+
+RECAPTCHA_ANCHOR = re.compile(r"/recaptcha/(api2|enterprise)/anchor")
+RECAPTCHA_BFRAME = re.compile(r"/recaptcha/(api2|enterprise)/bframe")
+HCAPTCHA = re.compile(r"hcaptcha\.com/.*(checkbox|#frame=checkbox)")
+HCAPTCHA_CHALLENGE = re.compile(r"hcaptcha\.com/.*(challenge|#frame=challenge)")
+TURNSTILE = re.compile(r"challenges\.cloudflare\.com")
+SOLVE_TIMEOUT = 360   # seconds for one page, all layers together (a vision answer takes 13-25 s; a dynamic grid asks 5-10)
+
+
+def kind_of(page: Page) -> Optional[str]:
+    urls = [f.url or "" for f in page.frames]
+    if any(RECAPTCHA_ANCHOR.search(u) or RECAPTCHA_BFRAME.search(u) for u in urls):
+        return "recaptcha"
+    if any(HCAPTCHA.search(u) or HCAPTCHA_CHALLENGE.search(u) for u in urls):
+        return "hcaptcha"
+    if any(TURNSTILE.search(u) for u in urls):
+        return "turnstile"
+    return None
+
+
+async def _visible(frame: Frame) -> bool:
+    """The iframe is on screen at a usable size (Ashby, Greenhouse… load an invisible reCAPTCHA on every form: its frames
+    exist with no challenge, hidden or parked off screen)."""
+    try:
+        el = await frame.frame_element()
+        box = await el.bounding_box()
+        if not box or box["width"] < 30 or box["height"] < 30 or box["y"] < -500 or box["x"] < -500:
+            return False
+        return await el.is_visible()
+    except PlaywrightError:
+        return False
+
+
+async def _recaptcha_unchecked(frame: Frame) -> bool:
+    try:
+        return (await frame.locator("#recaptcha-anchor").get_attribute("aria-checked", timeout=1500)) != "true"
+    except PlaywrightError:
+        return False
+
+
+async def active_kind(page: Page) -> Optional[str]:
+    """The challenge waiting for an answer on this page, if any: a visible unchecked box or an open challenge."""
+    for f in page.frames:
+        u = f.url or ""
+        if RECAPTCHA_BFRAME.search(u) and await _visible(f):
+            return "recaptcha"
+        if RECAPTCHA_ANCHOR.search(u) and "size=invisible" not in u and await _visible(f) and await _recaptcha_unchecked(f):
+            return "recaptcha"
+        if HCAPTCHA_CHALLENGE.search(u) and await _visible(f):
+            return "hcaptcha"
+        if HCAPTCHA.search(u) and await _visible(f) and not await _token(page, "h-captcha-response"):
+            return "hcaptcha"
+        if TURNSTILE.search(u) and await _visible(f) and not await _token(page, "cf-turnstile-response"):
+            return "turnstile"
+    return None
+
+
+async def _token(page: Page, name: str) -> str:
+    """The response field the widget fills when it is passed (any of them on the page)."""
+    try:
+        return await page.evaluate("""(n) => Array.from(document.querySelectorAll(`[name="${n}"]`))
+                                             .map(e => e.value || '').find(v => v.length > 20) || ''""", name)
+    except PlaywrightError:
+        return ""
+
+
+async def _human_click(page: Page, frame: Frame, x_frac: float = 0.5, y_frac: float = 0.5, x_px: Optional[float] = None) -> bool:
+    """A mouse click on a point of an iframe, moved there in steps (a teleporting cursor is what bot checks look for)."""
+    try:
+        el = await frame.frame_element()
+        box = await el.bounding_box()
+    except PlaywrightError:
+        return False
+    if not box or box["width"] < 5:
+        return False
+    x = box["x"] + (x_px if x_px is not None else box["width"] * x_frac)
+    y = box["y"] + box["height"] * y_frac
+    await page.mouse.move(x - 120, y - 60)
+    await page.mouse.move(x, y, steps=18)
+    await page.wait_for_timeout(180)
+    await page.mouse.click(x, y, delay=90)
+    return True
+
+
+# ── 3. vision: numbered grid → cells ──
+
+def numbered_grid(png: bytes, rows: int, cols: int) -> bytes:
+    """The challenge image with its cells outlined and numbered 1..n, so the model answers with numbers, not positions."""
+    from PIL import Image, ImageDraw
+    img = Image.open(io.BytesIO(png)).convert("RGB")
+    if img.width < 300:
+        img = img.resize((img.width * 3, img.height * 3))
+    draw = ImageDraw.Draw(img)
+    cw, ch = img.width / cols, img.height / rows
+    for r in range(rows):
+        for c in range(cols):
+            x0, y0 = c * cw, r * ch
+            draw.rectangle([x0, y0, x0 + cw - 1, y0 + ch - 1], outline=(255, 0, 0), width=2)
+            n = str(r * cols + c + 1)
+            draw.rectangle([x0 + 2, y0 + 2, x0 + 4 + 9 * len(n), y0 + 16], fill=(255, 255, 0))
+            draw.text((x0 + 4, y0 + 3), n, fill=(0, 0, 0))
+    out = io.BytesIO()
+    img.save(out, format="PNG")
+    return out.getvalue()
+
+
+def _to_png(raw: bytes) -> bytes:
+    from PIL import Image
+    out = io.BytesIO()
+    Image.open(io.BytesIO(raw)).convert("RGB").save(out, format="PNG")
+    return out.getvalue()
+
+
+# ── 2 + 3. reCAPTCHA through Playwright-reCAPTCHA ──
+
+# The worker's Chrome speaks pt-BR; the library knows European Portuguese only for one label (2026-11-19, seen on
+# Google's demo: "Como alternativa, baixe o áudio como MP3"). The audio itself stays English under pt-BR: the library's
+# en-US default is right there (a pt-BR transcription gave nonsense and got the IP's audio blocked).
+PT_BR_LABELS = {"alternatively_download_audio_as_mp3": "Como alternativa, baixe o áudio como MP3"}
+
+
+def _teach_library() -> None:
+    from playwright_recaptcha.recaptchav2 import translations
+    for key, label in PT_BR_LABELS.items():
+        if label not in translations.ELEMENT_TRANSLATIONS[key]:
+            translations.ELEMENT_TRANSLATIONS[key] = tuple(translations.ELEMENT_TRANSLATIONS[key]) + (label,)
+
+
+# "click verify once there are none left" in the languages the worker's Chrome may show
+DYNAMIC_GRID = re.compile(r"none left|n[ãa]o houver mais|no quede ninguna|ya no haya|il n'y en a plus|keine mehr|"
+                          r"non ce ne sono più|geen meer", re.I)
+STATIC_RELOADS = 6
+
+
+def _recaptcha_solver_class():
+    from playwright_recaptcha.recaptchav2 import AsyncSolver
+    _teach_library()
+
+    class LoloSolver(AsyncSolver):
+        """Playwright-reCAPTCHA with its CapSolver call answered by Lolo's vision model: the library keeps the clicks,
+        reloads, "next"/"skip" and token details; the "which cells hold a bus?" answers come from Lolo."""
+
+        def __init__(self, page: Page, vision: Optional[Vision], **kw):
+            super().__init__(page, capsolver_api_key="lolo-vision", **kw)
+            self._vision = vision
+
+        async def _click_checkbox(self, recaptcha_box):
+            # a second pass (images after the audio) finds the challenge already open over the box: no click
+            if await _visible(recaptcha_box.bframe_frame):   # never the library's any_challenge_is_visible: it waits 30 s
+                return
+            return await super()._click_checkbox(recaptcha_box)
+
+        async def _is_dynamic(self, recaptcha_box) -> bool:
+            """A grid whose clicked pictures are replaced ("click verify once there are none left") needs a model answer
+            per round; a static one ("if there are none, click skip") is answered once."""
+            try:
+                desc = " ".join(await recaptcha_box.bframe_frame.locator(".rc-imageselect-desc-wrapper").all_inner_texts())
+            except PlaywrightError:
+                return False
+            return bool(DYNAMIC_GRID.search(desc))
+
+        async def _solve_image_challenge(self, recaptcha_box) -> None:
+            """Reload (free, ~2 s, no model) until a static grid comes, so the whole challenge is ONE model answer and one
+            Verify, inside the challenge's ~2 min life (2026-11-19: dynamic grids took 3-6 answers of 15-60 s and expired)."""
+            for _ in range(STATIC_RELOADS):
+                if not await self._is_dynamic(recaptcha_box):
+                    break
+                self._payload_response = None
+                try:
+                    async with self._page.expect_response(re.compile("/recaptcha/(api2|enterprise)/reload"), timeout=8000) as res:
+                        await recaptcha_box.new_challenge_button.click()
+                    await res.value
+                except PlaywrightError:
+                    break
+                for _ in range(40):
+                    if self._payload_response is not None:
+                        break
+                    await self._page.wait_for_timeout(200)
+                await self._page.wait_for_timeout(600)
+            if self._payload_response is None:   # the library reads the challenge picture from this response
+                img = await recaptcha_box.image_challenge.locator("img").first.get_attribute("src")
+                self._payload_response = await self._page.request.get(img)
+            return await super()._solve_image_challenge(recaptcha_box)
+
+        async def _solve_tiles(self, recaptcha_box, indexes):
+            """The library asks about each replacement tile alone (one model call per tile, 15-45 s each with the free
+            model: a dynamic grid ran out of time). Here: click, wait for the new pictures, then ONE question about the
+            whole grid per round, until the model sees no more."""
+            tiles = recaptcha_box.tile_selector
+            dynamic = False
+            for index in indexes:
+                tile = tiles.nth(index)
+                await tile.click()
+                await self._page.wait_for_timeout(250)
+                dynamic = dynamic or "rc-imageselect-dynamic-selected" in (await tile.get_attribute("class") or "")
+            if not dynamic:
+                return
+            target = await self._target(recaptcha_box)
+            n = await tiles.count()
+            side = 4 if n >= 16 else 3
+            for _ in range(6):
+                await self._wait_new_pictures(recaptcha_box)
+                try:
+                    shot = await recaptcha_box.bframe_frame.locator(".rc-imageselect-target").first.screenshot(timeout=5000)
+                except PlaywrightError:
+                    return
+                got = await self._vision(numbered_grid(shot, side, side),
+                                         f"The picture is split into {n} numbered cells. Which cells contain {target}? "
+                                         f"Include a cell when any part of {target} is in it.", n) or []
+                if not got:
+                    return
+                for i in got:
+                    if 1 <= i <= n:
+                        await tiles.nth(i - 1).click()
+                        await self._page.wait_for_timeout(250)
+
+        async def _wait_new_pictures(self, recaptcha_box) -> None:
+            """Replaced pictures fade in slowly on purpose: wait until no tile is still being swapped (max 7 s)."""
+            for _ in range(28):
+                await self._page.wait_for_timeout(250)
+                try:
+                    busy = await recaptcha_box.bframe_frame.locator(".rc-imageselect-dynamic-selected").count()
+                except PlaywrightError:
+                    return
+                if not busy:
+                    await self._page.wait_for_timeout(400)
+                    return
+
+        async def _target(self, recaptcha_box) -> str:
+            texts = await recaptcha_box.bframe_frame.locator("div").all_inner_texts()
+            lines = [t.strip() for t in (texts[0] if texts else "").split("\n") if t.strip()]
+            return lines[1] if len(lines) > 1 else (lines[0] if lines else "")
+
+        async def _get_capsolver_response(self, recaptcha_box, image_data: bytes) -> Optional[Dict[str, Any]]:
+            if self._vision is None:
+                return None
+            target = await self._target(recaptcha_box)
+            if not target:
+                return None
+            n = await recaptcha_box.tile_selector.count()
+            side = 4 if n >= 16 else 3
+            grid = numbered_grid(image_data, side, side)
+            got = await self._vision(grid, f"The picture is split into {side * side} numbered cells. Which cells contain {target}? "
+                                           f"Include a cell when any part of {target} is in it.", side * side)
+            return {"errorId": 0, "solution": {"objects": [i - 1 for i in (got or []) if 1 <= i <= side * side]}}
+
+    return LoloSolver
+
+
+# Google refuses the audio challenge to an IP after a few tries ("your computer or network may be sending automated
+# queries"); asking again only makes it worse. Once refused, the audio rests this long and the images go first.
+AUDIO_REST_SECONDS = 6 * 3600
+_audio_refused_at = 0.0
+
+
+async def _fresh_widget_if_refused(page: Page) -> None:
+    """A box that shows Google's refusal ("automated queries") stays refused even after a reload of the challenge; a new
+    widget (grecaptcha.reset: the form's fields are untouched) gets a fresh image challenge (seen on Google's demo)."""
+    bframe = next((f for f in page.frames if RECAPTCHA_BFRAME.search(f.url or "")), None)
+    if bframe is None:
+        return
+    try:
+        refused = await bframe.locator(".rc-doscaptcha-header, .rc-doscaptcha-body").first.is_visible()
+    except PlaywrightError:
+        refused = False
+    if not refused:
+        return
+    await page.evaluate("""() => { try { (window.grecaptcha && window.grecaptcha.enterprise || window.grecaptcha).reset(); }
+                                   catch (e) {} }""")
+    await page.wait_for_timeout(2000)
+
+
+async def solve_recaptcha(page: Page, vision: Optional[Vision]) -> Dict[str, Any]:
+    global _audio_refused_at
+    from playwright_recaptcha.errors import RecaptchaNotFoundError, RecaptchaRateLimitError, RecaptchaSolveError, CapSolverError
+    cls = _recaptcha_solver_class()
+    tried = []
+    audio_ok = time.monotonic() - _audio_refused_at > AUDIO_REST_SECONDS or not _audio_refused_at
+    # audio first: Google's speech recognition answers in seconds and is right when the language is (en-US even on a
+    # pt-BR page); Lolo's free vision model is right on the grids too, but takes 15-130 s an answer (2026-11-19), so it
+    # is the second chance, and the only one while the audio rests after a refusal.
+    passes = ([False] if audio_ok else []) + ([True] if vision is not None else [])
+    if not audio_ok:
+        tried.append("audio resting (refused earlier today)")
+    for image in passes:
+        await _fresh_widget_if_refused(page)
+        solver = cls(page, vision, attempts=3)
+        try:
+            token = await asyncio.wait_for(solver.solve_recaptcha(wait=True, wait_timeout=10, image_challenge=image), timeout=280 if image else 75)
+            if token:
+                return {"solved": True, "how": "image+vision" if image else "audio"}
+        except RecaptchaNotFoundError:
+            return {"solved": False, "error": "reCAPTCHA not found on the page"}
+        except RecaptchaRateLimitError:
+            if not image:
+                _audio_refused_at = time.monotonic()
+            tried.append("audio refused (rate limit)" if not image else "rate limit")
+        except (RecaptchaSolveError, CapSolverError, asyncio.TimeoutError) as e:
+            tried.append(f"{'image' if image else 'audio'}: {type(e).__name__}")
+        except Exception as e:   # the library meets a layout it does not know: say so, never guess on
+            tried.append(f"{'image' if image else 'audio'}: {type(e).__name__}: {str(e)[:120]}")
+        finally:
+            solver.close()
+    return {"solved": False, "error": "; ".join(tried) or "not solved"}
+
+
+# ── hCaptcha ──
+
+async def solve_hcaptcha(page: Page, vision: Optional[Vision]) -> Dict[str, Any]:
+    box = next((f for f in page.frames if HCAPTCHA.search(f.url or "")), None)
+    if box is not None and not await _token(page, "h-captcha-response"):
+        await _human_click(page, box, x_px=30)
+        for _ in range(16):
+            await page.wait_for_timeout(500)
+            if await _token(page, "h-captcha-response"):
+                return {"solved": True, "how": "checkbox"}
+    if vision is None:
+        return {"solved": False, "error": "hCaptcha challenge and no vision model"}
+    for round_ in range(4):
+        ch = next((f for f in page.frames if HCAPTCHA_CHALLENGE.search(f.url or "")), None)
+        if ch is None:
+            break
+        try:
+            prompt = (await ch.locator(".prompt-text").first.inner_text(timeout=4000)).strip()
+            tiles = ch.locator(".task-image")
+            n = await tiles.count()
+        except PlaywrightError:
+            return {"solved": False, "error": "hCaptcha challenge of a kind not handled (no prompt)"}
+        if n not in (9, 16):
+            return {"solved": False, "error": f"hCaptcha challenge of a kind not handled ({n} tiles)"}
+        side = 3 if n == 9 else 4
+        try:
+            shot = await ch.locator(".task-grid").first.screenshot(timeout=6000)
+        except PlaywrightError:
+            return {"solved": False, "error": "hCaptcha grid not visible"}
+        got = await vision(numbered_grid(shot, side, side), f"The picture is split into {n} numbered cells. {prompt} "
+                                                            f"Answer with the numbers of the matching cells.", n)
+        for i in got or []:
+            if 1 <= i <= n:
+                await tiles.nth(i - 1).click(timeout=4000)
+                await page.wait_for_timeout(250)
+        try:
+            await ch.locator(".button-submit").first.click(timeout=4000)
+        except PlaywrightError:
+            pass
+        await page.wait_for_timeout(2500)
+        if await _token(page, "h-captcha-response"):
+            return {"solved": True, "how": f"vision ({round_ + 1} rounds)"}
+    return {"solved": bool(await _token(page, "h-captcha-response")), "error": "hCaptcha not passed after 4 rounds"}
+
+
+# ── Cloudflare Turnstile (widget or the full-page check) ──
+
+async def solve_turnstile(page: Page) -> Dict[str, Any]:
+    for attempt in range(3):
+        if await _token(page, "cf-turnstile-response") or await active_kind(page) != "turnstile":
+            return {"solved": True, "how": "checkbox" if attempt else "passed on its own"}
+        frame = next((f for f in page.frames if TURNSTILE.search(f.url or "")), None)
+        if frame is None:
+            break
+        await page.wait_for_timeout(2500)   # it often passes alone in a real browser: give it the chance first
+        if await _token(page, "cf-turnstile-response"):
+            return {"solved": True, "how": "passed on its own"}
+        await _human_click(page, frame, x_px=30)
+        for _ in range(12):
+            await page.wait_for_timeout(500)
+            if await _token(page, "cf-turnstile-response") or await active_kind(page) != "turnstile":
+                return {"solved": True, "how": "checkbox"}
+    return {"solved": False, "error": "Turnstile not passed after 3 clicks"}
+
+
+async def solve(page: Page, vision: Optional[Vision] = None) -> Dict[str, Any]:
+    """Tries every layer on this page. {"solved", "kind", "how"|"error"}; {"solved": True, "kind": None} when there is
+    nothing to solve."""
+    kind = await active_kind(page)
+    if kind is None:
+        return {"solved": True, "kind": None, "how": "no open challenge on the page"}
+    try:
+        if kind == "recaptcha":
+            out = await asyncio.wait_for(solve_recaptcha(page, vision), timeout=SOLVE_TIMEOUT)
+        elif kind == "hcaptcha":
+            out = await asyncio.wait_for(solve_hcaptcha(page, vision), timeout=SOLVE_TIMEOUT)
+        else:
+            out = await asyncio.wait_for(solve_turnstile(page), timeout=SOLVE_TIMEOUT)
+    except asyncio.TimeoutError:
+        out = {"solved": False, "error": f"took more than {SOLVE_TIMEOUT}s"}
+    except PlaywrightError as e:
+        out = {"solved": False, "error": f"browser: {str(e)[:200]}"}
+    out["kind"] = kind
+    log.info("captcha %s on %s: %s", kind, (page.url or "")[:120], out)
+    return out
+
+
+def backend_vision(api) -> Vision:
+    """The vision model through the backend (POST /automation/captcha/vision → Lolo): the worker holds no AI key."""
+    async def ask(png: bytes, instruction: str, cells: int) -> Optional[List[int]]:
+        try:
+            res = await api.call("POST", "/automation/captcha/vision", timeout=150,
+                                 json={"image_b64": base64.b64encode(png).decode(), "instruction": instruction, "cells": cells})
+        except Exception as e:
+            log.warning("vision call failed: %s", e)
+            return None
+        if not res or res.get("error"):
+            return None
+        return [int(i) for i in res.get("cells") or [] if isinstance(i, (int, float))]
+    return ask
+
+
+__all__ = ["solve", "kind_of", "active_kind", "backend_vision", "numbered_grid"]

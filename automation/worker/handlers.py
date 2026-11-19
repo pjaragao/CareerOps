@@ -10,7 +10,7 @@ from typing import Dict, Optional
 
 from playwright.async_api import Error as PlaywrightError, Page
 
-from . import ats_adapters, clicks, connect_engine, safety, verify
+from . import ats_adapters, captcha_solver, clicks, connect_engine, safety, verify
 from .api import Api
 from .browser import Browsers
 
@@ -104,9 +104,33 @@ class Runner:
             _, title, text = await self._page_state(page)
             if LIVE_CAPTCHA_RE.search(f"{title}\n{text[:4000]}"):
                 return True
-            return safety.has_captcha_frame([f.url for f in page.frames])
+            # an open challenge only: the invisible reCAPTCHA many forms load has frames and nothing to solve (2026-11-19)
+            return bool(await captcha_solver.active_kind(page))
         except PlaywrightError:
             return False
+
+    async def solve_captcha(self, page: Page, action: dict) -> bool:
+        """Company sites only (2026-11-19): the solver (checkbox, audio, Lolo's vision model) tries first; True when the
+        challenge is gone. LinkedIn never gets here: a challenge there stops the lane, as before."""
+        if action.get("lane") != "ats":
+            return False
+        out = await captcha_solver.solve(page, captcha_solver.backend_vision(self.api))
+        if out.get("kind") is None:
+            return not await self.captcha_present(page)
+        await self.api.post(f"/automation/actions/{action['id']}/events", {"source": "worker", "event": "captcha_auto",
+                                                                             "data": {k: out.get(k) for k in ("solved", "kind", "how", "error")}})
+        if not out.get("solved"):
+            return False
+        await page.wait_for_timeout(1500)
+        return not await self.captcha_present(page)
+
+    async def pass_captcha(self, page: Page, action: dict) -> bool:
+        """The solver first; then, in a live session, you on noVNC. False: still blocked (the caller reports it)."""
+        if await self.solve_captcha(page, action):
+            return True
+        if action.get("live_captcha"):
+            return await self.wait_for_human(page, action)
+        return False
 
     async def wait_for_human(self, page: Page, action: dict) -> bool:
         """Live CAPTCHA session: the tab stays open on the noVNC screen, you are told on WhatsApp, and the worker waits
@@ -218,10 +242,13 @@ class Runner:
             page.on("popup", lambda p: external.put_nowait(p))
             response = await self.open(page, action)
             stop = await self.stop_sign(page, response.status if response else None)
-            if action.get("live_captcha") and (stop == "captcha" or (not stop and await self.captcha_present(page))):
-                if not await self.wait_for_human(page, action):
-                    return
-                stop = await self.stop_sign(page)
+            if (action["lane"] == "ats" or action.get("live_captcha")) and (stop == "captcha" or (not stop and await self.captcha_present(page))):
+                if await self.pass_captcha(page, action):
+                    stop = await self.stop_sign(page)
+                elif action.get("live_captcha"):
+                    return   # wait_for_human already escalated it
+                else:
+                    stop = stop or "captcha"
             if stop:
                 if action["lane"] == "ats" and stop in ("account_required", "email_verification"):
                     self.kept[action["id"]] = page
@@ -312,8 +339,12 @@ class Runner:
                 if status in ("needs_user", "escalated") and page.url and not page.is_closed():
                     await self.artifact(page, action_id, status)
                 return
-            if action.get("live_captcha") and await self.captcha_present(page):   # live session: you solve it, then on
-                if not await self.wait_for_human(page, action):
+            if (action["lane"] == "ats" or action.get("live_captcha")) and await self.captcha_present(page):
+                # the solver first, then (live session) you on noVNC; still blocked: reported below as a stop sign
+                if not await self.pass_captcha(page, action):
+                    if action.get("live_captcha"):
+                        return
+                    await self.report_stop(page, action, "captcha")
                     return
                 form_since = time.monotonic()
                 continue
@@ -397,8 +428,10 @@ class Runner:
             return "stop"
         await res.element.click(timeout=8000)
         await page.wait_for_timeout(VERIFY_SETTLE_SECONDS * 1000)
-        if action.get("live_captcha") and await self.captcha_present(page):
-            if not await self.wait_for_human(page, action):
+        if (action["lane"] == "ats" or action.get("live_captcha")) and await self.captcha_present(page):
+            if not await self.pass_captcha(page, action):
+                if not action.get("live_captcha"):
+                    await self._hand_on(page, action, "CAPTCHA depois do envio que o solver não passou")
                 return "stop"
             await page.wait_for_timeout(VERIFY_SETTLE_SECONDS * 1000)
         errors = await ats_adapters.page_errors(page)

@@ -98,6 +98,7 @@ services:
       - "127.0.0.1:${CAREEROPS_MCP_LINKEDIN_PORT:-8931}:8931"
       - "127.0.0.1:${CAREEROPS_MCP_ATS_PORT:-8932}:8932"
       - "127.0.0.1:${CAREEROPS_MCP_ATS2_PORT:-8933}:8933"   # second company-site agent, in parallel
+      - "127.0.0.1:${CAREEROPS_CAPTCHA_PORT:-8940}:8940"   # CAPTCHA solver for the apply agent (worker/captcha_server.py)
     volumes:
       - careerops_browser:/data
       - careerops_output:/app/output

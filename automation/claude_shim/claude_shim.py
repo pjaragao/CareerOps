@@ -70,6 +70,61 @@ def run_hermes(prompt: str) -> str:
     return text
 
 
+# Model "hermes-vision" (2026-11-19): the CAPTCHA solver's image questions. The messages go as they are (with the image)
+# to Lolo's API, pinned to a free Nous model that sees images; nothing is flattened to text.
+VISION_MODEL = os.environ.get("HERMES_VISION_MODEL", "tencent/hy4-flash:free")
+VISION_PROVIDER = os.environ.get("HERMES_VISION_PROVIDER", "nous")
+
+
+LOCAL_VISION_TIMEOUT = int(os.environ.get("LOCAL_VISION_TIMEOUT", "25"))
+
+
+def run_local_vision(messages: list, env: dict) -> str:
+    """A local OpenAI-compatible vision model first, when the runner env names one (CAREEROPS_VISION_LOCAL_URL/_KEY/_MODEL,
+    e.g. the S22's Gemma once its server takes images): seconds instead of the free tier's 15-130 s. An answer with no
+    [list] (2026-11-19: the S22 server is text-only and says "Please provide the picture") counts as none."""
+    import urllib.request
+    url = env.get("CAREEROPS_VISION_LOCAL_URL")
+    if not url:
+        return ""
+    body = {"model": env.get("CAREEROPS_VISION_LOCAL_MODEL") or "local", "messages": messages, "temperature": 0, "max_tokens": 60}
+    req = urllib.request.Request(url.rstrip("/") + "/chat/completions", data=json.dumps(body).encode("utf-8"), method="POST",
+                                 headers={"Authorization": f"Bearer {env.get('CAREEROPS_VISION_LOCAL_KEY') or ''}",
+                                          "Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=LOCAL_VISION_TIMEOUT) as res:
+            data = json.loads(res.read().decode("utf-8"))
+    except Exception as e:
+        print(f"local vision failed: {e}", flush=True)
+        return ""
+    text = (((data.get("choices") or [{}])[0].get("message") or {}).get("content") or "").strip()
+    return text if "[" in text else ""
+
+
+def run_hermes_vision(messages: list) -> str:
+    import urllib.request
+    env = _hermes_env()
+    local = run_local_vision([m for m in (messages or []) if isinstance(m, dict)], env)
+    if local:
+        return local
+    url, key = env.get("CAREEROPS_HERMES_URL"), env.get("CAREEROPS_HERMES_KEY")
+    if not url or not key:
+        raise RuntimeError("Hermes not configured (CAREEROPS_HERMES_URL/KEY in the runner env)")
+    rules = HERMES_RULES + " You can see the image in the message."
+    msgs = [{"role": "system", "content": rules}] + [m for m in (messages or []) if isinstance(m, dict)]
+    body = {"model": VISION_MODEL, "provider": VISION_PROVIDER, "messages": msgs, "stream": False,
+            "model_options": {"reasoning_effort": "none"}}   # 13 s vs 15 s an image, same answers (2026-11-19)
+    req = urllib.request.Request(url.rstrip("/") + "/v1/chat/completions", data=json.dumps(body).encode("utf-8"), method="POST",
+                                 headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"})
+    with _hermes_slots:
+        with urllib.request.urlopen(req, timeout=HERMES_TIMEOUT) as res:
+            data = json.loads(res.read().decode("utf-8"))
+    text = (((data.get("choices") or [{}])[0].get("message") or {}).get("content") or "").strip()
+    if not text:
+        raise RuntimeError(f"Hermes vision gave no text: {str(data)[:200]}")
+    return text
+
+
 def split_model(model_id: str) -> tuple:
     name, _, tail = (model_id or DEFAULT_MODEL).rpartition("-")
     return (name, tail) if tail in EFFORTS and name else (model_id or DEFAULT_MODEL, "")
@@ -131,7 +186,9 @@ class Handler(BaseHTTPRequestHandler):
         try:
             body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
             model_id = body.get("model") or DEFAULT_MODEL
-            if model_id.startswith("hermes"):
+            if model_id == "hermes-vision":
+                text = run_hermes_vision(body.get("messages"))
+            elif model_id.startswith("hermes"):
                 text = run_hermes(render(body.get("messages")))
             else:
                 text = run_claude(render(body.get("messages")), model_id)

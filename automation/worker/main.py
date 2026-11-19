@@ -12,6 +12,7 @@ import httpx
 
 from .api import Api
 from .browser import Browsers
+from .captcha_server import CaptchaServer
 from .handlers import ARTIFACTS, RUN_DIR, Runner, browser_of
 from .safety import LINKEDIN_LOGGED_OUT
 from urllib.parse import urlparse
@@ -125,7 +126,8 @@ class Worker:
             return
         await self.browsers.start()
         loops = [self.lane_loop(lane) for lane in ("linkedin_read", "linkedin_write", "ats")]
-        await asyncio.gather(*loops, self.session_loop(), self.housekeeping_loop())
+        captcha = CaptchaServer(self.browsers, self.api)   # the apply agent's solve_captcha tool (company sites only)
+        await asyncio.gather(*loops, self.session_loop(), self.housekeeping_loop(), captcha.serve(self.stopping))
         log.info("stopping: waiting for %d running action(s)", len(self.running))
         if self.running:
             await asyncio.wait(self.running, timeout=100)

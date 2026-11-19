@@ -80,7 +80,7 @@ def test_careerops_mcp_server_dispatch_roundtrip(monkeypatch):
     with ats_helpers.CareerOpsMcpServer({"CAREEROPS_ENV_FILES": ""}) as srv:
         with hydrogen_agent.McpHttpClient(srv.url) as mcp:
             names = {t["name"] for t in mcp.list_tools()}
-            assert names == {"check_email", "site_account", "write_answer", "lookup_answer", "wait_for_human", "ask_candidate"}
+            assert names == {"check_email", "site_account", "write_answer", "lookup_answer", "wait_for_human", "ask_candidate", "solve_captcha"}
             out_email, err1 = mcp.call_tool("check_email", {"domain": "jobs.ashbyhq.com"})
             assert not err1 and json.loads(out_email)["code"] == "998877"
             out_acc, err2 = mcp.call_tool("site_account", {"op": "get_or_create", "domain": "jobs.ashbyhq.com"})
@@ -664,3 +664,45 @@ def test_hydrogen_agent_fails_over_on_502_quota_and_promotes_working_model():
         hy_srv.shutdown()
         hy_srv.server_close()
 
+
+
+def test_solve_captcha_tool_calls_the_worker_and_stops_after_three(monkeypatch):
+    seen = []
+
+    class Res:
+        def __init__(self, body):
+            self.body = body
+
+        def read(self):
+            return json.dumps(self.body).encode()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    def fake_urlopen(req, timeout=0):
+        seen.append((req.full_url, req.headers.get("X-careerops-token"), json.loads(req.data)))
+        return Res({"solved": True, "kind": "recaptcha", "how": "image+vision"})
+
+    events = []
+    monkeypatch.setattr(ats_helpers.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(ats_helpers, "_api_call", lambda path, payload, env, timeout=15: events.append((path, payload)) or {})
+    ctx = {"_action_id": 42}
+    env = {"CAREEROPS_WORKER_TOKEN": "wt"}
+    for _ in range(3):
+        assert ats_helpers.solve_captcha("https://jobs.ashbyhq.com/x", ctx, env)["solved"] is True
+    assert seen[0] == ("http://127.0.0.1:8940/solve", "wt", {"url": "https://jobs.ashbyhq.com/x"})
+    assert events[0] == ("/automation/actions/42/events", {"source": "claude", "event": "captcha_auto",
+                                                          "data": {"solved": True, "kind": "recaptcha", "how": "image+vision", "error": None}})
+    fourth = ats_helpers.solve_captcha("https://jobs.ashbyhq.com/x", ctx, env)
+    assert fourth["solved"] is False and len(seen) == 3
+
+
+def test_solve_captcha_is_a_company_form_tool_only():
+    assert "mcp__careerops__solve_captcha" in run.ATS_EXTRA_TOOLS
+    assert "mcp__careerops__solve_captcha" not in run.LINKEDIN_APPLY_TOOLS
+    li = {"id": 1, "lane": "linkedin_write", "kind": "apply", "target_url": "https://www.linkedin.com/jobs/view/1"}
+    assert run.audit([{"name": "mcp__careerops__solve_captcha", "input": {}}], li)
+    assert not run.audit([{"name": "mcp__careerops__solve_captcha", "input": {}}], ATS_ACTION)

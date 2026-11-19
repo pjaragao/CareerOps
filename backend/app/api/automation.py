@@ -359,6 +359,20 @@ async def save_recipe(host: str, req: RecipeIn):
     return {"ok": True}
 
 
+class CaptchaVisionIn(BaseModel):
+    image_b64: str = Field(..., max_length=3_000_000)
+    instruction: str = Field(..., max_length=600)
+    cells: int = Field(9, ge=1, le=16)
+
+
+@router.post("/captcha/vision", dependencies=[Depends(require_worker)])
+def captcha_vision(req: CaptchaVisionIn):
+    """The CAPTCHA solver's image question (worker/captcha_solver.py), answered by Lolo's vision model through the host
+    shim (model "hermes-vision"): the worker holds no AI key. {"cells": [1-based numbers]} or {"error"}."""
+    from app.services.captcha_vision import ask_cells
+    return ask_cells(req.image_b64, req.instruction, req.cells)
+
+
 @router.post("/actions/{action_id}/ready", dependencies=[Depends(require_worker)])
 async def ready(action_id: int, req: ReadyIn):
     return _found(Auto.ready_to_submit(action_id, req.fields))

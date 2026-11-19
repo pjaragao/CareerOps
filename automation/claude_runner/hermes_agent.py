@@ -79,6 +79,20 @@ def slot_of(action: dict, env: dict) -> str:
     return "ats2" if str(env.get("CAREEROPS_RUNNER_SLOT") or "1") == "2" else "ats"
 
 
+# The apply subagent's model (2026-11-19, user: "a parte de apply num subagent com o modelo free da Nous hy4 flash"):
+# every apply run asks Lolo for it, while Lolo's own default model (WhatsApp, cron) stays as configured there.
+# CAREEROPS_HERMES_MODEL=default gives the runs Lolo's default back.
+APPLY_MODEL = "tencent/hy4-flash:free"
+APPLY_PROVIDER = "nous"
+
+
+def model_fields(env: dict) -> dict:
+    model = (env.get("CAREEROPS_HERMES_MODEL") or APPLY_MODEL).strip()
+    if model.lower() in ("default", "lolo", "off"):
+        return {}
+    return {"model": model, "provider": (env.get("CAREEROPS_HERMES_PROVIDER") or APPLY_PROVIDER).strip()}
+
+
 PREFIXES = {"ats": ("mcp__careerops_browser__", "mcp__careerops__"), "ats2": ("mcp__careerops_browser2__", "mcp__careerops2__"),
             "linkedin": ("mcp__careerops_linkedin__", "mcp__careerops_li__")}
 
@@ -103,6 +117,7 @@ def run_hermes(action: dict, system: str, prompt: str, env: dict, timeout_s: int
             "instructions": system,
             "session_id": f"careerops-apply-{action.get('id')}-{action.get('run_id') or int(time.time())}",
             "model_options": {"reasoning_effort": "low"},   # a form needs steps, not long thinking: fewer output tokens
+            **model_fields(env),
         })
         run_id = started.get("run_id") or ""
         if not run_id:
@@ -137,5 +152,5 @@ def run_hermes(action: dict, system: str, prompt: str, env: dict, timeout_s: int
             calls = _http("POST", f"{bridge}/end", btoken, {"slot": slot_of(action, env)}).get("calls") or []
         except (OSError, ValueError):
             calls = []
-    parsed = to_parsed(calls, status, env.get("CAREEROPS_HERMES_MODEL") or "lolo")
+    parsed = to_parsed(calls, status, model_fields(env).get("model") or "lolo")
     return parsed, 0 if status.get("status") == "completed" else 1

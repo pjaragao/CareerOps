@@ -172,13 +172,14 @@ def question_key(text: str) -> str:
 
 
 def ensure_schema() -> None:
-    """Applies migrations_v15.sql through migrations_v23.sql (idempotent)."""
+    """Applies migrations_v15.sql through migrations_v24.sql (idempotent)."""
     folder = Path(__file__).resolve().parent.parent / "db" / "migrations"
     conn = get_db_connection()
     try:
         with conn.cursor() as cur:
             for name in ("migrations_v15.sql", "migrations_v17.sql", "migrations_v18.sql", "migrations_v19.sql",
-                         "migrations_v20.sql", "migrations_v21.sql", "migrations_v22.sql", "migrations_v23.sql"):
+                         "migrations_v20.sql", "migrations_v21.sql", "migrations_v22.sql", "migrations_v23.sql",
+                         "migrations_v24.sql"):
                 cur.execute((folder / name).read_text(encoding="utf-8"))
         conn.commit()
     finally:
@@ -1354,7 +1355,7 @@ class AutomationService:
         from app.services.site_service import SiteService
         block = SiteService.human_block(action.get("target_url") or "") if not (action.get("result") or {}).get("live_captcha") else None
         if block:
-            return ("captcha", "Este site pediu CAPTCHA/verificação anti-robô nas últimas tentativas: resolva pelo noVNC e use Tentar de novo.", False)
+            return ("captcha", "Este site pediu CAPTCHA e o solver automático não passou nas últimas tentativas: resolva pelo noVNC e use Tentar de novo.", False)
         key = AutomationService._url_key(action.get("target_url") or "")
         if key:
             cur.execute("""SELECT id, status, target_url FROM public.automation_actions

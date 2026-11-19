@@ -709,6 +709,37 @@ def write_answer(question: str, context: Dict[str, Any], env: Dict[str, str]) ->
     return {"text": text}
 
 
+CAPTCHA_SOLVE_TIMEOUT = 390
+
+
+def solve_captcha(url: str, context: Dict[str, Any], env: Dict[str, str]) -> Dict[str, Any]:
+    """The worker's CAPTCHA solver (worker/captcha_server.py, 127.0.0.1:8940 on this host) on the company-site browser.
+    At most 3 calls per task: a challenge that keeps coming back is a site that wants a person."""
+    tries = int(context.get("_captcha_tries") or 0)
+    if tries >= 3:
+        return {"solved": False, "error": "already tried 3 times in this task: stop with needs_user (CAPTCHA)"}
+    context["_captcha_tries"] = tries + 1
+    port = int(env.get("CAREEROPS_CAPTCHA_PORT") or 8940)
+    token = env.get("CAREEROPS_WORKER_TOKEN") or ""
+    req = urllib.request.Request(f"http://127.0.0.1:{port}/solve", data=json.dumps({"url": url[:500]}).encode(), method="POST",
+                                 headers={"Content-Type": "application/json", "X-CareerOps-Token": token})
+    try:
+        with urllib.request.urlopen(req, timeout=CAPTCHA_SOLVE_TIMEOUT) as res:
+            out = json.loads(res.read().decode("utf-8") or "{}")
+    except urllib.error.HTTPError as e:
+        out = {"solved": False, "error": f"solver HTTP {e.code}"}
+    except (OSError, ValueError) as e:
+        out = {"solved": False, "error": f"solver unreachable: {e}"}
+    action_id = context.get("_action_id")
+    if action_id:
+        try:
+            _api_call(f"/automation/actions/{action_id}/events", {"source": "claude", "event": "captcha_auto",
+                                                                  "data": {k: out.get(k) for k in ("solved", "kind", "how", "error")}}, env)
+        except Exception:
+            pass
+    return out
+
+
 class CareerOpsMcpServer:
     """Ephemeral localhost Streamable HTTP MCP server exposing email & credential tools."""
 
@@ -725,6 +756,11 @@ class CareerOpsMcpServer:
                 },
                 "required": ["domain"],
             },
+        },
+        {
+            "name": "solve_captcha",
+            "description": "A CAPTCHA (reCAPTCHA, hCaptcha, Cloudflare Turnstile) on the company form: the CareerOps solver passes it in the browser (checkbox, audio, image model; up to ~6 min). Pass the current page URL. Returns {solved, kind, how|error}. After it returns, take one snapshot and continue. Call it at most twice per page.",
+            "inputSchema": {"type": "object", "properties": {"url": {"type": "string", "description": "The page the CAPTCHA is on"}}},
         },
         {
             "name": "wait_for_human",
@@ -795,6 +831,8 @@ class CareerOpsMcpServer:
                 since_minutes=int(args.get("since_minutes") or 20),
                 env=self.env,
             )
+        if name == "solve_captcha":
+            return solve_captcha(str(args.get("url") or ""), self.context, self.env)
         if name == "wait_for_human":
             action_id = (self.context or {}).get("_action_id")
             if action_id and not self.context.get("_told"):
