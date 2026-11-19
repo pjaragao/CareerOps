@@ -831,8 +831,10 @@ class AutomationService:
         AutomationService.add_event(action_id, "user", "retry", {})
         # asking again also gives the Claude routine a new attempt: escalate() hands a form to it only while claude_attempts < 1,
         # so without this a retried form came straight back to you (2026-11-16: 18 items in a row)
+        # and it no longer expires: the approval window was for your first OK, not for a retry you asked for now (2026-11-19:
+        # 42 of 91 retried CAPTCHA items, approved over a week ago, expired a minute after going back to the queue)
         return _one("""UPDATE public.automation_actions SET status = %s, error_code = NULL, error_text = NULL, questions = '[]', run_now = TRUE,
-                        claude_attempts = 0, updated_at = NOW() WHERE id = %s RETURNING *""", (status, action_id))
+                        claude_attempts = 0, expires_at = NULL, updated_at = NOW() WHERE id = %s RETURNING *""", (status, action_id))
 
     @staticmethod
     def cancel(action_id: int) -> Optional[dict]:

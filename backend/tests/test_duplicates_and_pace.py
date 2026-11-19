@@ -89,3 +89,11 @@ def test_applications_keep_their_own_short_gap(db, monkeypatch, add_job):
     _one("UPDATE public.automation_actions SET approved_at = NOW() WHERE id = %s RETURNING id", (a["id"],))
     assert Auto.claim("linkedin_write", "test")["action"]["id"] == a["id"]
     assert timedelta(seconds=50) < Auto.state()["next_write_at"] - now() <= timedelta(minutes=3, seconds=5)
+
+
+def test_a_retry_you_ask_for_does_not_expire_a_minute_later(db, sql):
+    a = Auto.create_action("follow", "f1", "Empresa", "https://www.linkedin.com/company/f1", {"url": "f1"}, status="needs_user")
+    sql("UPDATE public.automation_actions SET expires_at = NOW() - INTERVAL '1 day' WHERE id = %s", (a["id"],))
+    Auto.retry(a["id"])
+    Auto.housekeeping()
+    assert _one("SELECT status, expires_at FROM public.automation_actions WHERE id = %s", (a["id"],)) == {"status": "queued", "expires_at": None}
