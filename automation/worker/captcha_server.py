@@ -12,6 +12,7 @@ import hmac
 import json
 import logging
 import os
+import re
 from typing import Optional
 from urllib.parse import urlparse
 
@@ -22,6 +23,9 @@ log = logging.getLogger("worker.captcha_server")
 PORT = int(os.environ.get("CAPTCHA_SERVER_PORT", "8940"))
 ATS_CDP = "http://127.0.0.1:9223"
 MAX_BODY = 8192
+OPEN_WAIT_ROUNDS = 10   # seconds a challenge may take to open after the agent's click
+BLOCKED_PAGE = re.compile(r"you have been blocked|access denied|error 1020|request blocked|you don't have permission to access|"
+                          r"acesso negado|voc[eê] foi bloqueado", re.I)
 
 
 def _host(url: str) -> str:
@@ -42,9 +46,26 @@ class CaptchaServer:
             try:
                 pages = [p for c in browser.contexts for p in c.pages if not p.is_closed()]
                 want = _host(url)
-                with_captcha = [p for p in pages if captcha_solver.kind_of(p) and await captcha_solver.active_kind(p)]
+                # the agent asks right after its click on "submit": the challenge takes a few seconds to open (2026-11-19,
+                # Ashby: "no challenge" at once, the box open a moment later)
+                with_captcha = []
+                for _ in range(OPEN_WAIT_ROUNDS):
+                    with_captcha = [p for p in pages if captcha_solver.kind_of(p) and await captcha_solver.active_kind(p)]
+                    if with_captcha:
+                        break
+                    await asyncio.sleep(1)
                 same_host = [p for p in with_captcha if want and _host(p.url) == want]
                 if not with_captcha:
+                    # a firewall's block page is no challenge: say so, so the agent stops at once instead of asking again
+                    # (2026-11-19, NatWest: Cloudflare "Sorry, you have been blocked")
+                    for p in [p for p in pages if want and _host(p.url) == want]:
+                        try:
+                            text = await p.evaluate("() => (document.body && document.body.innerText || '').slice(0, 1500)")
+                        except Exception:
+                            continue
+                        if BLOCKED_PAGE.search(text or ""):
+                            return {"solved": False, "kind": "blocked",
+                                    "error": "the site's firewall blocked this browser (not a CAPTCHA, nothing to solve): stop with needs_user and say 'bloqueado pelo site'"}
                     return {"solved": False, "kind": None, "error": "no open CAPTCHA challenge on any company-site tab (already passed, or a full-page check: take a snapshot)"}
                 if not same_host and len(with_captcha) > 1:
                     return {"solved": False, "error": f"CAPTCHA on {len(with_captcha)} tabs, none on {want or 'the given page'}"}

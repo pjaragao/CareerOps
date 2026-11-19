@@ -30,8 +30,9 @@ Vision = Callable[[bytes, str, int], Awaitable[Optional[List[int]]]]
 
 RECAPTCHA_ANCHOR = re.compile(r"/recaptcha/(api2|enterprise)/anchor")
 RECAPTCHA_BFRAME = re.compile(r"/recaptcha/(api2|enterprise)/bframe")
-HCAPTCHA = re.compile(r"hcaptcha\.com/.*(checkbox|#frame=checkbox)")
-HCAPTCHA_CHALLENGE = re.compile(r"hcaptcha\.com/.*(challenge|#frame=challenge)")
+# hCaptcha also comes from a platform's own domain (2026-11-19, Recruitee: captcha-assets.recruiteecdn.com/captcha/v1/…)
+HCAPTCHA = re.compile(r"(hcaptcha\.com/.*checkbox|/captcha/v1/.*#frame=checkbox)")
+HCAPTCHA_CHALLENGE = re.compile(r"(hcaptcha\.com/.*challenge|/captcha/v1/.*#frame=challenge)")
 TURNSTILE = re.compile(r"challenges\.cloudflare\.com")
 SOLVE_TIMEOUT = 360   # seconds for one page, all layers together (a vision answer takes 13-25 s; a dynamic grid asks 5-10)
 
