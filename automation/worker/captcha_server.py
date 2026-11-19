@@ -24,6 +24,7 @@ PORT = int(os.environ.get("CAPTCHA_SERVER_PORT", "8940"))
 ATS_CDP = "http://127.0.0.1:9223"
 MAX_BODY = 8192
 OPEN_WAIT_ROUNDS = 10   # seconds a challenge may take to open after the agent's click
+LOCK_WAIT = 45          # seconds a caller waits for another tab's solve
 BLOCKED_PAGE = re.compile(r"you have been blocked|access denied|error 1020|request blocked|you don't have permission to access|"
                           r"acesso negado|voc[eê] foi bloqueado", re.I)
 
@@ -41,46 +42,57 @@ class CaptchaServer:
     async def solve_url(self, url: str) -> dict:
         if not self.browsers.is_open("ats"):
             return {"solved": False, "error": "the company-site browser is not open"}
-        async with self.lock:
-            browser = await self.browsers.playwright.chromium.connect_over_cdp(ATS_CDP, timeout=15000)
+        # one solve at a time (one mouse); a caller that would wait long is told to come back instead of hanging past its
+        # own timeout (2026-11-19: 4 agents queued behind 6-minute image runs and all timed out)
+        try:
+            await asyncio.wait_for(self.lock.acquire(), timeout=LOCK_WAIT)
+        except asyncio.TimeoutError:
+            return {"solved": False, "busy": True, "error": "solver busy with another tab: wait 1 minute and call solve_captcha again"}
+        try:
+            return await self._solve_locked(url)
+        finally:
+            self.lock.release()
+
+    async def _solve_locked(self, url: str) -> dict:
+        browser = await self.browsers.playwright.chromium.connect_over_cdp(ATS_CDP, timeout=15000)
+        try:
+            pages = [p for c in browser.contexts for p in c.pages if not p.is_closed()]
+            want = _host(url)
+            # the agent asks right after its click on "submit": the challenge takes a few seconds to open (2026-11-19,
+            # Ashby: "no challenge" at once, the box open a moment later)
+            with_captcha = []
+            for _ in range(OPEN_WAIT_ROUNDS):
+                with_captcha = [p for p in pages if captcha_solver.kind_of(p) and await captcha_solver.active_kind(p)]
+                if with_captcha:
+                    break
+                await asyncio.sleep(1)
+            same_host = [p for p in with_captcha if want and _host(p.url) == want]
+            if not with_captcha:
+                # a firewall's block page is no challenge: say so, so the agent stops at once instead of asking again
+                # (2026-11-19, NatWest: Cloudflare "Sorry, you have been blocked")
+                for p in [p for p in pages if want and _host(p.url) == want]:
+                    try:
+                        text = await p.evaluate("() => (document.body && document.body.innerText || '').slice(0, 1500)")
+                    except Exception:
+                        continue
+                    if BLOCKED_PAGE.search(text or ""):
+                        return {"solved": False, "kind": "blocked",
+                                "error": "the site's firewall blocked this browser (not a CAPTCHA, nothing to solve): stop with needs_user and say 'bloqueado pelo site'"}
+                return {"solved": False, "kind": None, "error": "no open CAPTCHA challenge on any company-site tab (already passed, or a full-page check: take a snapshot)"}
+            if not same_host and len(with_captcha) > 1:
+                return {"solved": False, "error": f"CAPTCHA on {len(with_captcha)} tabs, none on {want or 'the given page'}"}
+            page = (same_host or with_captcha)[0]
             try:
-                pages = [p for c in browser.contexts for p in c.pages if not p.is_closed()]
-                want = _host(url)
-                # the agent asks right after its click on "submit": the challenge takes a few seconds to open (2026-11-19,
-                # Ashby: "no challenge" at once, the box open a moment later)
-                with_captcha = []
-                for _ in range(OPEN_WAIT_ROUNDS):
-                    with_captcha = [p for p in pages if captcha_solver.kind_of(p) and await captcha_solver.active_kind(p)]
-                    if with_captcha:
-                        break
-                    await asyncio.sleep(1)
-                same_host = [p for p in with_captcha if want and _host(p.url) == want]
-                if not with_captcha:
-                    # a firewall's block page is no challenge: say so, so the agent stops at once instead of asking again
-                    # (2026-11-19, NatWest: Cloudflare "Sorry, you have been blocked")
-                    for p in [p for p in pages if want and _host(p.url) == want]:
-                        try:
-                            text = await p.evaluate("() => (document.body && document.body.innerText || '').slice(0, 1500)")
-                        except Exception:
-                            continue
-                        if BLOCKED_PAGE.search(text or ""):
-                            return {"solved": False, "kind": "blocked",
-                                    "error": "the site's firewall blocked this browser (not a CAPTCHA, nothing to solve): stop with needs_user and say 'bloqueado pelo site'"}
-                    return {"solved": False, "kind": None, "error": "no open CAPTCHA challenge on any company-site tab (already passed, or a full-page check: take a snapshot)"}
-                if not same_host and len(with_captcha) > 1:
-                    return {"solved": False, "error": f"CAPTCHA on {len(with_captcha)} tabs, none on {want or 'the given page'}"}
-                page = (same_host or with_captcha)[0]
-                try:
-                    await page.bring_to_front()
-                except Exception:
-                    pass
-                return await captcha_solver.solve(page, captcha_solver.backend_vision(self.api))
-            finally:
-                # disconnects this client only: the tabs, the agent's contexts and the browser stay as they are
-                try:
-                    await browser.close()
-                except Exception:
-                    pass
+                await page.bring_to_front()
+            except Exception:
+                pass
+            return await captcha_solver.solve(page, captcha_solver.backend_vision(self.api))
+        finally:
+            # disconnects this client only: the tabs, the agent's contexts and the browser stay as they are
+            try:
+                await browser.close()
+            except Exception:
+                pass
 
     async def _handle(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         status, body = 500, {"error": "internal"}

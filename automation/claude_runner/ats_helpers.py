@@ -709,7 +709,7 @@ def write_answer(question: str, context: Dict[str, Any], env: Dict[str, str]) ->
     return {"text": text}
 
 
-CAPTCHA_SOLVE_TIMEOUT = 390
+CAPTCHA_SOLVE_TIMEOUT = 400   # worker limit 200 s (+45 s waiting for another tab); the pre-2026-11-19-night worker took up to 360 s
 
 
 def solve_captcha(url: str, context: Dict[str, Any], env: Dict[str, str]) -> Dict[str, Any]:
@@ -730,6 +730,8 @@ def solve_captcha(url: str, context: Dict[str, Any], env: Dict[str, str]) -> Dic
         out = {"solved": False, "error": f"solver HTTP {e.code}"}
     except (OSError, ValueError) as e:
         out = {"solved": False, "error": f"solver unreachable: {e}"}
+    if out.get("busy"):   # nothing was tried: it does not count as one of the 3
+        context["_captcha_tries"] = tries
     action_id = context.get("_action_id")
     if action_id:
         try:

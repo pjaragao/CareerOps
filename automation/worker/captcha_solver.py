@@ -34,7 +34,7 @@ RECAPTCHA_BFRAME = re.compile(r"/recaptcha/(api2|enterprise)/bframe")
 HCAPTCHA = re.compile(r"(hcaptcha\.com/.*checkbox|/captcha/v1/.*#frame=checkbox)")
 HCAPTCHA_CHALLENGE = re.compile(r"(hcaptcha\.com/.*challenge|/captcha/v1/.*#frame=challenge)")
 TURNSTILE = re.compile(r"challenges\.cloudflare\.com")
-SOLVE_TIMEOUT = 360   # seconds for one page, all layers together (a vision answer takes 13-25 s; a dynamic grid asks 5-10)
+SOLVE_TIMEOUT = 200   # seconds for one page, all layers together (a vision answer takes 13-25 s; a dynamic grid asks 5-10)
 
 
 def kind_of(page: Page) -> Optional[str]:
@@ -269,7 +269,10 @@ def _recaptcha_solver_class():
                 return None
             n = await recaptcha_box.tile_selector.count()
             side = 4 if n >= 16 else 3
-            grid = numbered_grid(image_data, side, side)
+            try:
+                grid = numbered_grid(image_data, side, side)
+            except Exception:   # Google sent something that is not a picture: no answer, the library takes a new challenge
+                return {"errorId": 0, "solution": {"objects": []}}
             got = await self._vision(grid, f"The picture is split into {side * side} numbered cells. Which cells contain {target}? "
                                            f"Include a cell when any part of {target} is in it.", side * side)
             return {"errorId": 0, "solution": {"objects": [i - 1 for i in (got or []) if 1 <= i <= side * side]}}
@@ -316,7 +319,7 @@ async def solve_recaptcha(page: Page, vision: Optional[Vision]) -> Dict[str, Any
         await _fresh_widget_if_refused(page)
         solver = cls(page, vision, attempts=3)
         try:
-            token = await asyncio.wait_for(solver.solve_recaptcha(wait=True, wait_timeout=10, image_challenge=image), timeout=280 if image else 75)
+            token = await asyncio.wait_for(solver.solve_recaptcha(wait=True, wait_timeout=10, image_challenge=image), timeout=150 if image else 60)
             if token:
                 return {"solved": True, "how": "image+vision" if image else "audio"}
         except RecaptchaNotFoundError:
