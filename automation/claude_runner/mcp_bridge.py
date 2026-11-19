@@ -119,6 +119,19 @@ class BrowserUpstream:
         with self.lock:
             self.session = None
 
+    def cleanup(self) -> None:
+        """The tabs of the task that just ended, on an isolated slot (2026-11-19: never closed, 21 tabs filled the worker's
+        3.4 GB and the Chrome stopped answering). Its session is its own browser context: browser_close drops the context
+        and its tabs, nobody else's. The first slot shares the worker's default context and is left alone."""
+        with self.lock:
+            if not self.session:
+                return
+            try:
+                self._post("tools/call", {"name": "browser_close", "arguments": {}}, timeout=30)
+            except (OSError, ValueError):
+                pass
+            self.session = None
+
     def tools(self) -> List[dict]:
         """The runner's browser tools only (runner.TOOLS), live when the browser answers, else from the cache."""
         # Hermes waits ~20 s for a tool list at boot: a browser that does not answer in 4 s is served from the cache, and is
@@ -442,7 +455,10 @@ def make_control_handler(tasks: Dict[str, Task], token: str, env_loader, browser
                 return self._json(200, {"ok": True, "action_id": action["id"], "slot": slot})
             if self.path == "/end":
                 slot = body.get("slot") or ("linkedin" if body.get("lane") == "linkedin" else "ats")
-                return self._json(200, {"calls": (tasks.get(slot) or tasks["ats"]).close()})
+                calls = (tasks.get(slot) or tasks["ats"]).close()
+                if slot in browsers and slot not in ("ats", "linkedin"):   # the task's tabs go, off the runner's path
+                    threading.Thread(target=browsers[slot].cleanup, daemon=True).start()
+                return self._json(200, {"calls": calls})
             self._json(404, {"error": "not found"})
 
     return Handler
