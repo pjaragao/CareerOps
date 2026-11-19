@@ -99,7 +99,8 @@ PREFIXES = {"ats": ("mcp__careerops_browser__", "mcp__careerops__"),
             "linkedin": ("mcp__careerops_linkedin__", "mcp__careerops_li__")}
 
 
-def run_hermes(action: dict, system: str, prompt: str, env: dict, timeout_s: int = 480) -> Tuple[Dict[str, Any], int]:
+def run_hermes(action: dict, system: str, prompt: str, env: dict, timeout_s: int = 480,
+               keep_browser: bool = False) -> Tuple[Dict[str, Any], int]:
     """(parsed, returncode) like run._claude_attempt. Never raises: a Hermes that is down reads as a failed attempt."""
     base = env["CAREEROPS_HERMES_URL"].rstrip("/")
     key = env["CAREEROPS_HERMES_KEY"]
@@ -109,7 +110,9 @@ def run_hermes(action: dict, system: str, prompt: str, env: dict, timeout_s: int
     calls: list = []
     try:
         slot = slot_of(action, env)
-        _http("POST", f"{bridge}/run", btoken, {"action": action, "slot": slot})
+        # a continuation pass keeps the browser session: on an isolated slot a new one is an empty context, and the form
+        # filled in the first pass was lost ("the page was about:blank", 2026-11-19)
+        _http("POST", f"{bridge}/run", btoken, {"action": action, "slot": slot, "keep_browser": keep_browser})
     except (OSError, ValueError) as exc:
         return {"calls": [], "final": {"is_error": True, "result": f"bridge unreachable: {exc}"}}, 1
     run_id = ""

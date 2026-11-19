@@ -120,14 +120,14 @@ class BrowserUpstream:
             self.session = None
 
     def cleanup(self) -> None:
-        """The tabs of the task that just ended, on an isolated slot (2026-11-19: never closed, 21 tabs filled the worker's
-        3.4 GB and the Chrome stopped answering). Its session is its own browser context: browser_close drops the context
+        """The tabs of the previous task, on an isolated slot, closed when the next one starts (2026-11-19: never closed,
+        21 tabs filled the worker's 3.4 GB and the Chrome stopped answering). Its session is its own browser context: browser_close drops the context
         and its tabs, nobody else's. The first slot shares the worker's default context and is left alone."""
         with self.lock:
             if not self.session:
                 return
             try:
-                self._post("tools/call", {"name": "browser_close", "arguments": {}}, timeout=30)
+                self._post("tools/call", {"name": "browser_close", "arguments": {}}, timeout=15)
             except (OSError, ValueError):
                 pass
             self.session = None
@@ -451,14 +451,17 @@ def make_control_handler(tasks: Dict[str, Task], token: str, env_loader, browser
                     # never two tasks on one slot: the second runner waits (an hour-old task is a dead runner's)
                     return self._json(409, {"error": f"slot {slot} busy with action {busy.get('id')}"})
                 tasks[slot].open(action, env_loader())
-                browsers[slot].reset()   # a fresh browser session per task, like a new Claude run
+                if not body.get("keep_browser"):
+                    # a fresh browser session per task; the previous task's context (an isolated slot's tabs) is closed
+                    # first. A continuation pass keeps it: that is the form it filled (2026-11-19)
+                    if slot in ("ats", "linkedin"):
+                        browsers[slot].reset()
+                    else:
+                        browsers[slot].cleanup()
                 return self._json(200, {"ok": True, "action_id": action["id"], "slot": slot})
             if self.path == "/end":
                 slot = body.get("slot") or ("linkedin" if body.get("lane") == "linkedin" else "ats")
-                calls = (tasks.get(slot) or tasks["ats"]).close()
-                if slot in browsers and slot not in ("ats", "linkedin"):   # the task's tabs go, off the runner's path
-                    threading.Thread(target=browsers[slot].cleanup, daemon=True).start()
-                return self._json(200, {"calls": calls})
+                return self._json(200, {"calls": (tasks.get(slot) or tasks["ats"]).close()})
             self._json(404, {"error": "not found"})
 
     return Handler

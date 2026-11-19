@@ -522,7 +522,7 @@ def _run_action(action: dict, env: dict) -> tuple:
             # from where it is, the form keeps what it filled (2026-11-17)
             more = (h_prompt + f"\n\nPREVIOUS ATTEMPT made {len(parsed['calls'])} tool calls and ended: {result['summary'][:600]}\n"
                     "The form keeps what it filled: take one snapshot and continue from where it stopped; do not redo filled fields.")
-            parsed2, code2 = hermes_agent.run_hermes(action, system_prompt(action), more, env, h_timeout)
+            parsed2, code2 = hermes_agent.run_hermes(action, system_prompt(action), more, env, h_timeout, keep_browser=True)
             parsed = {"calls": parsed["calls"] + parsed2["calls"], "final": parsed2["final"]}
             result = outcome(parsed, code2, action)
         result.pop("provider_error", None)   # Hermes's limits are not Claude's: they never pause the Claude chain
