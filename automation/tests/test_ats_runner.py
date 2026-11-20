@@ -700,6 +700,26 @@ def test_solve_captcha_tool_calls_the_worker_and_stops_after_three(monkeypatch):
     assert fourth["solved"] is False and len(seen) == 3
 
 
+def test_solve_captcha_waits_out_a_busy_solver(monkeypatch):
+    answers = [{"solved": False, "busy": True}, {"solved": False, "busy": True}, {"solved": True, "kind": "hcaptcha"}]
+    slept = []
+    monkeypatch.setattr(ats_helpers, "_solve_once", lambda port, token, url: answers.pop(0))
+    monkeypatch.setattr(ats_helpers.time, "sleep", lambda s: slept.append(s))
+    monkeypatch.setattr(ats_helpers, "_api_call", lambda *a, **k: {})
+    ctx = {}
+    assert ats_helpers.solve_captcha("https://jobs.lever.co/x", ctx, {})["solved"] is True
+    assert slept == [ats_helpers.CAPTCHA_BUSY_STEP] * 2 and ctx["_captcha_tries"] == 1
+
+
+def test_solve_captcha_gives_up_waiting_after_its_budget(monkeypatch):
+    monkeypatch.setattr(ats_helpers, "_solve_once", lambda port, token, url: {"solved": False, "busy": True})
+    monkeypatch.setattr(ats_helpers.time, "sleep", lambda s: None)
+    monkeypatch.setattr(ats_helpers, "_api_call", lambda *a, **k: {})
+    ctx = {}
+    out = ats_helpers.solve_captcha("https://jobs.lever.co/x", ctx, {})
+    assert out["busy"] and ctx["_captcha_tries"] == 0   # a busy answer still does not count
+
+
 def test_solve_captcha_is_a_company_form_tool_only():
     assert "mcp__careerops__solve_captcha" in run.ATS_EXTRA_TOOLS
     assert "mcp__careerops__solve_captcha" not in run.LINKEDIN_APPLY_TOOLS

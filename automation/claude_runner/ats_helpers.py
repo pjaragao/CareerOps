@@ -712,6 +712,22 @@ def write_answer(question: str, context: Dict[str, Any], env: Dict[str, str]) ->
 CAPTCHA_SOLVE_TIMEOUT = 400   # worker limit 200 s (+45 s waiting for another tab); the pre-2026-11-19-night worker took up to 360 s
 
 
+CAPTCHA_BUSY_WAIT = 360   # s, waiting for another tab's solve before telling the agent "busy"
+CAPTCHA_BUSY_STEP = 30
+
+
+def _solve_once(port: int, token: str, url: str) -> Dict[str, Any]:
+    req = urllib.request.Request(f"http://127.0.0.1:{port}/solve", data=json.dumps({"url": url[:500]}).encode(), method="POST",
+                                 headers={"Content-Type": "application/json", "X-CareerOps-Token": token})
+    try:
+        with urllib.request.urlopen(req, timeout=CAPTCHA_SOLVE_TIMEOUT) as res:
+            return json.loads(res.read().decode("utf-8") or "{}")
+    except urllib.error.HTTPError as e:
+        return {"solved": False, "error": f"solver HTTP {e.code}"}
+    except (OSError, ValueError) as e:
+        return {"solved": False, "error": f"solver unreachable: {e}"}
+
+
 def solve_captcha(url: str, context: Dict[str, Any], env: Dict[str, str]) -> Dict[str, Any]:
     """The worker's CAPTCHA solver (worker/captcha_server.py, 127.0.0.1:8940 on this host) on the company-site browser.
     At most 3 calls per task: a challenge that keeps coming back is a site that wants a person."""
@@ -721,15 +737,15 @@ def solve_captcha(url: str, context: Dict[str, Any], env: Dict[str, str]) -> Dic
     context["_captcha_tries"] = tries + 1
     port = int(env.get("CAREEROPS_CAPTCHA_PORT") or 8940)
     token = env.get("CAREEROPS_WORKER_TOKEN") or ""
-    req = urllib.request.Request(f"http://127.0.0.1:{port}/solve", data=json.dumps({"url": url[:500]}).encode(), method="POST",
-                                 headers={"Content-Type": "application/json", "X-CareerOps-Token": token})
-    try:
-        with urllib.request.urlopen(req, timeout=CAPTCHA_SOLVE_TIMEOUT) as res:
-            out = json.loads(res.read().decode("utf-8") or "{}")
-    except urllib.error.HTTPError as e:
-        out = {"solved": False, "error": f"solver HTTP {e.code}"}
-    except (OSError, ValueError) as e:
-        out = {"solved": False, "error": f"solver unreachable: {e}"}
+    # one solver for every company-site tab: "busy" came back as solved=false, and the agent's rule (stop after two
+    # solved=false) made it give up without a try (2026-11-20, Megaport: busy twice, sent to you). Wait for it here.
+    waited = 0
+    while True:
+        out = _solve_once(port, token, url)
+        if not out.get("busy") or waited >= CAPTCHA_BUSY_WAIT:
+            break
+        time.sleep(CAPTCHA_BUSY_STEP)
+        waited += CAPTCHA_BUSY_STEP
     if out.get("busy"):   # nothing was tried: it does not count as one of the 3
         context["_captcha_tries"] = tries
     action_id = context.get("_action_id")
