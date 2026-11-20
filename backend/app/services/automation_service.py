@@ -864,6 +864,11 @@ class AutomationService:
         # you asked for it again: it does not wait for the time window, which only holds back the automations. The event
         # also tells the Claude gate that something changed (a new run is allowed)
         AutomationService.add_event(action_id, "user", "retry", {})
+        # and a CAPTCHA you sent back gets its site tried again: the site block from earlier failures would otherwise send it
+        # straight back to you without a run (2026-11-20: Cravath, Bowman and adesso, retried for the new solver)
+        from app.services.site_service import SiteService
+        if action["error_code"] == "captcha" or SiteService.block_kind(action.get("error_text") or ""):
+            SiteService.clear_block(action.get("target_url") or "")
         # asking again also gives the Claude routine a new attempt: escalate() hands a form to it only while claude_attempts < 1,
         # so without this a retried form came straight back to you (2026-11-16: 18 items in a row)
         # and it no longer expires: the approval window was for your first OK, not for a retry you asked for now (2026-11-19:
@@ -1671,7 +1676,7 @@ class AutomationService:
                                   last_run_fingerprint = NULL, scheduled_for = GREATEST(COALESCE(%s, NOW()), NOW() + interval '15 minutes'), lease_owner = NULL,
                                   lease_until = NULL, updated_at = NOW() WHERE id = %s RETURNING *""", (state.get("claude_paused_until"), action_id))
         if block:
-            SiteService.record_block(host, summary)
+            SiteService.record_block(target.get("target_url") or host, summary)
             if (action.get("result") or {}).get("live_captcha") and AutomationService.captcha_session_active():
                 AutomationService.add_event(action_id, "claude", "captcha_back_to_worker", {"summary": summary[:300]})
                 return _one("""UPDATE public.automation_actions SET status = 'queued', run_now = TRUE, last_run_fingerprint = NULL,

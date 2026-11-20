@@ -28,6 +28,27 @@ def host_of(url: str) -> str:
     return (urlparse(url or "").hostname or "").lower()
 
 
+# one host, many employers: a CAPTCHA one company turned on says nothing about the others (2026-11-20: two failures by the
+# old solver skipped every job on jobs.lever.co and jobs.smartrecruiters.com)
+SHARED_ATS = {"jobs.lever.co", "jobs.eu.lever.co", "jobs.smartrecruiters.com", "jobs.ashbyhq.com", "boards.greenhouse.io",
+              "job-boards.greenhouse.io", "job-boards.eu.greenhouse.io", "boards.eu.greenhouse.io", "apply.workable.com",
+              "jobs.dayforcehcm.com", "jobs.jobvite.com", "ats.rippling.com", "jobs.gem.com", "app.dover.com"}
+
+
+def block_key(url_or_host: str) -> str:
+    """Where blocks and successes are counted: the host, or host/company on a shared ATS host."""
+    text = url_or_host or ""
+    if "/" not in text:
+        return text.lower()
+    parsed = urlparse(text if "://" in text else "https://" + text)
+    host = (parsed.hostname or "").lower()
+    if host in SHARED_ATS:
+        first = next((p for p in (parsed.path or "").split("/") if p), "")
+        if first:
+            return f"{host}/{first.lower()}"
+    return host
+
+
 def _rows(sql: str, params: tuple = ()) -> List[dict]:
     conn = get_db_connection()
     try:
@@ -77,9 +98,10 @@ class SiteService:
     @staticmethod
     def count_success(url_or_host: str) -> None:
         host = url_or_host if "/" not in (url_or_host or "") else host_of(url_or_host)
-        if host:
-            _rows("""INSERT INTO public.automation_sites (host, successes) VALUES (%s, 1)
-                     ON CONFLICT (host) DO UPDATE SET successes = public.automation_sites.successes + 1, updated_at = NOW()""", (host,))
+        for key in {host, block_key(url_or_host)}:   # the host (its recipe's record) and, on a shared ATS, the company
+            if key:
+                _rows("""INSERT INTO public.automation_sites (host, successes) VALUES (%s, 1)
+                         ON CONFLICT (host) DO UPDATE SET successes = public.automation_sites.successes + 1, updated_at = NOW()""", (key,))
 
     @staticmethod
     def block_kind(text: str) -> Optional[str]:
@@ -90,9 +112,10 @@ class SiteService:
 
     @staticmethod
     def record_block(url_or_host: str, text: str) -> Optional[str]:
-        """Counts what blocked a run on this host (from the agent's or the worker's report). Returns the kind, if any."""
+        """Counts what blocked a run on this host, or on this company of a shared ATS host (from the agent's or the worker's
+        report). Returns the kind, if any."""
         kind = SiteService.block_kind(text)
-        host = url_or_host if "/" not in (url_or_host or "") else host_of(url_or_host)
+        host = block_key(url_or_host)
         if not kind or not host:
             return None
         _rows("""
@@ -106,8 +129,9 @@ class SiteService:
 
     @staticmethod
     def human_block(url: str) -> Optional[str]:
-        """The block a run on this host would hit for sure (seen SKIP_AFTER times, and never passed since): None otherwise."""
-        site = SiteService.get(host_of(url))
+        """The block a run on this host (or company, on a shared ATS) would hit for sure (seen SKIP_AFTER times, and never
+        passed since): None otherwise."""
+        site = SiteService.get(block_key(url))
         if not site:
             return None
         blocks = site.get("blocks") or {}
@@ -117,9 +141,10 @@ class SiteService:
         return None
 
     @staticmethod
-    def clear_block(host: str) -> None:
-        """You passed it (or the site changed): the host is tried again."""
-        _rows("UPDATE public.automation_sites SET blocks = '{}'::jsonb, last_block = NULL, updated_at = NOW() WHERE host = %s", (host,))
+    def clear_block(url_or_host: str) -> None:
+        """You passed it (or the site changed): the host (or company, on a shared ATS) is tried again."""
+        _rows("UPDATE public.automation_sites SET blocks = '{}'::jsonb, last_block = NULL, updated_at = NOW() WHERE host = %s",
+              (block_key(url_or_host),))
 
 
 # ── Texts written once and reused (token plan, phase 3; table automation_text_cache) ──
