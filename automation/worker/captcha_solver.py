@@ -332,10 +332,29 @@ async def solve_recaptcha(page: Page, vision: Optional[Vision]) -> Dict[str, Any
         except (RecaptchaSolveError, CapSolverError, asyncio.TimeoutError) as e:
             tried.append(f"{'image' if image else 'audio'}: {type(e).__name__}")
         except Exception as e:   # the library meets a layout it does not know: say so, never guess on
-            tried.append(f"{'image' if image else 'audio'}: {type(e).__name__}: {str(e)[:120]}")
+            # 2026-11-20: 0 of 27 in 3 days, most "Timeout waiting for get_by_role("button", name=re.compile(…" cut before
+            # the name. Keep which name it waited for and the buttons the challenge really shows, to fix the labels.
+            text = str(e)
+            wanted = re.search(r'name=re\.compile\(r?["\'](.{0,160})', text)
+            seen = await _recaptcha_buttons(page)
+            tried.append(f"{'image' if image else 'audio'}: {type(e).__name__}: {text.splitlines()[0][:100]}"
+                         + (f" | waited for: {wanted.group(1)}" if wanted else "") + (f" | buttons: {seen}" if seen else ""))
         finally:
             solver.close()
     return {"solved": False, "error": "; ".join(tried) or "not solved"}
+
+
+async def _recaptcha_buttons(page: Page) -> List[str]:
+    """The names of the buttons the reCAPTCHA challenge shows now (aria-label, title or text)."""
+    bframe = next((f for f in page.frames if RECAPTCHA_BFRAME.search(f.url or "")), None)
+    if bframe is None:
+        return []
+    try:
+        return await bframe.evaluate("""() => [...document.querySelectorAll('button, [role=button], input[type=button], input[type=submit]')]
+            .filter(b => b.offsetParent !== null)
+            .map(b => (b.getAttribute('aria-label') || b.title || b.innerText || b.value || '').trim()).filter(Boolean).slice(0, 12)""")
+    except Exception:
+        return []
 
 
 # ── hCaptcha ──
