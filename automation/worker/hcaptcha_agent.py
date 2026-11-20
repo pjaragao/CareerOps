@@ -29,7 +29,7 @@ Reasoner = Callable[..., Awaitable[Optional[str]]]
 KINDS = {"ImageBinaryChallenge": "grid", "ImageAreaSelectChallenge": "point", "ImageDragDropChallenge": "drag",
          "ChallengeRouterResult": "router", "ImageBboxChallenge": "bbox"}
 
-EXECUTION_TIMEOUT = 220   # one challenge: a type check and 2 rounds, 20-60 s a model call through Lolo (solver: 300 s)
+EXECUTION_TIMEOUT = 265   # refreshes of blank canvases (~4 s each) + 1-2 model calls of 20-60 s; + RESPONSE_TIMEOUT < solver 300 s
 RESPONSE_TIMEOUT = 20
 CAPTURE_TRIES = 10   # 1 s apart, for a canvas not drawn yet (kept for callers; the capture now waits BLANK_WAIT_S)
 BLANK_WAIT_S = 4     # a canvas draws at once or never (2026-11-20): then a new challenge
