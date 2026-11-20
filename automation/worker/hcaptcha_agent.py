@@ -155,7 +155,23 @@ async def run(page, reason: Reasoner, challenge_open: bool) -> Dict[str, Any]:
             tool._provider = provider
     # the library takes one screenshot per round; on Chrome under Xvfb the canvas is often not drawn yet (2026-11-19
     # demo: round 2 white every time, even after 5 s). Take it again until there is a picture, up to CAPTURE_TRIES s.
-    capture = arm._capture_spatial_mapping
+    async def capture(frame, cache_key, crumb_id):
+        """The library's capture, with the screenshot taken from the page at the challenge's own box. Its element screenshot
+        inside the challenge frame came out shifted on iCIMS (2026-11-20, Cravath: the career page's own header in the top
+        90 px), while its grid labels come from the box: every click on a drawn canvas landed that far off."""
+        view = frame.locator("//div[@class='challenge-view']")
+        shot = Path(cache_key).joinpath(f"{Path(cache_key).name}_{crumb_id}_challenge_view.png")
+        shot.parent.mkdir(parents=True, exist_ok=True)
+        grid = Path(cache_key).joinpath(f"{Path(cache_key).name}_{crumb_id}_spatial_helper.png")
+        try:
+            await view.scroll_into_view_if_needed(timeout=5000)
+            box = await view.bounding_box()
+            await page.screenshot(path=str(shot), clip=box, timeout=15000)
+        except Exception as e:
+            log.info("page-level challenge screenshot failed (%s): the library's own", e)
+            return await library_capture(frame, cache_key, crumb_id)
+        return shot, await _regrid(frame, shot, grid, config)
+    library_capture = arm._capture_spatial_mapping
     videos = hcaptcha_video.VideoWatch()
     rounds: List[str] = []   # what each round saw, for the result: "type:picture source:instruction"
 
