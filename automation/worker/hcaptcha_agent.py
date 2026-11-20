@@ -22,8 +22,12 @@ from . import hcaptcha_video
 
 log = logging.getLogger(__name__)
 
-# (images as PNG bytes, system text, user text, JSON schema) -> the model's text, or None
-Reasoner = Callable[[List[bytes], str, str, dict], Awaitable[Optional[str]]]
+# (images as PNG bytes, system text, user text, JSON schema, kind) -> the model's text, or None
+Reasoner = Callable[..., Awaitable[Optional[str]]]
+# the kind of question, for the shim's choice of model: a 3x3 grid is one call a page where a wrong tile fails the whole
+# challenge (2026-11-20: GLM picked a jumping elephant as "calm", Rivian), the rest need speed (2-3 calls a challenge)
+KINDS = {"ImageBinaryChallenge": "grid", "ImageAreaSelectChallenge": "point", "ImageDragDropChallenge": "drag",
+         "ChallengeRouterResult": "router", "ImageBboxChallenge": "bbox"}
 
 EXECUTION_TIMEOUT = 220   # one challenge: a type check and 2 rounds, 20-60 s a model call through Lolo (solver: 300 s)
 RESPONSE_TIMEOUT = 20
@@ -86,7 +90,11 @@ class BackendProvider:
                        "Compare with that example, and answer with coordinates on the grid picture.")
         if self.extra and pngs and hcaptcha_video.MOTION.search(prompt):
             pngs, prompt = pngs + self.extra, prompt + self.note
-        text = await self._reason(pngs, description or "", prompt, schema)
+        kind = KINDS.get(getattr(response_schema, "__name__", ""), "other")
+        try:
+            text = await self._reason(pngs, description or "", prompt, schema, kind)
+        except TypeError:   # a reasoner without the kind (tests, older callers)
+            text = await self._reason(pngs, description or "", prompt, schema)
         data = first_json(text or "")
         if data is None:
             raise ValueError(f"no JSON in the model's answer: {(text or '')[:200]}")
@@ -422,11 +430,11 @@ def patient_crumb_count(count: Callable[[], Awaitable[int]], wait: Callable[[int
 
 
 def backend_reasoner(api) -> Reasoner:
-    async def reason(pngs: List[bytes], system: str, prompt: str, schema: dict) -> Optional[str]:
+    async def reason(pngs: List[bytes], system: str, prompt: str, schema: dict, kind: str = "other") -> Optional[str]:
         try:
             res = await api.call("POST", "/automation/captcha/reason", timeout=170, json={
                 "images_b64": [base64.b64encode(p).decode() for p in pngs][:6],
-                "system": system[:20000], "prompt": prompt[:8000], "schema": schema})
+                "system": system[:20000], "prompt": prompt[:8000], "schema": schema, "kind": kind})
         except Exception as e:
             log.warning("captcha reason call failed: %s", e)
             return None

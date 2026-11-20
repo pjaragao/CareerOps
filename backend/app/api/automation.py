@@ -378,6 +378,7 @@ class CaptchaReasonIn(BaseModel):
     system: str = Field("", max_length=20000)
     prompt: str = Field("", max_length=8000)
     schema_: dict = Field(default_factory=dict, alias="schema")
+    kind: str = Field("other", max_length=20)   # grid | point | drag | router | ...: the shim picks the model by it
 
 
 @router.post("/captcha/reason", dependencies=[Depends(require_worker)])
@@ -387,7 +388,7 @@ def captcha_reason(req: CaptchaReasonIn):
     from app.services.captcha_vision import reason
     if sum(len(b) for b in req.images_b64) > 12_000_000:
         return {"error": "images too large"}
-    return reason(req.images_b64, req.system, req.prompt, req.schema_)
+    return reason(req.images_b64, req.system, req.prompt, req.schema_, req.kind)
 
 
 @router.post("/actions/{action_id}/ready", dependencies=[Depends(require_worker)])

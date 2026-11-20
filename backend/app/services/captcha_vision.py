@@ -65,14 +65,14 @@ def _shim_call(body: dict, timeout: int) -> dict:
     return {"text": (((data.get("choices") or [{}])[0].get("message") or {}).get("content") or "")}
 
 
-def reason(images_b64: List[str], system: str, prompt: str, schema: dict) -> dict:
+def reason(images_b64: List[str], system: str, prompt: str, schema: dict, kind: str = "other") -> dict:
     """hcaptcha-challenger's questions (worker/hcaptcha_agent.py, 2026-11-19): its own instructions and screenshots, a
     JSON answer in its schema. The shim picks the model (model "captcha-reason": Gemini when the runner env has a key)."""
     content = [{"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b}"}} for b in images_b64[:6]]
     content.append({"type": "text", "text": (prompt or "Solve the challenge in the picture.") +
                     "\n\nAnswer ONLY with one JSON object that follows this JSON schema:\n" + json.dumps(schema, ensure_ascii=False)})
     messages = ([{"role": "system", "content": system}] if system else []) + [{"role": "user", "content": content}]
-    out = _shim_call({"model": "captcha-reason", "messages": messages}, timeout=160)
+    out = _shim_call({"model": "captcha-reason", "messages": messages, "captcha_kind": kind}, timeout=160)
     if out.get("error"):
         log.warning("captcha reason failed: %s", out["error"])
     return out

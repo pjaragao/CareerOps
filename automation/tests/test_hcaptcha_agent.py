@@ -272,3 +272,35 @@ def test_the_solver_finds_the_agents_tab_across_icims_hosts():
     bowman = _Tab("https://login.icims.com/signin?y")
     assert cs.pick_tab([cravath, bowman], "careers-cravath.icims.com") is None               # two companies: no guess
     assert cs.pick_tab([lever], "careers-cravath.icims.com") is lever                        # the only one
+
+
+def test_the_shim_asks_the_careful_model_for_grids(monkeypatch):
+    env = {"CAREEROPS_HERMES_URL": "http://lolo", "CAREEROPS_HERMES_KEY": "k", "CAREEROPS_CAPTCHA_NOUS_MODEL": "z-ai/glm-5.3-flash",
+           "CAREEROPS_CAPTCHA_NOUS_EFFORT": "low"}
+    monkeypatch.setattr(shim, "_hermes_env", lambda: env)
+    seen = []
+    monkeypatch.setattr(shim, "_openai_chat", lambda url, key, body, timeout: seen.append(
+        (body["model"], body["model_options"]["reasoning_effort"])) or "{}")
+    shim.run_captcha_reason([{"role": "user", "content": "x"}], "grid")
+    shim.run_captcha_reason([{"role": "user", "content": "x"}], "point")
+    assert seen == [(shim.CAPTCHA_NOUS_MODEL, "medium"), ("z-ai/glm-5.3-flash", "low")]
+
+
+def test_the_provider_tells_which_kind_of_question_it_is(tmp_path):
+    img = tmp_path / "c.png"
+    img.write_bytes(_png(True))
+    kinds = []
+
+    async def reason(pngs, system, prompt, schema, kind="other"):
+        kinds.append(kind)
+        return '{"challenge_prompt": "x", "points": []}'
+
+    class ImageBinaryChallenge(Answer):
+        pass
+
+    class ImageAreaSelectChallenge(Answer):
+        pass
+    p = ha.BackendProvider(reason)
+    asyncio.run(p.generate_with_images(images=[img], response_schema=ImageBinaryChallenge))
+    asyncio.run(p.generate_with_images(images=[img], response_schema=ImageAreaSelectChallenge))
+    assert kinds == ["grid", "point"]

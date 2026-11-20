@@ -162,7 +162,7 @@ def _openai_chat(url: str, key: str, body: dict, timeout: int) -> str:
     return (((data.get("choices") or [{}])[0].get("message") or {}).get("content") or "").strip()
 
 
-def run_captcha_reason(messages: list) -> str:
+def run_captcha_reason(messages: list, kind: str = "other") -> str:
     env = _hermes_env()
     msgs = [m for m in (messages or []) if isinstance(m, dict)]
     tried = []
@@ -173,6 +173,12 @@ def run_captcha_reason(messages: list) -> str:
     # 2026-11-19: the Nous Portal's models through Lolo's API (its key stays with Lolo), Gemini by default: the user has
     # credit there. CAREEROPS_CAPTCHA_NOUS_MODEL=off skips it.
     nous_model = env.get("CAREEROPS_CAPTCHA_NOUS_MODEL") or CAPTCHA_NOUS_MODEL
+    nous_effort = env.get("CAREEROPS_CAPTCHA_NOUS_EFFORT") or "medium"
+    if kind == "grid":
+        # 3x3 grids: one call a page and one wrong tile fails it, so the careful model (2026-11-20: GLM 5.3 Flash picked a
+        # jumping elephant as "calm" on Rivian; Argon passed Bowman's grids). CAREEROPS_CAPTCHA_NOUS_MODEL_GRID overrides.
+        nous_model = env.get("CAREEROPS_CAPTCHA_NOUS_MODEL_GRID") or CAPTCHA_NOUS_MODEL
+        nous_effort = env.get("CAREEROPS_CAPTCHA_NOUS_EFFORT_GRID") or "medium"
     if env.get("CAREEROPS_HERMES_URL") and env.get("CAREEROPS_HERMES_KEY") and nous_model.lower() != "off":
         routes.append(("nous", env["CAREEROPS_HERMES_URL"].rstrip("/") + "/v1", env["CAREEROPS_HERMES_KEY"], nous_model))
     if env.get("CAREEROPS_CAPTCHA_REASON_URL"):
@@ -183,7 +189,7 @@ def run_captcha_reason(messages: list) -> str:
         if name == "gemini":
             body["reasoning_effort"] = env.get("CAREEROPS_CAPTCHA_GEMINI_EFFORT") or "medium"
         elif name == "nous":
-            body.update(provider="nous", stream=False, model_options={"reasoning_effort": env.get("CAREEROPS_CAPTCHA_NOUS_EFFORT") or "medium"})
+            body.update(provider="nous", stream=False, model_options={"reasoning_effort": nous_effort})
             body["messages"] = [{"role": "system", "content": HERMES_RULES + " You can see the images in the message."}] + msgs
         try:
             text = _openai_chat(url, key, body, REASON_TIMEOUT)
@@ -279,7 +285,7 @@ class Handler(BaseHTTPRequestHandler):
             if model_id == "hermes-vision":
                 text = run_hermes_vision(body.get("messages"))
             elif model_id == "captcha-reason":
-                text = run_captcha_reason(body.get("messages"))
+                text = run_captcha_reason(body.get("messages"), str(body.get("captcha_kind") or "other"))
             elif model_id.startswith("hermes"):
                 text = run_hermes(render(body.get("messages")))
             else:
