@@ -77,3 +77,28 @@ def test_videos_are_kept_per_challenge():
     assert w.urls == ["https://imgs3.hcaptcha.com/x/1.webm", "https://imgs3.hcaptcha.com/x/2.webm"]
     w.on_response(Response("https://api.hcaptcha.com/getcaptcha/abc"))
     assert w.urls == [] and fresh == [1, 1]
+
+
+class Frame:
+    def __init__(self, url, names):
+        self.url, self.names = url, names
+
+    async def evaluate(self, js):
+        # what RESOURCES_JS does in the page, on our list
+        last = max([i for i, u in enumerate(self.names) if "/getcaptcha" in u], default=-1)
+        return [u for u in self.names[last + 1:] if u.split("?")[0].endswith((".webm", ".mp4"))]
+
+
+class Page:
+    def __init__(self, frames):
+        self.frames = frames
+
+
+def test_the_challenge_frame_says_which_video_it_loaded_when_the_listener_missed_it():
+    import asyncio
+    names = ["https://api.hcaptcha.com/getcaptcha/a", "https://imgs.hcaptcha.com/old.webm",
+             "https://api.hcaptcha.com/getcaptcha/a", "https://imgs.hcaptcha.com/p1.webm", "https://imgs.hcaptcha.com/x.png",
+             "https://imgs.hcaptcha.com/p2.webm"]
+    page = Page([Frame("https://careers.example.com/", ["https://careers.example.com/a.webm"]),
+                 Frame("https://newassets.hcaptcha.com/captcha/v1/x/static/hcaptcha.html#frame=challenge&id=1", names)])
+    assert asyncio.run(hv.fetched_by_challenge(page)) == ["https://imgs.hcaptcha.com/p1.webm", "https://imgs.hcaptcha.com/p2.webm"]

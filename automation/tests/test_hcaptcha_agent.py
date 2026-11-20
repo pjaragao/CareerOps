@@ -184,3 +184,10 @@ def test_click_challenges_get_their_type_without_the_model():
     }
     for prompt, want in cases.items():
         assert ha.quick_type(prompt) == want, prompt
+
+
+def test_white_label_hcaptcha_frames_count_too():
+    assert ha.hcaptcha_frame("https://newassets.hcaptcha.com/captcha/v1/abc/static/hcaptcha.html#frame=challenge&id=1", "challenge")
+    assert ha.hcaptcha_frame("https://careers.recruitee.com/captcha/v1/abc/static/hcaptcha.html#frame=checkbox&id=1", "checkbox")
+    assert not ha.hcaptcha_frame("https://careers.recruitee.com/captcha/v1/abc/static/hcaptcha.html#frame=checkbox", "challenge")
+    assert not ha.hcaptcha_frame("https://www.google.com/recaptcha/api2/anchor", "checkbox")

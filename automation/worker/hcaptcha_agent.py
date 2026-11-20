@@ -162,6 +162,7 @@ async def run(page, reason: Reasoner, challenge_open: bool) -> Dict[str, Any]:
     arm._capture_spatial_mapping = patient_capture
     arm.check_crumb_count = patient_crumb_count(arm.check_crumb_count, page.wait_for_timeout)
     arm.check_challenge_type = quick_check_type(arm, arm.check_challenge_type)
+    any_hcaptcha_frames(arm, page)
     # 2026-11-20, Cravath iCIMS: right tiles, "Verificar", then no /checkcaptcha/ answer reached the library in 20 s.
     # Note hCaptcha's own calls so a failure says whether the answer went out and what came back.
     calls: List[str] = []
@@ -169,7 +170,7 @@ async def run(page, reason: Reasoner, challenge_open: bool) -> Dict[str, Any]:
     def note(response):
         videos.on_response(response)
         url = response.url
-        if "hcaptcha.com" in url:
+        if "hcaptcha" in url or "/getcaptcha" in url or "/checkcaptcha" in url:   # white-label hosts too
             name = next((k for k in ("getcaptcha", "checkcaptcha", "checksiteconfig") if k in url), None)
             if name:
                 calls.append(f"{name} {response.status}")
@@ -266,6 +267,31 @@ def quick_check_type(arm, original):
             log.info("challenge type not read from the page: %s", e)
         return await original()
     return check
+
+
+def hcaptcha_frame(url: str, which: str) -> bool:
+    """hCaptcha's checkbox or challenge frame, on its own host (newassets.hcaptcha.com) or a white-label one (Recruitee
+    serves it from its own domain: /captcha/v1/…#frame=…)."""
+    return "/captcha/v1/" in (url or "") and f"frame={which}" in url
+
+
+def any_hcaptcha_frames(arm, page) -> None:
+    """The library looks for frames under https://newassets.hcaptcha.com only, so on a white-label page it found none and
+    our old solver took over (2026-11-20, Lefebvre on Recruitee). Its selectors and frame lookup, for any host."""
+    arm._checkbox_selector = "//iframe[contains(@src,'/captcha/v1/') and contains(@src,'frame=checkbox')]"
+    arm._challenge_selector = "//iframe[contains(@src,'/captcha/v1/') and contains(@src,'frame=challenge')]"
+    original = arm.get_challenge_frame_locator
+
+    async def find():
+        for frame in page.frames:
+            if hcaptcha_frame(frame.url, "challenge"):
+                try:
+                    if await frame.locator("//div[@class='challenge-view']").is_visible():
+                        return frame
+                except Exception:
+                    pass
+        return await original()
+    arm.get_challenge_frame_locator = find
 
 
 CRUMB_TRIES = 8   # 0.5 s apart

@@ -340,15 +340,11 @@ async def solve_recaptcha(page: Page, vision: Optional[Vision]) -> Dict[str, Any
 
 # ── hCaptcha ──
 
-STANDARD_HCAPTCHA = re.compile(r"^https://newassets\.hcaptcha\.com/captcha/v1/")
-
-
 async def solve_hcaptcha(page: Page, vision: Optional[Vision], reasoner=None) -> Dict[str, Any]:
     box = next((f for f in page.frames if HCAPTCHA.search(f.url or "")), None)
     # 2026-11-19: hcaptcha-challenger first (it reads the challenge type from hCaptcha and reasons on points and paths);
-    # only on hCaptcha's own frames, which its selectors expect (a white-label one such as Recruitee's goes below)
-    if reasoner is not None and box is not None and STANDARD_HCAPTCHA.search(box.url or "") \
-            and not await _token(page, "h-captcha-response"):
+    # 2026-11-20: white-label frames too (Recruitee): hcaptcha_agent points the library's selectors at any host
+    if reasoner is not None and box is not None and not await _token(page, "h-captcha-response"):
         from . import hcaptcha_agent
         if hcaptcha_agent.available():
             ch = next((f for f in page.frames if HCAPTCHA_CHALLENGE.search(f.url or "")), None)

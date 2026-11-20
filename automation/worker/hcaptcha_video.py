@@ -46,7 +46,7 @@ class VideoWatch:
 
     def on_response(self, response) -> None:
         url = response.url
-        if "hcaptcha.com" in url and "/getcaptcha" in url:
+        if "/getcaptcha" in url:   # hCaptcha's host or a white-label one
             self.urls = []
             if self.on_new_challenge:
                 self.on_new_challenge()
@@ -55,9 +55,11 @@ class VideoWatch:
 
     async def frames(self, page, page_index: int) -> Optional[list]:
         """The decoded frames of this page's video (the n-th one fetched, else the last), or None."""
-        if not self.urls:
+        urls = self.urls or await fetched_by_challenge(page)
+        if not urls:
+            log.info("no challenge video seen")
             return None
-        url = self.urls[page_index] if 0 <= page_index < len(self.urls) else self.urls[-1]
+        url = urls[page_index] if 0 <= page_index < len(urls) else urls[-1]
         if url not in self._decoded:
             try:
                 res = await page.request.get(url, timeout=20000)
@@ -67,6 +69,29 @@ class VideoWatch:
                 return None
             self._decoded[url] = decode(data) if data else []
         return self._decoded[url] or None
+
+
+RESOURCES_JS = r"""() => {
+  const names = performance.getEntriesByType('resource').map(e => e.name);
+  let last = -1;
+  names.forEach((u, i) => { if (u.includes('/getcaptcha')) last = i; });
+  return names.slice(last + 1).filter(u => /\.(webm|mp4)(\?|$)/.test(u));
+}"""
+
+
+async def fetched_by_challenge(page) -> List[str]:
+    """The videos the challenge frame itself loaded since its last /getcaptcha, from its own resource list. 2026-11-20,
+    Cravath on iCIMS: the response listener saw no .webm (the challenge was already open when the solver came in), so the
+    canvas stayed white and the model saw nothing."""
+    urls: List[str] = []
+    for frame in page.frames:
+        url = frame.url or ""
+        if "/captcha/v1/" in url and "frame=challenge" in url:
+            try:
+                urls += [u for u in await frame.evaluate(RESOURCES_JS) if u not in urls]
+            except Exception as e:
+                log.info("challenge frame resources not read: %s", e)
+    return urls
 
 
 def decode(data: bytes) -> list:
