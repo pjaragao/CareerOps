@@ -147,14 +147,17 @@ def _to_png(raw: bytes) -> bytes:
 # The worker's Chrome speaks pt-BR; the library knows European Portuguese only for one label (2026-11-19, seen on
 # Google's demo: "Como alternativa, baixe o áudio como MP3"). The audio itself stays English under pt-BR: the library's
 # en-US default is right there (a pt-BR transcription gave nonsense and got the IP's audio blocked).
-PT_BR_LABELS = {"alternatively_download_audio_as_mp3": "Como alternativa, baixe o áudio como MP3"}
+PT_BR_LABELS = {"alternatively_download_audio_as_mp3": ("Como alternativa, baixe o áudio como MP3",),
+                # 2026-11-20: pt-BR labels the library does not know yet (it had only "Avançar" and "Pular")
+                "next": ("Próximo", "Próxima", "Seguinte"), "skip": ("Ignorar",)}
 
 
 def _teach_library() -> None:
     from playwright_recaptcha.recaptchav2 import translations
-    for key, label in PT_BR_LABELS.items():
-        if label not in translations.ELEMENT_TRANSLATIONS[key]:
-            translations.ELEMENT_TRANSLATIONS[key] = tuple(translations.ELEMENT_TRANSLATIONS[key]) + (label,)
+    for key, labels in PT_BR_LABELS.items():
+        for label in labels:
+            if label not in translations.ELEMENT_TRANSLATIONS[key]:
+                translations.ELEMENT_TRANSLATIONS[key] = tuple(translations.ELEMENT_TRANSLATIONS[key]) + (label,)
 
 
 # "click verify once there are none left" in the languages the worker's Chrome may show
@@ -335,10 +338,10 @@ async def solve_recaptcha(page: Page, vision: Optional[Vision]) -> Dict[str, Any
             # 2026-11-20: 0 of 27 in 3 days, most "Timeout waiting for get_by_role("button", name=re.compile(…" cut before
             # the name. Keep which name it waited for and the buttons the challenge really shows, to fix the labels.
             text = str(e)
-            wanted = re.search(r'name=re\.compile\(r?["\'](.{0,160})', text)
+            wanted = next((l.strip() for l in text.splitlines() if "waiting for" in l), "")
             seen = await _recaptcha_buttons(page)
             tried.append(f"{'image' if image else 'audio'}: {type(e).__name__}: {text.splitlines()[0][:100]}"
-                         + (f" | waited for: {wanted.group(1)}" if wanted else "") + (f" | buttons: {seen}" if seen else ""))
+                         + (f" | {wanted[:260]}" if wanted else "") + (f" | buttons: {seen}" if seen else ""))
         finally:
             solver.close()
     return {"solved": False, "error": "; ".join(tried) or "not solved"}
@@ -352,7 +355,8 @@ async def _recaptcha_buttons(page: Page) -> List[str]:
     try:
         return await bframe.evaluate("""() => [...document.querySelectorAll('button, [role=button], input[type=button], input[type=submit]')]
             .filter(b => b.offsetParent !== null)
-            .map(b => (b.getAttribute('aria-label') || b.title || b.innerText || b.value || '').trim()).filter(Boolean).slice(0, 12)""")
+            .map(b => (b.getAttribute('aria-label') || b.title || b.innerText || b.value || '').trim()).filter(Boolean)
+            .filter((n, i, all) => all.indexOf(n) === i).slice(0, 25)""")
     except Exception:
         return []
 
