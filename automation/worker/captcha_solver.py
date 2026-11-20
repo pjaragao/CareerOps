@@ -371,7 +371,9 @@ async def solve_hcaptcha(page: Page, vision: Optional[Vision], reasoner=None) ->
             if out.get("solved") or await _token(page, "h-captcha-response"):
                 return {"solved": True, "how": out.get("how") or "hcaptcha-challenger"}
             log.info("hcaptcha-challenger did not pass: %s", out.get("error"))
-            box = next((f for f in page.frames if HCAPTCHA.search(f.url or "")), None)
+            # 2026-11-20: the old grid solver below never passed a 2026 challenge after this one failed (0 of 28) and held
+            # the solver lock 1-2 min more; its error also hid what this one saw. Its answer is the final one.
+            return {"solved": False, "error": out.get("error") or "hcaptcha-challenger did not pass"}
     if box is not None and not await _token(page, "h-captcha-response"):
         await _human_click(page, box, x_px=30)
         for _ in range(16):

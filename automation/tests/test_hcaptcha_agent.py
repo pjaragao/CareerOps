@@ -304,3 +304,20 @@ def test_the_provider_tells_which_kind_of_question_it_is(tmp_path):
     asyncio.run(p.generate_with_images(images=[img], response_schema=ImageBinaryChallenge))
     asyncio.run(p.generate_with_images(images=[img], response_schema=ImageAreaSelectChallenge))
     assert kinds == ["grid", "point"]
+
+
+def test_two_icims_companies_are_told_apart_by_their_own_context():
+    from worker import captcha_server as cs
+
+    class Ctx:
+        def __init__(self):
+            self.pages = []
+    c1, c2 = Ctx(), Ctx()
+    cravath_job, cravath_login = _Tab("https://careers-cravath.icims.com/jobs/3608/login"), _Tab("https://login.icims.com/signin?a")
+    rivian_job, rivian_login = _Tab("https://us-careers-rivian.icims.com/jobs/1/login"), _Tab("https://login.icims.com/signin?b")
+    for ctx, tabs in ((c1, (cravath_job, cravath_login)), (c2, (rivian_job, rivian_login))):
+        for t in tabs:
+            t.context = ctx
+            ctx.pages.append(t)
+    assert cs.pick_tab([rivian_login, cravath_login], "careers-cravath.icims.com") is cravath_login
+    assert cs.pick_tab([rivian_login, cravath_login], "us-careers-rivian.icims.com") is rivian_login

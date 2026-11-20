@@ -48,6 +48,16 @@ def pick_tab(tabs: list, want: str):
     exact = [t for t in tabs if _host(t.url) == want or any(_host(f.url) == want for f in t.frames)]
     if exact:
         return exact[0]
+    # each agent has its own browser context: the CAPTCHA tab whose sibling tab is on that host (2026-11-20: Cravath and
+    # Rivian both on login.icims.com at once)
+    def siblings(t):
+        try:
+            return [p for p in t.context.pages if p is not t]
+        except Exception:
+            return []
+    kin = [t for t in tabs if any(_host(p.url) == want for p in siblings(t))]
+    if len(kin) == 1:
+        return kin[0]
     site = [t for t in tabs if _site(t.url) == _site(want) or any(_site(f.url) == _site(want) for f in t.frames)]
     if len(site) == 1:
         return site[0]

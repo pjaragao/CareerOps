@@ -69,6 +69,7 @@ class BackendProvider:
         # for a challenge that compares with an example ("same number of wheels as the example", "icons shown in the guide"):
         # its header, where hCaptcha draws the example; the library photographs only the picture below it
         self.example: Optional[bytes] = None
+        self.calls: List[str] = []   # each model question: "kind:instruction", for the solve's result
 
     async def generate_with_images(self, *, images, response_schema, user_prompt=None, description=None, **kwargs):
         pngs = [Path(p).read_bytes() for p in images or [] if p and Path(p).exists()]
@@ -91,6 +92,8 @@ class BackendProvider:
         if self.extra and pngs and hcaptcha_video.MOTION.search(prompt):
             pngs, prompt = pngs + self.extra, prompt + self.note
         kind = KINDS.get(getattr(response_schema, "__name__", ""), "other")
+        first = next((l for l in (user_prompt or "").splitlines() if l.strip()), "")
+        self.calls.append(f"ask {kind}:{first.replace('**', '').strip()[:50]}")
         try:
             text = await self._reason(pngs, description or "", prompt, schema, kind)
         except TypeError:   # a reasoner without the kind (tests, older callers)
@@ -154,6 +157,7 @@ async def run(page, reason: Reasoner, challenge_open: bool) -> Dict[str, Any]:
     # demo: round 2 white every time, even after 5 s). Take it again until there is a picture, up to CAPTURE_TRIES s.
     capture = arm._capture_spatial_mapping
     videos = hcaptcha_video.VideoWatch()
+    rounds: List[str] = []   # what each round saw, for the result: "type:picture source:instruction"
 
     def new_challenge():
         provider.extra, provider.note = [], ""
@@ -167,6 +171,7 @@ async def run(page, reason: Reasoner, challenge_open: bool) -> Dict[str, Any]:
         if frames:
             try:
                 if hcaptcha_video.paste_into(raw, frames):
+                    rounds.append(f"video:{(arm._challenge_prompt or '')[:40]}")
                     grid = await _regrid(frame, raw, grid, config)
                     provider.extra, provider.note = [hcaptcha_video.moments_sheet(frames)], hcaptcha_video.NOTE
                     log.info("hCaptcha video challenge: composite of %d frames in place", len(frames))
@@ -179,6 +184,7 @@ async def run(page, reason: Reasoner, challenge_open: bool) -> Dict[str, Any]:
             try:
                 picture = await hcaptcha_video.picture_for(page)
                 if picture is not None and hcaptcha_video.paste_picture(raw, picture):
+                    rounds.append(f"picture:{(arm._challenge_prompt or '')[:40]}")
                     grid = await _regrid(frame, raw, grid, config)
                     log.info("hCaptcha static challenge: its picture drawn in (%sx%s)", picture.shape[1], picture.shape[0])
                     return raw, grid
@@ -190,8 +196,12 @@ async def run(page, reason: Reasoner, challenge_open: bool) -> Dict[str, Any]:
             await page.wait_for_timeout(1000)
             raw, grid = await capture(frame, cache_key, crumb_id)
         else:
+            loaded = await hcaptcha_video.challenge_loads(page)
+            rounds.append(f"blank:{(arm._challenge_prompt or '')[:40]}:{','.join(loaded)[:80]}")
             log.warning("hCaptcha picture blank after %d s (%s); the challenge loaded: %s", CAPTURE_TRIES,
-                        (arm._challenge_prompt or "")[:60], await hcaptcha_video.challenge_loads(page))
+                        (arm._challenge_prompt or "")[:60], loaded)
+            return raw, grid
+        rounds.append(f"canvas:{(arm._challenge_prompt or '')[:40]}")
         return raw, grid
     arm._capture_spatial_mapping = patient_capture
     arm.check_crumb_count = patient_crumb_count(arm.check_crumb_count, page.wait_for_timeout)
@@ -225,7 +235,8 @@ async def run(page, reason: Reasoner, challenge_open: bool) -> Dict[str, Any]:
             await arm.click_checkbox()
         signal = await agent.wait_for_challenge()
     except Exception as e:
-        return {"solved": False, "error": f"hcaptcha-challenger: {type(e).__name__}: {str(e)[:160]}"}
+        return {"solved": False, "error": f"hcaptcha-challenger: {type(e).__name__}: {str(e)[:160]}; "
+                                          f"rounds: {' | '.join((rounds + provider.calls)[-6:])}"[:700]}
     finally:
         for handler in (agent._task_handler, note):
             try:
@@ -234,9 +245,10 @@ async def run(page, reason: Reasoner, challenge_open: bool) -> Dict[str, Any]:
                 pass
     if signal == ChallengeSignal.SUCCESS:
         return {"solved": True, "how": "hcaptcha-challenger"}
-    log.warning("hcaptcha-challenger failed (%s); hCaptcha calls: %s", getattr(signal, "value", signal), calls[-8:])
+    log.warning("hcaptcha-challenger failed (%s); hCaptcha calls: %s; rounds: %s", getattr(signal, "value", signal), calls[-8:], rounds)
     await _keep_failure_picture(page)
-    return {"solved": False, "error": f"hcaptcha-challenger: {getattr(signal, 'value', signal)}; calls: {', '.join(calls[-4:])}"}
+    return {"solved": False, "error": f"hcaptcha-challenger: {getattr(signal, 'value', signal)}; calls: {', '.join(calls[-4:])}; "
+                                      f"rounds: {' | '.join((rounds + provider.calls)[-6:])}"[:700]}
 
 
 async def _regrid(frame, raw: Path, grid: Path, config) -> Path:
