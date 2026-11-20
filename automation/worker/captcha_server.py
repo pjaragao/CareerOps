@@ -33,6 +33,27 @@ def _host(url: str) -> str:
     return (urlparse(url or "").hostname or "").lower()
 
 
+def _site(url_or_host: str) -> str:
+    """The last two labels of the host (careers-cravath.icims.com and login.icims.com are both icims.com)."""
+    host = _host(url_or_host) if "/" in (url_or_host or "") else (url_or_host or "").lower()
+    return ".".join(host.split(".")[-2:]) if host.count(".") >= 1 else host
+
+
+def pick_tab(tabs: list, want: str):
+    """The tab the agent means, among those with a CAPTCHA: its host on the tab or on a frame inside it, else the one tab
+    of the same site (iCIMS moves the login to login.icims.com: 2026-11-20, Cravath "CAPTCHA on 2 tabs, none on
+    careers-cravath.icims.com"); None when two companies' tabs would fit."""
+    if not want:
+        return tabs[0] if len(tabs) == 1 else None
+    exact = [t for t in tabs if _host(t.url) == want or any(_host(f.url) == want for f in t.frames)]
+    if exact:
+        return exact[0]
+    site = [t for t in tabs if _site(t.url) == _site(want) or any(_site(f.url) == _site(want) for f in t.frames)]
+    if len(site) == 1:
+        return site[0]
+    return tabs[0] if len(tabs) == 1 else None
+
+
 class CaptchaServer:
     def __init__(self, browsers, api):
         self.browsers = browsers
@@ -66,7 +87,6 @@ class CaptchaServer:
                 if with_captcha:
                     break
                 await asyncio.sleep(1)
-            same_host = [p for p in with_captcha if want and _host(p.url) == want]
             if not with_captcha:
                 # a firewall's block page is no challenge: say so, so the agent stops at once instead of asking again
                 # (2026-11-19, NatWest: Cloudflare "Sorry, you have been blocked")
@@ -79,9 +99,9 @@ class CaptchaServer:
                         return {"solved": False, "kind": "blocked",
                                 "error": "the site's firewall blocked this browser (not a CAPTCHA, nothing to solve): stop with needs_user and say 'bloqueado pelo site'"}
                 return {"solved": False, "kind": None, "error": "no open CAPTCHA challenge on any company-site tab (already passed, or a full-page check: take a snapshot)"}
-            if not same_host and len(with_captcha) > 1:
+            page = pick_tab(with_captcha, want)
+            if page is None:
                 return {"solved": False, "error": f"CAPTCHA on {len(with_captcha)} tabs, none on {want or 'the given page'}"}
-            page = (same_host or with_captcha)[0]
             try:
                 await page.bring_to_front()
             except Exception:

@@ -250,3 +250,25 @@ def test_a_white_picture_inside_the_teal_frame_is_blank():
     assert ha.blank_picture((fix / "hcaptcha_white_with_header.png").read_bytes()) is True    # Recruitee, 2026-11-20
     assert ha.blank_picture((fix / "hcaptcha_video_view.png").read_bytes()) is False           # a drawn one
     assert ha.blank_picture((fix / "hcaptcha_video_blank_view.png").read_bytes()) is True
+
+
+class _F:
+    def __init__(self, url):
+        self.url = url
+
+
+class _Tab:
+    def __init__(self, url, frames=()):
+        self.url, self.frames = url, [_F(u) for u in frames]
+
+
+def test_the_solver_finds_the_agents_tab_across_icims_hosts():
+    from worker import captcha_server as cs
+    cravath = _Tab("https://login.icims.com/signin?x", ["https://newassets.hcaptcha.com/captcha/v1/a#frame=checkbox"])
+    lever = _Tab("https://jobs.lever.co/megaport/1/apply")
+    assert cs.pick_tab([lever, cravath], "careers-cravath.icims.com") is cravath           # same site, one tab
+    inside = _Tab("https://careers-cravath.icims.com/jobs/1", ["https://login.icims.com/signin"])
+    assert cs.pick_tab([lever, inside], "login.icims.com") is inside                       # its host on a frame
+    bowman = _Tab("https://login.icims.com/signin?y")
+    assert cs.pick_tab([cravath, bowman], "careers-cravath.icims.com") is None               # two companies: no guess
+    assert cs.pick_tab([lever], "careers-cravath.icims.com") is lever                        # the only one
