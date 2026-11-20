@@ -102,3 +102,24 @@ def test_the_challenge_frame_says_which_video_it_loaded_when_the_listener_missed
     page = Page([Frame("https://careers.example.com/", ["https://careers.example.com/a.webm"]),
                  Frame("https://newassets.hcaptcha.com/captcha/v1/x/static/hcaptcha.html#frame=challenge&id=1", names)])
     assert asyncio.run(hv.fetched_by_challenge(page)) == ["https://imgs.hcaptcha.com/p1.webm", "https://imgs.hcaptcha.com/p2.webm"]
+
+
+def test_the_main_picture_is_the_one_shaped_like_the_challenge():
+    import numpy as np
+    example = np.zeros((100, 150, 3), np.uint8)     # header example: small
+    main = np.zeros((660, 960, 3), np.uint8)         # 480x330 at 2x
+    piece = np.zeros((300, 300, 3), np.uint8)        # a drag piece: square
+    assert hv.main_picture([example, piece, main, None]) is main
+    assert hv.main_picture([example]) is None
+
+
+def test_a_blank_screenshot_gets_the_picture_in_place(tmp_path):
+    import numpy as np
+    import cv2
+    shot = tmp_path / "view.png"
+    shutil.copy(FIX / "hcaptcha_video_blank_view.png", shot)
+    picture = np.full((660, 960, 3), (40, 120, 200), np.uint8)
+    assert hv.paste_picture(shot, picture)
+    after = cv2.imread(str(shot))
+    assert tuple(after[300, 250]) == (40, 120, 200) and tuple(after[129, 250]) != (40, 120, 200)
+    assert (after[:100] == cv2.imread(str(FIX / "hcaptcha_video_blank_view.png"))[:100]).all()   # prompt kept

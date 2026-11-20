@@ -166,6 +166,16 @@ async def run(page, reason: Reasoner, challenge_open: bool) -> Dict[str, Any]:
             except Exception as e:
                 log.warning("hCaptcha video challenge not used: %s", e)
         provider.extra, provider.note = [], ""
+        if blank_picture(Path(raw).read_bytes()):
+            # a static challenge whose canvas did not paint: its picture, downloaded and drawn in
+            try:
+                picture = await hcaptcha_video.picture_for(page)
+                if picture is not None and hcaptcha_video.paste_picture(raw, picture):
+                    grid = await _regrid(frame, raw, grid, config)
+                    log.info("hCaptcha static challenge: its picture drawn in (%sx%s)", picture.shape[1], picture.shape[0])
+                    return raw, grid
+            except Exception as e:
+                log.warning("hCaptcha picture not drawn in: %s", e)
         for _ in range(CAPTURE_TRIES):
             if not blank_picture(Path(raw).read_bytes()):
                 break

@@ -205,3 +205,80 @@ def moments_sheet(frames: list, n: int = 6) -> bytes:
 
 
 __all__ = ["VideoWatch", "decode", "composite", "place", "paste_into", "moments_sheet", "NOTE"]
+
+
+# ── Static pictures (2026-11-20) ──
+# On Lever, Recruitee and iCIMS the static challenges ("select the THREE characters partly hidden behind a line", "the
+# vehicle with the same number of wheels as the example") stayed white too: the challenge frame had loaded one JPEG and
+# drawn it on its 1000x940 canvas, which never painted. Same remedy as the video: download it and paste it in place.
+
+IMAGES_JS = r"""() => {
+  const names = performance.getEntriesByType('resource').map(e => e.name);
+  let last = -1;
+  names.forEach((u, i) => { if (u.includes('/getcaptcha')) last = i; });
+  return names.slice(last + 1).filter(u => /\.(jpe?g|png|webp)(\?|$)/i.test(u) && !/logo|icon|sprite/i.test(u));
+}"""
+ASPECT = 480 / 330
+
+
+async def challenge_pictures(page) -> List[str]:
+    urls: List[str] = []
+    for frame in page.frames:
+        url = frame.url or ""
+        if "/captcha/v1/" in url and "frame=challenge" in url:
+            try:
+                urls += [u for u in await frame.evaluate(IMAGES_JS) if u not in urls]
+            except Exception as e:
+                log.info("challenge frame pictures not read: %s", e)
+    return urls
+
+
+def main_picture(images: list):
+    """Of the pictures a challenge loaded, the one that fills its picture area: closest to its 480x330 shape, then the
+    largest (the example in the header is small)."""
+    best, key = None, None
+    for img in images:
+        if img is None or img.ndim < 2:
+            continue
+        h, w = img.shape[:2]
+        if w < 200 or h < 140:
+            continue
+        k = (round(abs(w / h - ASPECT), 1), -(w * h))
+        if key is None or k < key:
+            best, key = img, k
+    return best
+
+
+async def picture_for(page) -> Optional[object]:
+    """The challenge's main picture, downloaded and decoded (BGR), or None."""
+    import cv2
+    import numpy as np
+    images = []
+    for url in (await challenge_pictures(page))[:6]:
+        try:
+            res = await page.request.get(url, timeout=15000)
+            data = await res.body() if res.ok else b""
+        except Exception as e:
+            log.info("challenge picture not downloaded: %s", e)
+            continue
+        img = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR) if data else None
+        images.append(img)
+    return main_picture(images)
+
+
+def paste_picture(shot_path, picture) -> bool:
+    """A blank challenge screenshot with its picture drawn in, where the canvas draws it (scaled to its 480x330 area)."""
+    import cv2
+    shot = cv2.imread(str(shot_path))
+    if shot is None or picture is None:
+        return False
+    H, W = shot.shape[:2]
+    if abs(H / W - VIEW[1] / VIEW[0]) > 0.02:
+        return False
+    scale = W / VIEW[0]
+    w, h = round(480 * scale), round(330 * scale)
+    x, y = round(SPOT[0] * scale), round(SPOT[1] * scale)
+    if y + h > H or x + w > W:
+        return False
+    shot[y:y + h, x:x + w] = cv2.resize(picture, (w, h))
+    return bool(cv2.imwrite(str(shot_path), shot))
