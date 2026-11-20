@@ -243,3 +243,10 @@ def test_an_example_challenge_sends_the_header_with_its_example(tmp_path):
     asyncio.run(provider.generate_with_images(images=[shot, grid], response_schema=Answer, user_prompt="Click the dog"))
     assert seen[0][0] == [grid.read_bytes(), b"HEADER"] and "example (guide)" in seen[0][1]
     assert seen[1][0] == [grid.read_bytes()]
+
+
+def test_a_white_picture_inside_the_teal_frame_is_blank():
+    fix = Path(__file__).parent / "fixtures"
+    assert ha.blank_picture((fix / "hcaptcha_white_with_header.png").read_bytes()) is True    # Recruitee, 2026-11-20
+    assert ha.blank_picture((fix / "hcaptcha_video_view.png").read_bytes()) is False           # a drawn one
+    assert ha.blank_picture((fix / "hcaptcha_video_blank_view.png").read_bytes()) is True

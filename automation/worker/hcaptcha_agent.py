@@ -94,15 +94,20 @@ class BackendProvider:
 
 
 def blank_picture(png: bytes) -> bool:
-    """The challenge screenshot with nothing below the prompt banner: one flat colour (white) in its lower 3/4."""
+    """The challenge screenshot with nothing drawn below the prompt banner: the inside of its lower part (borders left out:
+    2026-11-20 on Recruitee/Lever the teal frame made a white picture look drawn, and the model "clicked" the example in
+    the header) is nearly all one light colour."""
     try:
         import io
         from PIL import Image
         img = Image.open(io.BytesIO(png)).convert("L")
         w, h = img.size
-        lower = img.crop((0, h // 4, w, h))
-        lo, hi = lower.getextrema()
-        return hi - lo < 12
+        inner = img.crop((int(w * 0.04), int(h * 0.42), int(w * 0.96), int(h * 0.96)))
+        hist = inner.histogram()
+        total = sum(hist) or 1
+        light = sum(hist[235:]) / total
+        lo, hi = inner.getextrema()
+        return light > 0.985 or hi - lo < 12
     except Exception:
         return False
 
@@ -187,6 +192,12 @@ async def run(page, reason: Reasoner, challenge_open: bool) -> Dict[str, Any]:
     page.on("response", note)
     signal = None
     try:
+        if not challenge_open and not await _checkbox_visible(page):
+            # invisible hCaptcha (Lever: no checkbox, the challenge opens on submit): the library would spend 30 s looking
+            # for a checkbox (2026-11-20, Megaport). Wait for the challenge instead.
+            challenge_open = await _wait_open_challenge(page, INVISIBLE_WAIT_S)
+            if not challenge_open:
+                return {"solved": False, "error": "hcaptcha-challenger: invisible hCaptcha and no challenge open: submit first"}
         if challenge_open:
             await arm.refresh_challenge()
         else:
@@ -348,6 +359,34 @@ class CheckedPoints:
         if bad:
             raise ValueError(f"points outside the challenge picture: {[(p.x, p.y) for p in bad]}")
         return out
+
+
+INVISIBLE_WAIT_S = 10
+
+
+async def _checkbox_visible(page) -> bool:
+    """An hCaptcha checkbox frame on screen, at any depth and on any host."""
+    for frame in page.frames:
+        if hcaptcha_frame(frame.url, "checkbox"):
+            try:
+                if await (await frame.frame_element()).is_visible():
+                    return True
+            except Exception:
+                pass
+    return False
+
+
+async def _wait_open_challenge(page, seconds: int) -> bool:
+    for _ in range(seconds * 2):
+        for frame in page.frames:
+            if hcaptcha_frame(frame.url, "challenge"):
+                try:
+                    if await frame.locator("//div[@class='challenge-view']").is_visible():
+                        return True
+                except Exception:
+                    pass
+        await page.wait_for_timeout(500)
+    return False
 
 
 CRUMB_TRIES = 8   # 0.5 s apart
