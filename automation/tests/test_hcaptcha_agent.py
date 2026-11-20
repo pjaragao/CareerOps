@@ -119,3 +119,68 @@ def test_a_blank_picture_costs_no_model_call(tmp_path):
         assert "blank" in str(e)
     else:
         raise AssertionError("expected ValueError")
+
+
+def test_page_count_is_read_again_while_it_says_one():
+    seen = iter([1, 1, 2, 2])
+    waits = []
+
+    async def count():
+        return next(seen)
+
+    async def wait(ms):
+        waits.append(ms)
+    assert asyncio.run(ha.patient_crumb_count(count, wait)()) == 2
+    assert waits == [500, 500]
+
+
+def test_a_one_page_challenge_stops_after_a_few_seconds():
+    calls = []
+
+    async def count():
+        calls.append(1)
+        return 1
+
+    async def wait(ms):
+        pass
+    assert asyncio.run(ha.patient_crumb_count(count, wait)()) == 1
+    assert len(calls) == ha.CRUMB_TRIES + 1
+
+
+def test_a_video_challenge_sends_the_grid_and_for_movement_its_moments(tmp_path):
+    shot, grid = tmp_path / "c.png", tmp_path / "g.png"
+    shot.write_bytes(_png(True))
+    grid.write_bytes(_png(True) + b"grid")
+    seen = []
+
+    async def reason(pngs, system, prompt, schema):
+        seen.append((pngs, prompt))
+        return '{"challenge_prompt": "x", "points": []}'
+    provider = ha.BackendProvider(reason)
+    provider.extra, provider.note = [b"SHEET"], "\n\nanimation"
+    asyncio.run(provider.generate_with_images(images=[shot, grid], response_schema=Answer, user_prompt="Tap on the item that spins around"))
+    asyncio.run(provider.generate_with_images(images=[shot, grid], response_schema=Answer, user_prompt="Click the item for sports"))
+    (moving, prompt1), (still, prompt2) = seen
+    assert moving == [grid.read_bytes(), b"SHEET"] and prompt1.endswith("animation")
+    assert still == [grid.read_bytes()] and "animation" not in prompt2 and "coordinate grid" in prompt2
+
+
+def test_click_challenges_get_their_type_without_the_model():
+    from hcaptcha_challenger.models import ChallengeTypeEnum as T
+    single, multi = T.IMAGE_LABEL_SINGLE_SELECT, T.IMAGE_LABEL_MULTI_SELECT
+    cases = {
+        "Click the item connected to sports and games": single,
+        "Tap on the item that spins around": single,
+        "Encontre o objeto que gira em círculo": single,
+        "Find the thing that turns in a circle": single,
+        "Tap on every object that holds a drink": multi,
+        "Please click on the TWO icons that break the pattern": multi,
+        "Selecione todos os animais que dormem": multi,
+        "Drag the TWO shapes to their matching outlines": None,
+        "Please drag the X so it sits inside both shapes": None,
+        "Arraste a peça até o lugar certo": None,
+        "": None,
+        "Something unexpected": None,
+    }
+    for prompt, want in cases.items():
+        assert ha.quick_type(prompt) == want, prompt
