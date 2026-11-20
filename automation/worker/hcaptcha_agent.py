@@ -165,7 +165,9 @@ async def run(page, reason: Reasoner, challenge_open: bool) -> Dict[str, Any]:
 
     async def patient_capture(frame, cache_key, crumb_id):
         raw, grid = await capture(frame, cache_key, crumb_id)
-        provider.example = await header_picture(arm) if EXAMPLE_WORDS.search(arm._challenge_prompt or "") else None
+        # the example's header used to go along as a 2nd picture, but the challenge screenshot already shows it (2026-11-20
+        # Cravath: the boat example in the grid picture) and each picture costs ~20 s through Lolo: off
+        provider.example = None
         # a video challenge: the composite of its video in place of whatever the canvas showed, and the grid again
         frames = await videos.frames(page, int(crumb_id) if str(crumb_id).isdigit() else -1)
         if frames:
