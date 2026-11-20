@@ -292,13 +292,23 @@ MANY_WORDS = re.compile(r"\b(every|all|each|both|two|three|todos|todas|cada|ambo
                         r"zwei|drei|tous|toutes|chaque|deux|trois|cualquier)\b", re.I)
 
 
+TWO_WORDS = re.compile(r"\b(two|2|dois|duas|zwei|deux|dos|three|tr[êe]s|drei|trois)\b", re.I)
+
+
 def quick_type(prompt: str):
     """The type of a canvas challenge read from its instruction, for click challenges only: the library would otherwise ask
     the model, 25-30 s through Lolo (2026-11-20 demo), and hCaptcha replaced a challenge answered after ~150 s. Drag
-    challenges and anything unclear go to the model as before (None)."""
+    challenges too (one piece or several); anything unclear goes to the model as before (None)."""
     from hcaptcha_challenger.models import ChallengeTypeEnum
     text = (prompt or "").strip()
-    if not text or DRAG_WORDS.search(text) or not CLICK_WORDS.search(text):
+    if not text:
+        return None
+    if DRAG_WORDS.search(text):
+        # 2026-11-20, Rivian: a drag challenge whose canvas stayed white sent the library's type question a white picture,
+        # and the solve ended before its first round. "Drag the TWO shapes" moves two pieces; "drag the X inside both
+        # shapes" moves one.
+        return ChallengeTypeEnum.IMAGE_DRAG_MULTI if TWO_WORDS.search(text) else ChallengeTypeEnum.IMAGE_DRAG_SINGLE
+    if not CLICK_WORDS.search(text):
         return None
     if MANY_WORDS.search(text):
         return ChallengeTypeEnum.IMAGE_LABEL_MULTI_SELECT

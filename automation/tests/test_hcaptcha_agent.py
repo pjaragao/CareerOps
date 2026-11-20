@@ -176,9 +176,10 @@ def test_click_challenges_get_their_type_without_the_model():
         "Tap on every object that holds a drink": multi,
         "Please click on the TWO icons that break the pattern": multi,
         "Selecione todos os animais que dormem": multi,
-        "Drag the TWO shapes to their matching outlines": None,
-        "Please drag the X so it sits inside both shapes": None,
-        "Arraste a peça até o lugar certo": None,
+        "Drag the TWO shapes to their matching outlines": T.IMAGE_DRAG_MULTI,
+        "Please drag the X so it sits inside both shapes": T.IMAGE_DRAG_SINGLE,
+        "Arraste a peça até o lugar certo": T.IMAGE_DRAG_SINGLE,
+        "Arraste as DUAS formas para os contornos": T.IMAGE_DRAG_MULTI,
         "": None,
         "Something unexpected": None,
     }
