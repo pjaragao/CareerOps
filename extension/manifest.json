@@ -70,7 +70,14 @@
         "apply_copilot.js"
       ],
       "run_at": "document_start",
-      "all_frames": true
+      "all_frames": true,
+      "exclude_matches": [
+        "*://*.hcaptcha.com/*",
+        "*://*/captcha/v1/*",
+        "*://www.google.com/recaptcha/*",
+        "*://www.recaptcha.net/recaptcha/*",
+        "*://challenges.cloudflare.com/*"
+      ]
     }
   ],
   "host_permissions": [

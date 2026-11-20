@@ -4,6 +4,9 @@
 // It never clicks the final submit button: you review and send.
 (() => {
     if (window.__careeropsApply) return;
+    // never inside a CAPTCHA's own frame (also excluded in the manifest): its scripts check that frame, and ours there made
+    // hCaptcha serve challenges whose picture never drew (2026-11-20)
+    if (/(^|\.)hcaptcha\.com$|^challenges\.cloudflare\.com$/.test(location.hostname) || /\/captcha\/v1\/|\/recaptcha\//.test(location.pathname)) return;
     const inFrame = window.top !== window;   // forms embedded in an iframe (e.g. Greenhouse on a company site)
     window.__careeropsApply = true;
 
