@@ -191,3 +191,55 @@ def test_white_label_hcaptcha_frames_count_too():
     assert ha.hcaptcha_frame("https://careers.recruitee.com/captcha/v1/abc/static/hcaptcha.html#frame=checkbox&id=1", "checkbox")
     assert not ha.hcaptcha_frame("https://careers.recruitee.com/captcha/v1/abc/static/hcaptcha.html#frame=checkbox", "challenge")
     assert not ha.hcaptcha_frame("https://www.google.com/recaptcha/api2/anchor", "checkbox")
+
+
+def test_points_outside_the_challenge_are_caught():
+    box = {"x": 100, "y": 21, "width": 500, "height": 470}
+    inside, far = Point(x=314, y=380), Point(x=832, y=143)
+    assert ha.outside([inside], box) == []
+    assert ha.outside([inside, far], box) == [far]
+
+
+def test_a_checked_point_reasoner_refuses_a_point_off_the_picture():
+    class Inner:
+        cached = "kept"
+
+        async def __call__(self, **kw):
+            return Answer(challenge_prompt="x", points=[Point(x=832, y=143)])
+
+    class Arm:
+        async def get_challenge_frame_locator(self):
+            class Loc:
+                async def bounding_box(self):
+                    return {"x": 100, "y": 21, "width": 500, "height": 470}
+
+            class Frame:
+                def locator(self, sel):
+                    return Loc()
+            return Frame()
+    checked = ha.CheckedPoints(Inner(), Arm())
+    assert checked.cached == "kept"   # the library's other calls on it still work
+    try:
+        asyncio.run(checked(challenge_screenshot="a", grid_divisions="b"))
+    except ValueError as e:
+        assert "outside" in str(e)
+    else:
+        raise AssertionError("expected ValueError")
+
+
+def test_an_example_challenge_sends_the_header_with_its_example(tmp_path):
+    shot, grid = tmp_path / "c.png", tmp_path / "g.png"
+    shot.write_bytes(_png(True))
+    grid.write_bytes(_png(True) + b"grid")
+    seen = []
+
+    async def reason(pngs, system, prompt, schema):
+        seen.append((pngs, prompt))
+        return '{"challenge_prompt": "x", "points": []}'
+    provider = ha.BackendProvider(reason)
+    provider.example = b"HEADER"
+    asyncio.run(provider.generate_with_images(images=[shot, grid], response_schema=Answer,
+                                              user_prompt="Find the vehicle with the same number of wheels as the example"))
+    asyncio.run(provider.generate_with_images(images=[shot, grid], response_schema=Answer, user_prompt="Click the dog"))
+    assert seen[0][0] == [grid.read_bytes(), b"HEADER"] and "example (guide)" in seen[0][1]
+    assert seen[1][0] == [grid.read_bytes()]

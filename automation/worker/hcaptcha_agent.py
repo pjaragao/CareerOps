@@ -62,6 +62,9 @@ class BackendProvider:
         # for a video challenge: its moments sheet, sent after the library's pictures, and a note on how to read them
         self.extra: List[bytes] = []
         self.note = ""
+        # for a challenge that compares with an example ("same number of wheels as the example", "icons shown in the guide"):
+        # its header, where hCaptcha draws the example; the library photographs only the picture below it
+        self.example: Optional[bytes] = None
 
     async def generate_with_images(self, *, images, response_schema, user_prompt=None, description=None, **kwargs):
         pngs = [Path(p).read_bytes() for p in images or [] if p and Path(p).exists()]
@@ -77,6 +80,10 @@ class BackendProvider:
             # late: the grid one alone carries the challenge and the coordinates
             pngs = pngs[1:]
             prompt += "\n\n(Only the picture with the coordinate grid is attached; it shows the whole challenge.)"
+        if self.example and pngs and EXAMPLE_WORDS.search(prompt):
+            pngs = pngs + [self.example]
+            prompt += ("\n\nThe next picture is the challenge's header: the instruction and the example (guide) it refers to. "
+                       "Compare with that example, and answer with coordinates on the grid picture.")
         if self.extra and pngs and hcaptcha_video.MOTION.search(prompt):
             pngs, prompt = pngs + self.extra, prompt + self.note
         text = await self._reason(pngs, description or "", prompt, schema)
@@ -141,6 +148,7 @@ async def run(page, reason: Reasoner, challenge_open: bool) -> Dict[str, Any]:
 
     async def patient_capture(frame, cache_key, crumb_id):
         raw, grid = await capture(frame, cache_key, crumb_id)
+        provider.example = await header_picture(arm) if EXAMPLE_WORDS.search(arm._challenge_prompt or "") else None
         # a video challenge: the composite of its video in place of whatever the canvas showed, and the grid again
         frames = await videos.frames(page, int(crumb_id) if str(crumb_id).isdigit() else -1)
         if frames:
@@ -162,6 +170,8 @@ async def run(page, reason: Reasoner, challenge_open: bool) -> Dict[str, Any]:
     arm._capture_spatial_mapping = patient_capture
     arm.check_crumb_count = patient_crumb_count(arm.check_crumb_count, page.wait_for_timeout)
     arm.check_challenge_type = quick_check_type(arm, arm.check_challenge_type)
+    if getattr(arm, "_spatial_point_reasoner", None) is not None:
+        arm._spatial_point_reasoner = CheckedPoints(arm._spatial_point_reasoner, arm)
     any_hcaptcha_frames(arm, page)
     # 2026-11-20, Cravath iCIMS: right tiles, "Verificar", then no /checkcaptcha/ answer reached the library in 20 s.
     # Note hCaptcha's own calls so a failure says whether the answer went out and what came back.
@@ -292,6 +302,52 @@ def any_hcaptcha_frames(arm, page) -> None:
                     pass
         return await original()
     arm.get_challenge_frame_locator = find
+
+
+EXAMPLE_WORDS = re.compile(r"example|guide|sample|reference|exemplo|guia|refer[êe]ncia|amostra|modelo mostrado|beispiel|vorlage|"
+                           r"exemple|mod[èe]le|ejemplo|muestra", re.I)
+
+
+async def view_box(arm) -> Optional[dict]:
+    try:
+        frame = await arm.get_challenge_frame_locator()
+        return await frame.locator("//div[@class='challenge-view']").bounding_box() if frame else None
+    except Exception:
+        return None
+
+
+async def header_picture(arm) -> Optional[bytes]:
+    try:
+        frame = await arm.get_challenge_frame_locator()
+        return await frame.locator(".challenge-header").first.screenshot(type="png", timeout=5000) if frame else None
+    except Exception as e:
+        log.info("challenge header not captured: %s", e)
+        return None
+
+
+def outside(points, box: dict, margin: float = 6) -> list:
+    """The points that fall outside the challenge picture (page coordinates, as the library's grid labels them)."""
+    return [p for p in points or [] if not (box["x"] - margin <= p.x <= box["x"] + box["width"] + margin
+                                             and box["y"] - margin <= p.y <= box["y"] + box["height"] + margin)]
+
+
+class CheckedPoints:
+    """The library's point reasoner, with its answer checked: points outside the challenge (2026-11-20, Cravath: GLM
+    answered x=832 on a 500 px challenge) raise, and the library takes a new challenge instead of clicking at random."""
+
+    def __init__(self, inner, arm):
+        self._inner, self._arm = inner, arm
+
+    def __getattr__(self, name):
+        return getattr(self._inner, name)
+
+    async def __call__(self, *args, **kwargs):
+        out = await self._inner(*args, **kwargs)
+        box = await view_box(self._arm)
+        bad = outside(getattr(out, "points", None), box) if box else []
+        if bad:
+            raise ValueError(f"points outside the challenge picture: {[(p.x, p.y) for p in bad]}")
+        return out
 
 
 CRUMB_TRIES = 8   # 0.5 s apart
