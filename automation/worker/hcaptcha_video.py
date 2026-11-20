@@ -79,6 +79,31 @@ RESOURCES_JS = r"""() => {
 }"""
 
 
+LOADED_JS = r"""() => {
+  const all = performance.getEntriesByType('resource');
+  let last = -1;
+  all.forEach((e, i) => { if (e.name.includes('/getcaptcha')) last = i; });
+  return all.slice(last + 1).filter(e => !/\.(js|css)(\?|$)/.test(e.name))
+    .map(e => `${e.initiatorType}:${e.name.split('?')[0].split('/').pop().slice(-24)}:${e.transferSize}/${e.decodedBodySize}`).slice(0, 15);
+}"""
+
+
+async def challenge_loads(page) -> List[str]:
+    """What the challenge frame loaded since its last /getcaptcha (type:file:transferred/decoded bytes), for a blank picture:
+    2026-11-20 on Lever/Recruitee/iCIMS the static challenges stayed white with no video seen."""
+    out: List[str] = []
+    for frame in page.frames:
+        url = frame.url or ""
+        if "/captcha/v1/" in url and "frame=challenge" in url:
+            try:
+                out += await frame.evaluate(LOADED_JS)
+                out.append("canvases:" + str(await frame.evaluate(
+                    "() => [...document.querySelectorAll('canvas')].map(c => c.width + 'x' + c.height).join(',')")))
+            except Exception as e:
+                out.append(f"not read: {str(e)[:60]}")
+    return out
+
+
 async def fetched_by_challenge(page) -> List[str]:
     """The videos the challenge frame itself loaded since its last /getcaptcha, from its own resource list. 2026-11-20,
     Cravath on iCIMS: the response listener saw no .webm (the challenge was already open when the solver came in), so the

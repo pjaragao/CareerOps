@@ -171,6 +171,9 @@ async def run(page, reason: Reasoner, challenge_open: bool) -> Dict[str, Any]:
                 break
             await page.wait_for_timeout(1000)
             raw, grid = await capture(frame, cache_key, crumb_id)
+        else:
+            log.warning("hCaptcha picture blank after %d s (%s); the challenge loaded: %s", CAPTURE_TRIES,
+                        (arm._challenge_prompt or "")[:60], await hcaptcha_video.challenge_loads(page))
         return raw, grid
     arm._capture_spatial_mapping = patient_capture
     arm.check_crumb_count = patient_crumb_count(arm.check_crumb_count, page.wait_for_timeout)
