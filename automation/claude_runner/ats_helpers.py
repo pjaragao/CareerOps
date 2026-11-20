@@ -606,7 +606,7 @@ def ask_candidate(action_id: Any, question: str, options: Optional[list], field_
         return {"answer": None, "note": "no question or no task"}
     asked = _api_call(f"/automation/actions/{int(action_id)}/ask",
                       {"question": question[:1000], "options": [str(o)[:200] for o in (options or [])][:30],
-                       "field_type": (field_type or "text")[:20]}, env)
+                       "field_type": (field_type or "text")[:20]}, env, timeout=120)   # the AI may look for the same question in other words
     if asked.get("answer"):
         return {"answer": asked["answer"], "source": asked.get("source") or "candidate"}
     qid = asked.get("question_id")

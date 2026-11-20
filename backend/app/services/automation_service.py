@@ -23,7 +23,7 @@ from psycopg2.extras import Json
 
 from app.core.config import settings
 from app.db.session import get_db_connection, get_db_cursor
-from app.services import content_guard
+from app.services import answer_match, content_guard
 
 log = logging.getLogger("automation")
 
@@ -564,7 +564,7 @@ class AutomationService:
     def _upsert_answer(cur, question: str, answer: str, field_type: str = "text") -> None:
         key = question_key(question)
         val = str(answer or "").strip()
-        if not key or not val:
+        if not key or not val or answer_match.not_an_answer(val):   # "cancele", "arquivar vaga": about one form, not an answer
             return
         cur.execute("""
             INSERT INTO public.automation_answers (question_norm, question, field_type, answer)
@@ -704,6 +704,17 @@ class AutomationService:
         known = AutomationService.known_answer(question, field_type or "text")
         if known:
             return {"answer": known, "source": "saved"}
+        # not in other words either: the AI looks for a saved answer to the same question, in any wording or language
+        tr = answer_match.translation(question, options)
+        try:
+            hit = answer_match.ai_match(question, field_type or "text", options, AutomationService.answers_list(),
+                                        also=[tr["pt"], tr["en"]] if tr else None)
+        except Exception as e:
+            log.warning("answer match for #%s failed: %s", action_id, e)
+            hit = None
+        if hit:
+            AutomationService.add_event(action_id, "claude", "answer_reused", {"question": question[:300], **hit})
+            return {"answer": hit["answer"], "source": "saved_similar", "saved_question": hit["saved_question"]}
         from app.services.bot_service import BotService
         if BotService.quiet():
             return {"answer": None, "unavailable": "quiet hours: the candidate is not asked at night"}
@@ -717,7 +728,12 @@ class AutomationService:
             q = _one("""INSERT INTO public.automation_live_questions (action_id, question, options, field_type)
                         VALUES (%s, %s, %s, %s) RETURNING *""", (action_id, question, Json(opts), (field_type or "text")[:20]))
             listed = ("\nOpções: " + " / ".join(opts)) if opts else ""
-            BotService.notify("question", f"❓ Pergunta da vaga {action.get('title') or f'#{action_id}'} (#{action_id}):\n{question}{listed}\n"
+            shown = question
+            if tr:   # not Portuguese or English: you read it in Portuguese, with the original below
+                pairs = [f"{o} ({p})" if p and p != o else o for o, p in zip(opts, tr["options_pt"] + [""] * len(opts))]
+                listed = ("\nOpções: " + " / ".join(pairs)) if opts else ""
+                shown = f"🌐 {tr['pt']}\n_(original em {tr['lang_name']}: {question})_"
+            BotService.notify("question", f"❓ Pergunta da vaga {action.get('title') or f'#{action_id}'} (#{action_id}):\n{shown}{listed}\n"
                               "Responda citando esta mensagem: o formulário está aberto esperando, e a resposta fica salva para as próximas.",
                               {"reply": "live_question", "action_id": action_id, "question_id": q["id"]}, urgent=True, key=f"liveq:{q['id']}")
             AutomationService.add_event(action_id, "claude", "live_question", {"question": question[:300], "question_id": q["id"]})
@@ -769,7 +785,26 @@ class AutomationService:
             return row["answer"]
         row = _one("SELECT answer FROM public.automation_answers WHERE question_norm = %s ORDER BY updated_at DESC LIMIT 1",
                    (key,))
-        return row["answer"] if row else None
+        if row:
+            return row["answer"]
+        return AutomationService._loose_answer(label, field_type)
+
+    @staticmethod
+    def _loose_answer(label: str, field_type: str) -> Optional[str]:
+        """Same question in other words (2026-11-19): without the agent's context around it, a field label it quoted, or the
+        same content words in any order. Same field type first. Never an instruction saved as an answer."""
+        mine = answer_match.keys_of(label)
+        hits = []
+        for a in AutomationService.answers_list():
+            if answer_match.not_an_answer(a.get("answer") or ""):
+                continue
+            theirs = answer_match.keys_of(a["question"])
+            if set(mine) & set(theirs) or any(answer_match.same_words(m, t) for m in mine for t in theirs):
+                hits.append(a)
+        if not hits:
+            return None
+        same_type = [a for a in hits if a.get("field_type") == field_type]
+        return (same_type or hits)[0]["answer"]
 
     STOPWORDS = {"the", "a", "an", "do", "you", "your", "are", "is", "of", "in", "to", "for", "and", "or", "have", "what", "how",
                  "this", "with", "be", "will", "can", "o", "a", "de", "da", "do", "voce", "e", "em", "para", "qual", "que"}
