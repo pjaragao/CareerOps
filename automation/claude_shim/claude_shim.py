@@ -140,6 +140,81 @@ def run_hermes_vision(messages: list) -> str:
     return text
 
 
+# Model "captcha-reason" (2026-11-19): hcaptcha-challenger's questions (screenshots + its instructions + a JSON schema). The
+# library is built for Gemini's spatial reasoning; the small models answer, but rarely right. In order:
+# 1. Gemini, when the runner env has CAREEROPS_CAPTCHA_GEMINI_KEY (model CAREEROPS_CAPTCHA_GEMINI_MODEL, default below),
+#    through Google's OpenAI-compatible endpoint;
+# 1b. the Nous Portal through Lolo (below);
+# 2. any OpenAI-compatible vision model: CAREEROPS_CAPTCHA_REASON_URL/_MODEL/_KEY (OpenRouter, a local server…);
+# 3. the S22 (CAREEROPS_VISION_LOCAL_*). Lolo's free model is left out: 15-130 s a call, too slow for these.
+GEMINI_OPENAI = "https://generativelanguage.googleapis.com/v1beta/openai"
+CAPTCHA_GEMINI_MODEL = "gemini-2.5-flash"
+CAPTCHA_NOUS_MODEL = "google/gemini-4-argon"   # 2026-11-19 demo: its clicks looked right (3.8 Flash missed); 60-100 s a call
+REASON_TIMEOUT = int(os.environ.get("CAPTCHA_REASON_TIMEOUT", "120"))
+
+
+def _openai_chat(url: str, key: str, body: dict, timeout: int) -> str:
+    import urllib.request
+    req = urllib.request.Request(url.rstrip("/") + "/chat/completions", data=json.dumps(body).encode("utf-8"), method="POST",
+                                 headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=timeout) as res:
+        data = json.loads(res.read().decode("utf-8"))
+    return (((data.get("choices") or [{}])[0].get("message") or {}).get("content") or "").strip()
+
+
+def run_captcha_reason(messages: list) -> str:
+    env = _hermes_env()
+    msgs = [m for m in (messages or []) if isinstance(m, dict)]
+    tried = []
+    routes = []
+    if env.get("CAREEROPS_CAPTCHA_GEMINI_KEY"):
+        routes.append(("gemini", GEMINI_OPENAI, env["CAREEROPS_CAPTCHA_GEMINI_KEY"],
+                       env.get("CAREEROPS_CAPTCHA_GEMINI_MODEL") or CAPTCHA_GEMINI_MODEL))
+    # 2026-11-19: the Nous Portal's models through Lolo's API (its key stays with Lolo), Gemini by default: the user has
+    # credit there. CAREEROPS_CAPTCHA_NOUS_MODEL=off skips it.
+    nous_model = env.get("CAREEROPS_CAPTCHA_NOUS_MODEL") or CAPTCHA_NOUS_MODEL
+    if env.get("CAREEROPS_HERMES_URL") and env.get("CAREEROPS_HERMES_KEY") and nous_model.lower() != "off":
+        routes.append(("nous", env["CAREEROPS_HERMES_URL"].rstrip("/") + "/v1", env["CAREEROPS_HERMES_KEY"], nous_model))
+    if env.get("CAREEROPS_CAPTCHA_REASON_URL"):
+        routes.append(("reason", env["CAREEROPS_CAPTCHA_REASON_URL"], env.get("CAREEROPS_CAPTCHA_REASON_KEY") or "",
+                       env.get("CAREEROPS_CAPTCHA_REASON_MODEL") or "default"))
+    for name, url, key, model in routes:
+        body = {"model": model, "messages": msgs, "temperature": 0}
+        if name == "gemini":
+            body["reasoning_effort"] = env.get("CAREEROPS_CAPTCHA_GEMINI_EFFORT") or "medium"
+        elif name == "nous":
+            body.update(provider="nous", stream=False, model_options={"reasoning_effort": env.get("CAREEROPS_CAPTCHA_NOUS_EFFORT") or "medium"})
+            body["messages"] = [{"role": "system", "content": HERMES_RULES + " You can see the images in the message."}] + msgs
+        try:
+            text = _openai_chat(url, key, body, REASON_TIMEOUT)
+            if text:
+                return text
+            tried.append(f"{name}: empty")
+        except Exception as e:
+            tried.append(f"{name}: {str(e)[:120]}")
+            print(f"captcha reason via {name} failed: {e}", flush=True)
+    # the S22: picture first, the instruction (with the schema) at the end of the user's text, no system message
+    if env.get("CAREEROPS_VISION_LOCAL_URL"):
+        system = " ".join(str(m.get("content") or "") for m in msgs if m.get("role") == "system")
+        images, texts = [], []
+        for m in msgs:
+            if m.get("role") == "user":
+                for c in (m.get("content") if isinstance(m.get("content"), list) else [{"type": "text", "text": str(m.get("content") or "")}]):
+                    (images if c.get("type") == "image_url" else texts).append(c)
+        question = (system[:6000] + "\n\n" + " ".join(str(c.get("text") or "") for c in texts)).strip()
+        body = {"model": env.get("CAREEROPS_VISION_LOCAL_MODEL") or "local", "temperature": 0, "max_tokens": 800,
+                "messages": [{"role": "user", "content": images + [{"type": "text", "text": question}]}]}
+        try:
+            text = _openai_chat(env["CAREEROPS_VISION_LOCAL_URL"], env.get("CAREEROPS_VISION_LOCAL_KEY") or "", body,
+                                max(LOCAL_VISION_TIMEOUT, 60))
+            if "{" in text:
+                return text
+            tried.append("s22: no JSON")
+        except Exception as e:
+            tried.append(f"s22: {str(e)[:120]}")
+    raise RuntimeError("no captcha model answered (" + "; ".join(tried) + ")" if tried else "no captcha model configured")
+
+
 def split_model(model_id: str) -> tuple:
     name, _, tail = (model_id or DEFAULT_MODEL).rpartition("-")
     return (name, tail) if tail in EFFORTS and name else (model_id or DEFAULT_MODEL, "")
@@ -203,12 +278,14 @@ class Handler(BaseHTTPRequestHandler):
             model_id = body.get("model") or DEFAULT_MODEL
             if model_id == "hermes-vision":
                 text = run_hermes_vision(body.get("messages"))
+            elif model_id == "captcha-reason":
+                text = run_captcha_reason(body.get("messages"))
             elif model_id.startswith("hermes"):
                 text = run_hermes(render(body.get("messages")))
             else:
                 text = run_claude(render(body.get("messages")), model_id)
         except Exception as e:
-            who = "hermes" if str(model_id).startswith("hermes") else "claude"
+            who = "hermes" if str(model_id).startswith("hermes") else ("captcha" if model_id == "captcha-reason" else "claude")
             return self._send(502, {"error": {"message": f"{who}: {e}", "type": "upstream_error"}})
         self._send(200, {"id": f"chatcmpl-{uuid.uuid4().hex[:12]}", "object": "chat.completion", "created": int(time.time()), "model": model_id,
                          "choices": [{"index": 0, "message": {"role": "assistant", "content": text}, "finish_reason": "stop"}]})

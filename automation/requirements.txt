@@ -1,4 +1,7 @@
 playwright==1.64.1
-httpx==0.27.2
+httpx==0.28.1   # hcaptcha-challenger needs >=0.28.1
 playwright-recaptcha==0.5.1   # CAPTCHA solver (MIT): reCAPTCHA v2 audio + image flow (worker/captcha_solver.py)
 Pillow==11.3.0
+hcaptcha-challenger==0.19.0   # hCaptcha solver (GPL-3.0, QIN2DIM): challenge types read from hCaptcha, spatial reasoning (worker/hcaptcha_agent.py)
+pyyaml>=6.0   # hcaptcha-challenger imports it without declaring it
+tenacity>=8.2

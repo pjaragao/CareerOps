@@ -34,6 +34,7 @@ RECAPTCHA_BFRAME = re.compile(r"/recaptcha/(api2|enterprise)/bframe")
 HCAPTCHA = re.compile(r"(hcaptcha\.com/.*checkbox|/captcha/v1/.*#frame=checkbox)")
 HCAPTCHA_CHALLENGE = re.compile(r"(hcaptcha\.com/.*challenge|/captcha/v1/.*#frame=challenge)")
 TURNSTILE = re.compile(r"challenges\.cloudflare\.com")
+HCAPTCHA_TIMEOUT = 300   # hcaptcha-challenger: 3 model calls of 20-60 s through Lolo, then our own rounds
 SOLVE_TIMEOUT = 200   # seconds for one page, all layers together (a vision answer takes 13-25 s; a dynamic grid asks 5-10)
 
 
@@ -339,8 +340,23 @@ async def solve_recaptcha(page: Page, vision: Optional[Vision]) -> Dict[str, Any
 
 # ── hCaptcha ──
 
-async def solve_hcaptcha(page: Page, vision: Optional[Vision]) -> Dict[str, Any]:
+STANDARD_HCAPTCHA = re.compile(r"^https://newassets\.hcaptcha\.com/captcha/v1/")
+
+
+async def solve_hcaptcha(page: Page, vision: Optional[Vision], reasoner=None) -> Dict[str, Any]:
     box = next((f for f in page.frames if HCAPTCHA.search(f.url or "")), None)
+    # 2026-11-19: hcaptcha-challenger first (it reads the challenge type from hCaptcha and reasons on points and paths);
+    # only on hCaptcha's own frames, which its selectors expect (a white-label one such as Recruitee's goes below)
+    if reasoner is not None and box is not None and STANDARD_HCAPTCHA.search(box.url or "") \
+            and not await _token(page, "h-captcha-response"):
+        from . import hcaptcha_agent
+        if hcaptcha_agent.available():
+            ch = next((f for f in page.frames if HCAPTCHA_CHALLENGE.search(f.url or "")), None)
+            out = await hcaptcha_agent.run(page, reasoner, challenge_open=bool(ch is not None and await _visible(ch)))
+            if out.get("solved") or await _token(page, "h-captcha-response"):
+                return {"solved": True, "how": out.get("how") or "hcaptcha-challenger"}
+            log.info("hcaptcha-challenger did not pass: %s", out.get("error"))
+            box = next((f for f in page.frames if HCAPTCHA.search(f.url or "")), None)
     if box is not None and not await _token(page, "h-captcha-response"):
         await _human_click(page, box, x_px=30)
         for _ in range(16):
@@ -463,7 +479,7 @@ async def solve_turnstile(page: Page) -> Dict[str, Any]:
     return {"solved": False, "error": "Turnstile not passed after 3 clicks"}
 
 
-async def solve(page: Page, vision: Optional[Vision] = None) -> Dict[str, Any]:
+async def solve(page: Page, vision: Optional[Vision] = None, reasoner=None) -> Dict[str, Any]:
     """Tries every layer on this page. {"solved", "kind", "how"|"error"}; {"solved": True, "kind": None} when there is
     nothing to solve."""
     kind = await active_kind(page)
@@ -473,11 +489,11 @@ async def solve(page: Page, vision: Optional[Vision] = None) -> Dict[str, Any]:
         if kind == "recaptcha":
             out = await asyncio.wait_for(solve_recaptcha(page, vision), timeout=SOLVE_TIMEOUT)
         elif kind == "hcaptcha":
-            out = await asyncio.wait_for(solve_hcaptcha(page, vision), timeout=SOLVE_TIMEOUT)
+            out = await asyncio.wait_for(solve_hcaptcha(page, vision, reasoner), timeout=HCAPTCHA_TIMEOUT if reasoner else SOLVE_TIMEOUT)
         else:
             out = await asyncio.wait_for(solve_turnstile(page), timeout=SOLVE_TIMEOUT)
     except asyncio.TimeoutError:
-        out = {"solved": False, "error": f"took more than {SOLVE_TIMEOUT}s"}
+        out = {"solved": False, "error": f"took more than {HCAPTCHA_TIMEOUT if kind == 'hcaptcha' and reasoner else SOLVE_TIMEOUT}s"}
     except PlaywrightError as e:
         out = {"solved": False, "error": f"browser: {str(e)[:200]}"}
     out["kind"] = kind

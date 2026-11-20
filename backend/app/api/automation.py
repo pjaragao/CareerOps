@@ -373,6 +373,23 @@ def captcha_vision(req: CaptchaVisionIn):
     return ask_cells(req.image_b64, req.instruction, req.cells)
 
 
+class CaptchaReasonIn(BaseModel):
+    images_b64: List[str] = Field(..., min_length=1, max_length=6)
+    system: str = Field("", max_length=20000)
+    prompt: str = Field("", max_length=8000)
+    schema_: dict = Field(default_factory=dict, alias="schema")
+
+
+@router.post("/captcha/reason", dependencies=[Depends(require_worker)])
+def captcha_reason(req: CaptchaReasonIn):
+    """hcaptcha-challenger's model calls (worker/hcaptcha_agent.py): screenshots, its instructions and the JSON schema of
+    the answer, passed to the host shim (model "captcha-reason"), which holds the keys. {"text"} or {"error"}."""
+    from app.services.captcha_vision import reason
+    if sum(len(b) for b in req.images_b64) > 12_000_000:
+        return {"error": "images too large"}
+    return reason(req.images_b64, req.system, req.prompt, req.schema_)
+
+
 @router.post("/actions/{action_id}/ready", dependencies=[Depends(require_worker)])
 async def ready(action_id: int, req: ReadyIn):
     return _found(Auto.ready_to_submit(action_id, req.fields))

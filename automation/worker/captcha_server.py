@@ -16,7 +16,7 @@ import re
 from typing import Optional
 from urllib.parse import urlparse
 
-from . import captcha_solver
+from . import captcha_solver, hcaptcha_agent
 
 log = logging.getLogger("worker.captcha_server")
 
@@ -86,7 +86,7 @@ class CaptchaServer:
                 await page.bring_to_front()
             except Exception:
                 pass
-            return await captcha_solver.solve(page, captcha_solver.backend_vision(self.api))
+            return await captcha_solver.solve(page, captcha_solver.backend_vision(self.api), hcaptcha_agent.backend_reasoner(self.api))
         finally:
             # disconnects this client only: the tabs, the agent's contexts and the browser stay as they are
             try:

@@ -10,7 +10,7 @@ from typing import Dict, Optional
 
 from playwright.async_api import Error as PlaywrightError, Page
 
-from . import ats_adapters, captcha_solver, clicks, connect_engine, safety, verify
+from . import ats_adapters, captcha_solver, clicks, connect_engine, hcaptcha_agent, safety, verify
 from .api import Api
 from .browser import Browsers
 
@@ -114,7 +114,7 @@ class Runner:
         challenge is gone. LinkedIn never gets here: a challenge there stops the lane, as before."""
         if action.get("lane") != "ats":
             return False
-        out = await captcha_solver.solve(page, captcha_solver.backend_vision(self.api))
+        out = await captcha_solver.solve(page, captcha_solver.backend_vision(self.api), hcaptcha_agent.backend_reasoner(self.api))
         if out.get("kind") is None:
             return not await self.captcha_present(page)
         await self.api.post(f"/automation/actions/{action['id']}/events", {"source": "worker", "event": "captcha_auto",
