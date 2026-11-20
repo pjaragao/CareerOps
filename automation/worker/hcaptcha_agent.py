@@ -31,7 +31,8 @@ KINDS = {"ImageBinaryChallenge": "grid", "ImageAreaSelectChallenge": "point", "I
 
 EXECUTION_TIMEOUT = 220   # one challenge: a type check and 2 rounds, 20-60 s a model call through Lolo (solver: 300 s)
 RESPONSE_TIMEOUT = 20
-CAPTURE_TRIES = 10   # 1 s apart, for a canvas not drawn yet
+CAPTURE_TRIES = 10   # 1 s apart, for a canvas not drawn yet (kept for callers; the capture now waits BLANK_WAIT_S)
+BLANK_WAIT_S = 4     # a canvas draws at once or never (2026-11-20): then a new challenge
 WORK_DIR = Path(tempfile.gettempdir()) / "hcaptcha-challenger"
 
 
@@ -181,45 +182,33 @@ async def run(page, reason: Reasoner, challenge_open: bool) -> Dict[str, Any]:
 
     async def patient_capture(frame, cache_key, crumb_id):
         raw, grid = await capture(frame, cache_key, crumb_id)
-        # the example's header used to go along as a 2nd picture, but the challenge screenshot already shows it (2026-11-20
-        # Cravath: the boat example in the grid picture) and each picture costs ~20 s through Lolo: off
-        provider.example = None
-        # a video challenge: the composite of its video in place of whatever the canvas showed, and the grid again
-        frames = await videos.frames(page, int(crumb_id) if str(crumb_id).isdigit() else -1)
-        if frames:
-            try:
-                if hcaptcha_video.paste_into(raw, frames):
-                    rounds.append(f"video:{(arm._challenge_prompt or '')[:40]}")
-                    grid = await _regrid(frame, raw, grid, config)
-                    provider.extra, provider.note = [hcaptcha_video.moments_sheet(frames)], hcaptcha_video.NOTE
-                    log.info("hCaptcha video challenge: composite of %d frames in place", len(frames))
-                    return raw, grid
-            except Exception as e:
-                log.warning("hCaptcha video challenge not used: %s", e)
+        provider.example = None   # the challenge screenshot already shows the example's header
         provider.extra, provider.note = [], ""
-        if blank_picture(Path(raw).read_bytes()):
-            # a static challenge whose canvas did not paint: its picture, downloaded and drawn in
-            try:
-                picture = await hcaptcha_video.picture_for(page)
-                if picture is not None and hcaptcha_video.paste_picture(raw, picture):
-                    rounds.append(f"picture:{(arm._challenge_prompt or '')[:40]}")
-                    grid = await _regrid(frame, raw, grid, config)
-                    log.info("hCaptcha static challenge: its picture drawn in (%sx%s)", picture.shape[1], picture.shape[0])
-                    return raw, grid
-            except Exception as e:
-                log.warning("hCaptcha picture not drawn in: %s", e)
-        for _ in range(CAPTURE_TRIES):
+        prompt = (arm._challenge_prompt or "")[:40]
+        # 2026-11-20: here the canvas paints ~30% of the time (prod Chrome 4/10, Chromium 6/19, Chrome 6/20), at once or
+        # never; when it did not, hCaptcha ignored the clicks even on a right answer from a picture drawn in by us (the
+        # button stayed "Skip" and a new challenge came). So a blank canvas gets a new challenge (the library refreshes on
+        # this error: ~4 s, no model call) instead of an answer that cannot count.
+        for _ in range(BLANK_WAIT_S):
             if not blank_picture(Path(raw).read_bytes()):
                 break
             await page.wait_for_timeout(1000)
             raw, grid = await capture(frame, cache_key, crumb_id)
         else:
-            loaded = await hcaptcha_video.challenge_loads(page)
-            rounds.append(f"blank:{(arm._challenge_prompt or '')[:40]}:{','.join(loaded)[:80]}")
-            log.warning("hCaptcha picture blank after %d s (%s); the challenge loaded: %s", CAPTURE_TRIES,
-                        (arm._challenge_prompt or "")[:60], loaded)
-            return raw, grid
-        rounds.append(f"canvas:{(arm._challenge_prompt or '')[:40]}")
+            rounds.append(f"blank:{prompt}")
+            raise ValueError("challenge canvas not drawn: a new challenge")
+        # drawn. A video challenge: the composite of its video in place (its objects fade in and out), and the grid again
+        frames = await videos.frames(page, int(crumb_id) if str(crumb_id).isdigit() else -1)
+        if frames:
+            try:
+                if hcaptcha_video.paste_into(raw, frames):
+                    rounds.append(f"video:{prompt}")
+                    grid = await _regrid(frame, raw, grid, config)
+                    provider.extra, provider.note = [hcaptcha_video.moments_sheet(frames)], hcaptcha_video.NOTE
+                    return raw, grid
+            except Exception as e:
+                log.warning("hCaptcha video challenge not used: %s", e)
+        rounds.append(f"canvas:{prompt}")
         return raw, grid
     arm._capture_spatial_mapping = patient_capture
     arm.check_crumb_count = patient_crumb_count(arm.check_crumb_count, page.wait_for_timeout)
