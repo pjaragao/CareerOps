@@ -286,7 +286,9 @@ def _recaptcha_solver_class():
 
 # Google refuses the audio challenge to an IP after a few tries ("your computer or network may be sending automated
 # queries"); asking again only makes it worse. Once refused, the audio rests this long and the images go first.
-AUDIO_REST_SECONDS = 6 * 3600
+# 2026-11-20: 6 h was too long: the audio passed at 21:21 and 21:24, then rested from an unlogged refusal (a solve its
+# caller cancelled) and Dayforce fell to the image grid, which timed out. 2 h, and every refusal is logged.
+AUDIO_REST_SECONDS = 2 * 3600
 _audio_refused_at = 0.0
 
 
@@ -318,7 +320,7 @@ async def solve_recaptcha(page: Page, vision: Optional[Vision]) -> Dict[str, Any
     # is the second chance, and the only one while the audio rests after a refusal.
     passes = ([False] if audio_ok else []) + ([True] if vision is not None else [])
     if not audio_ok:
-        tried.append("audio resting (refused earlier today)")
+        tried.append(f"audio resting (refused {round((time.monotonic() - _audio_refused_at) / 60)} min ago)")
     for image in passes:
         await _fresh_widget_if_refused(page)
         solver = cls(page, vision, attempts=3)
@@ -331,6 +333,7 @@ async def solve_recaptcha(page: Page, vision: Optional[Vision]) -> Dict[str, Any
         except RecaptchaRateLimitError:
             if not image:
                 _audio_refused_at = time.monotonic()
+                log.warning("reCAPTCHA audio refused by Google on %s: resting %d min", (page.url or "")[:100], AUDIO_REST_SECONDS // 60)
             tried.append("audio refused (rate limit)" if not image else "rate limit")
         except (RecaptchaSolveError, CapSolverError, asyncio.TimeoutError) as e:
             tried.append(f"{'image' if image else 'audio'}: {type(e).__name__}")
