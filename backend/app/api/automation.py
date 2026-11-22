@@ -114,8 +114,20 @@ class ApproveIn(BaseModel):
     run_now: bool = False   # True = does not wait for the time window
 
 
-@router.post("/actions/{action_id}/approve", dependencies=[Depends(require_decider)])
-async def approve(action_id: int, req: ApproveIn):
+def _job_ids(ids: List[int]) -> set:
+    from app.services.automation_service import _rows
+    return {r["id"] for r in _rows("SELECT id FROM public.automation_actions WHERE id = ANY(%s) AND kind = 'apply'", (list(ids),))}
+
+
+def _no_jobs_by_bot(role: str, action_id: int) -> None:
+    """Jobs are approved with the link (2026-11-22): a reply to Lolo never approves or discards a job."""
+    if role == BOT and _job_ids([action_id]):
+        raise HTTPException(status_code=403, detail="Vagas se aprovam pelo link de aprovação, não por resposta no WhatsApp")
+
+
+@router.post("/actions/{action_id}/approve")
+async def approve(action_id: int, req: ApproveIn, role: str = Depends(require_decider)):
+    _no_jobs_by_bot(role, action_id)
     try:
         return _found(Auto.approve(action_id, req.text, req.run_now))
     except (ValueError, content_guard.BlockedContent) as e:
@@ -144,10 +156,14 @@ class BatchIn(BaseModel):
     run_now: bool = False
 
 
-@router.post("/approve-batch", dependencies=[Depends(require_decider)])
-async def approve_batch(req: BatchIn):
+@router.post("/approve-batch")
+async def approve_batch(req: BatchIn, role: str = Depends(require_decider)):
     approved, refused = [], []
+    jobs = _job_ids(req.ids) if role == BOT else set()
     for action_id in req.ids:
+        if action_id in jobs:   # jobs: only with the link
+            refused.append(action_id)
+            continue
         try:
             (approved if Auto.approve(action_id, run_now=req.run_now) else refused).append(action_id)
         except (ValueError, content_guard.BlockedContent):
@@ -155,9 +171,29 @@ async def approve_batch(req: BatchIn):
     return {"approved": approved, "refused": refused}
 
 
-@router.post("/actions/{action_id}/reject", dependencies=[Depends(require_decider)])
-async def reject(action_id: int):
+@router.post("/actions/{action_id}/reject")
+async def reject(action_id: int, role: str = Depends(require_decider)):
+    _no_jobs_by_bot(role, action_id)
     return _found(Auto.reject(action_id))
+
+
+# ── The approval link (jobs, from the phone): a new one for Lolo or the app; revoke all ──
+@router.post("/approval-links", dependencies=[Depends(require_decider)])
+async def new_approval_link():
+    from app.services.approval_link_service import ApprovalLinkService
+    return {"url": ApprovalLinkService.create_link()}
+
+
+@router.get("/approval-links", dependencies=[Depends(require_approver)])
+async def approval_links():
+    from app.services.approval_link_service import ApprovalLinkService
+    return ApprovalLinkService.active()
+
+
+@router.delete("/approval-links", dependencies=[Depends(require_approver)])
+async def revoke_approval_links():
+    from app.services.approval_link_service import ApprovalLinkService
+    return {"revoked": ApprovalLinkService.revoke_all()}
 
 
 @router.post("/actions/{action_id}/approve-docs", dependencies=[Depends(require_decider)])

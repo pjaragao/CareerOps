@@ -338,16 +338,42 @@ class JobSearchService:
 
     @staticmethod
     async def _triage_one(job: dict) -> None:
+        """The score first; the eligibility reading only for a job the score keeps (2026-11-22: most discards are by the score,
+        so this saves about half of those readings). A kept job waits for propose_ready, which fills the day's list best first."""
         from app.services.job_pipeline_service import JobPipelineService
-        eligibility = await JobPipelineService.check_eligibility(job["id"])
         triage = await JobSearchService._read(job)
         score = triage["score"]
+        eligibility = {"status": "unchecked"}
+        if JobSearchService.decide(job, triage, {"status": "ok"}) != "discarded":
+            eligibility = await JobPipelineService.check_eligibility(job["id"])
         outcome = JobSearchService.decide(job, triage, eligibility)
         reason = JobSearchService._discard_reason(triage, eligibility) if outcome == "discarded" else (triage.get("reason") or "")
         _rows("""UPDATE public.job_listings SET triage_score = %s, triage_reason = %s, triage_outcome = %s, employer_market = %s, salary_flag = %s, updated_at = NOW()
                   WHERE id = %s""", (score, reason[:1000], outcome, triage.get("employer_market") or "unknown", (triage.get("salary_flag") or None), job["id"]))
-        if outcome == "propose":
-            AutomationService.propose_job(job)
+
+    @staticmethod
+    def propose_ready() -> int:
+        """Jobs the triage kept go to your list up to the day's 'job_propose' limit, the highest score first. While jobs of the
+        last day still wait for their reading, only a 85+ (or one kept for 3 hours) goes ahead, so a burst of readings does not
+        fill the day with the first ones read. What does not fit waits for the next day (and is dropped after proposal_days)."""
+        left = next((l["left"] for l in AutomationService.limits() if l["kind"] == "job_propose"), 0)
+        if left <= 0:
+            return 0
+        days = int((config().get("jobs") or {}).get("proposal_days", 10))
+        pending = _one("""SELECT COUNT(*) AS n FROM public.job_listings WHERE status = 'discovered' AND triage_score IS NULL
+                           AND created_at > NOW() - INTERVAL '1 day'""")["n"]
+        made = 0
+        for job in _rows("""SELECT j.* FROM public.job_listings j
+                             WHERE j.status = 'discovered' AND j.triage_outcome = 'propose' AND j.created_at > NOW() - make_interval(days => %s)
+                               AND NOT EXISTS (SELECT 1 FROM public.automation_actions a WHERE a.idempotency_key = 'apply:' || j.id)
+                               AND (%s = 0 OR j.triage_score >= 85 OR j.updated_at < NOW() - INTERVAL '3 hours')
+                             ORDER BY j.triage_score DESC NULLS LAST, j.posted_at DESC NULLS LAST LIMIT %s""", (days, pending, left)):
+            if AutomationService.propose_job(job):
+                made += 1
+            else:   # the same job already has its application or proposal (another place, another source)
+                _rows("""UPDATE public.job_listings SET triage_outcome = 'discarded', updated_at = NOW(),
+                                triage_reason = 'Mesma vaga de outra candidatura ou proposta. ' || COALESCE(triage_reason, '') WHERE id = %s""", (job["id"],))
+        return made
 
     # the model that reads jobs is out of quota: this tick stops at the first such failure and the next ones skip the
     # reading until then, instead of walking every model again for every job (2026-11-16: 165 s per job)
@@ -383,6 +409,8 @@ class JobSearchService:
                 log.warning("job %s not triaged: %s", job["id"], e)
                 if JobSearchService._note_failure(e):
                     break
+        if done:
+            JobSearchService.propose_ready()
         return done
 
     @staticmethod

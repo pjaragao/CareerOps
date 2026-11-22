@@ -67,6 +67,33 @@ const SavedImportPanel = () => {
   );
 };
 
+// The approval link (jobs, from the phone): Lolo sends a fresh one with each summary; this revokes them all at once
+const ApprovalLinks = () => {
+  const [info, setInfo] = useState<{ active: number; last_used_at: string | null; base: string } | null>(null);
+  const [msg, setMsg] = useState('');
+  const load = useCallback(() => { api.get('/automation/approval-links').then(({ data }) => setInfo(data)).catch(() => setInfo(null)); }, []);
+  useEffect(load, [load]);
+  if (!info) return null;
+  return (
+    <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', marginTop: '1rem', paddingTop: '0.9rem' }}>
+      <strong style={{ fontSize: '0.9rem' }}>Link de aprovação de vagas (celular)</strong>
+      <p style={{ color: 'var(--text-muted)', fontSize: '0.82rem', margin: '0.4rem 0 0.7rem' }}>
+        O Lolo manda um link com acesso próprio ({info.base}): ele só lista as vagas e aprova ou descarta, vale 7 dias e abre em qualquer navegador.
+        {' '}{info.active} link(s) ativos{info.last_used_at ? `, último uso ${new Date(info.last_used_at).toLocaleString('pt-BR')}` : ''}.
+      </p>
+      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+        <button className="btn btn-secondary" onClick={() => api.post('/automation/approval-links').then(({ data }) =>
+          navigator.clipboard.writeText(data.url).then(() => setMsg('Link novo copiado.'), () => setMsg(data.url))).then(load)}>Gerar e copiar link</button>
+        <button className="btn btn-secondary" disabled={!info.active} onClick={() => {
+          if (confirm('Revogar todos os links de aprovação? Os que o Lolo já mandou deixam de abrir.'))
+            api.delete('/automation/approval-links').then(({ data }) => { setMsg(`${data.revoked} link(s) revogados.`); load(); });
+        }}>Revogar todos</button>
+      </div>
+      {msg && <p style={{ fontSize: '0.82rem', marginTop: '0.5rem', wordBreak: 'break-all' }}>{msg}</p>}
+    </div>
+  );
+};
+
 const SettingsPage = () => {
   const [settings, setSettings] = useState<AppSettings>({
     gemini_api_key: '',
@@ -160,6 +187,7 @@ const SettingsPage = () => {
             <button className="btn btn-primary" onClick={handleToken}>Salvar e testar</button>
           </div>
           {tokenStatus && <p style={{ fontSize: '0.85rem', marginTop: '0.6rem' }}>{tokenStatus}</p>}
+          <ApprovalLinks />
         </div>
 
         {/* Saved jobs */}

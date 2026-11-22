@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.core.auth import origin_guard
-from app.api import jobs, interview, profile, actions, settings as settings_api, documents, linkedin_copilot, ai_settings, general_resumes, automation, job_searches
+from app.api import jobs, interview, profile, actions, settings as settings_api, documents, linkedin_copilot, ai_settings, general_resumes, automation, job_searches, approval
 from app.services.linkedin_copilot_service import LinkedInCopilotService
 
 app = FastAPI(
@@ -23,6 +23,8 @@ app.add_middleware(
 )
 # Added last, so it runs first: other sites' pages never reach the routes that act on your behalf
 app.middleware("http")(origin_guard)
+# Added after it, so it runs before everything: what comes through the Tailscale Funnel (the internet) only reaches /aprovar
+app.middleware("http")(approval.public_guard)
 
 app.include_router(actions.router, prefix="/api/jobs")
 app.include_router(jobs.router, prefix="/api/jobs")
@@ -35,6 +37,7 @@ app.include_router(ai_settings.router, prefix="/api")
 app.include_router(general_resumes.router, prefix="/api")
 app.include_router(automation.router, prefix="/api")
 app.include_router(job_searches.router, prefix="/api")
+app.include_router(approval.router)   # /aprovar: the phone's approval page (the only path on the internet)
 
 
 async def _publish_scheduled_posts():
@@ -90,6 +93,19 @@ async def _automation():
         except Exception as e:
             logging.getLogger("automation").warning("automation tick failed: %s", e)
         await asyncio.sleep(60)
+
+
+async def _discovery():
+    """Every 5 min: is a round of the other job sources due (company boards at 6h, job boards at 6h and 14h)? Only HTTP to
+    public endpoints, never the LinkedIn session; it runs whether the automation is on or off (the triage waits for it on)."""
+    from app.services.discovery_service import DiscoveryService
+    await asyncio.sleep(90)
+    while True:
+        try:
+            await asyncio.to_thread(DiscoveryService.run_due)
+        except Exception as e:
+            logging.getLogger("discovery").warning("discovery tick failed: %s", e)
+        await asyncio.sleep(300)
 
 
 async def _documents():
@@ -164,6 +180,7 @@ async def start_scheduler():
     app.state.portfolio_pull = asyncio.create_task(_portfolio_pull())
     app.state.automation = asyncio.create_task(_automation())
     app.state.documents = asyncio.create_task(_documents())
+    app.state.discovery = asyncio.create_task(_discovery())
     app.state.email_monitor = asyncio.create_task(_email_monitor())
     app.state.linkedin_scheduler = asyncio.create_task(_publish_scheduled_posts())
     app.state.job_pipeline = asyncio.create_task(_job_pipeline())

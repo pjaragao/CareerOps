@@ -38,6 +38,7 @@ export interface Action {
   company?: string | null;
   job_title?: string | null;
   location?: string | null;
+  job_source?: string | null;   // linkedin, greenhouse, lever, ashby, remotive... (the daily search beyond LinkedIn)
 }
 
 export interface FoundJob {

@@ -47,7 +47,7 @@ def database():
     yield
 
 
-TABLES = ("automation_live_questions", "automation_sites", "automation_text_cache", "automation_site_accounts", "automation_email_verifications", "linkedin_comment_replies", "linkedin_conversations", "automation_login_links", "bot_notifications", "improvement_suggestions", "automation_events", "automation_runs", "automation_actions", "automation_answers", "job_email_events", "job_searches",
+TABLES = ("approval_links", "discovery_runs", "job_sources", "job_source_probes", "automation_live_questions", "automation_sites", "automation_text_cache", "automation_site_accounts", "automation_email_verifications", "linkedin_comment_replies", "linkedin_conversations", "automation_login_links", "bot_notifications", "improvement_suggestions", "automation_events", "automation_runs", "automation_actions", "automation_answers", "job_email_events", "job_searches",
           "job_listings", "linkedin_engagement", "linkedin_prospects", "linkedin_networking_plans")
 
 
@@ -71,7 +71,10 @@ def db(database, monkeypatch):
         cur.execute("""UPDATE public.automation_state SET mode = 'live', account_kind = 'main', allow_final_submit = TRUE, halted_at = NULL,
                        halted_reason = NULL, halted_lanes = '{}', invites_paused_until = NULL, ramp_step = 2, ramp_step_at = NOW(), ramp_auto = TRUE,
                        confirm_submit_left = 0, review_cv_left = 0, next_write_at = NULL, session_status = 'logged_in', claude_paused_until = NULL, captcha_session_until = NULL, ai_engine = '{}',
-                       saved_import = '{"enabled": false, "day_start": 8, "day_end": 24, "day_every": 1, "night_every": 2}'""")
+                       saved_import = '{"enabled": false, "day_start": 8, "day_end": 24, "day_every": 1, "night_every": 2}', discovery_off = '{}'""")
+        cur.execute("""UPDATE public.automation_limits SET step0 = CASE kind WHEN 'source_read' THEN 300 ELSE 60 END,
+                              step1 = CASE kind WHEN 'source_read' THEN 300 ELSE 60 END, step2 = CASE kind WHEN 'source_read' THEN 300 ELSE 60 END
+                        WHERE kind IN ('source_read', 'job_propose')""")
     conn.commit()
     conn.close()
     yield cfg

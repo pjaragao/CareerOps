@@ -32,7 +32,8 @@ WAITING = ("proposed",) + tuple(YOURS)
 # answer, a service offer turned down — each one told as it comes, with the translation and the suggestion
 # sent one by one (2026-11-16: portal passwords and CAPTCHA notices were only counted in the summary, never sent);
 # "question" is a live question from the apply agent, waiting for your answer with the form open
-SENT_KINDS = ("summary", "halt", "inbox", "site_password", "captcha", "question")
+# "discovery" (2026-11-22): the daily count of the job sources with the approval link, and a source that broke
+SENT_KINDS = ("summary", "halt", "inbox", "site_password", "captcha", "question", "discovery")
 
 
 def _and(parts: List[str]) -> str:
@@ -202,6 +203,8 @@ class BotService:
             lines.append("Agora: " + "; ".join(t for t in (approve and f"{approve} para aprovar", yours) if t) + ".")
         else:
             lines.append("Nada esperando por você.")
+        if (waiting.get("proposed") or {}).get("apply"):   # jobs: approved in the browser with this link, never by a reply
+            lines.append(f"👉 Vagas: {BotService.jobs_link()}")
         if emails:
             lines.append(f"📬 {emails} e-mail(s) novo(s) sobre candidaturas.")
         if views:
@@ -259,6 +262,12 @@ class BotService:
 
     # ── Texts for the bot's answers ──────────────────────────────────────
     @staticmethod
+    def jobs_link() -> str:
+        """A fresh approval link (7 days) for the jobs page on the phone."""
+        from app.services.approval_link_service import ApprovalLinkService
+        return ApprovalLinkService.create_link()
+
+    @staticmethod
     def approval_link(kind: Optional[str] = None) -> str:
         """The approval list in the app, filtered to one kind when given."""
         return f"{settings.CAREEROPS_APP_URL.rstrip('/')}/automacao?tab=aprovar" + (f"&tipo={kind}" if kind else "")
@@ -280,14 +289,18 @@ class BotService:
     def inbox(ids: Optional[List[int]] = None, header: str = "🗂️ *Para aprovar*", limit: int = 25,
               kind: Optional[str] = None) -> Tuple[str, List[int]]:
         """The list to approve, numbered 1, 2, 3… and the ids in that order: a reply “ok 1 3” is about those lines."""
-        where = "a.id = ANY(%s)" if ids is not None else "TRUE"
+        # jobs are not in this list (2026-11-22): they are approved with the link, so "ok" never approves a job
+        where = ("a.id = ANY(%s)" if ids is not None else "TRUE") + " AND a.kind <> 'apply'" + (" AND a.kind = %s" if kind else "")
+        params = ((ids,) if ids is not None else ()) + ((kind,) if kind else ())
+        jobs_waiting = _one("SELECT COUNT(*) AS n FROM public.automation_actions WHERE status = 'proposed' AND kind = 'apply'")["n"]
+        jobs_line = f"💼 {jobs_waiting} vaga(s) para aprovar pelo link: {BotService.jobs_link()}" if jobs_waiting and kind in (None, "apply") else ""
         rows = _rows(f"""
             SELECT a.*, j.triage_score, j.triage_reason, j.posted_at, j.easy_apply, j.company, j.job_title, j.location, j.salary_flag,
                    j.eligibility_status, j.eligibility_issues
               FROM public.automation_actions a LEFT JOIN public.job_listings j ON a.target_type = 'job' AND j.id = a.target_id
-             WHERE a.status = 'proposed' AND {where} ORDER BY a.kind, a.rank, a.sort_at DESC""", (ids,) if ids is not None else ())
+             WHERE a.status = 'proposed' AND {where} ORDER BY a.kind, a.rank, a.sort_at DESC""", params)
         if not rows:
-            return "Nada esperando aprovação agora.", []
+            return (jobs_line or "Nada esperando aprovação agora."), []
         lines, order = [header], []
         shown = 0
         several = len({r["kind"] for r in rows}) > 1
@@ -327,6 +340,8 @@ class BotService:
                     lines.append(f"{n} {p.get('name') or r.get('title')}" + (f" — {_short(p.get('why'), 90)}" if p.get("why") else ""))
         if len(rows) > shown:
             lines.append(f"\n…e mais {len(rows) - shown} na lista abaixo.")
+        if jobs_line:
+            lines.append(f"\n{jobs_line}")
         lines.append(f"\n🔎 Lista com detalhes: {BotService.approval_link(kind)}")
         lines.append("Responda a esta mensagem: “ok” aprova todas (vai no horário, 8h–23h), “ok 1 3” só essas, “ok agora” executa já, "
                      "“não 2” rejeita a 2, “não” rejeita todas.")

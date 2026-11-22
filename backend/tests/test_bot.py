@@ -54,7 +54,8 @@ def test_new_items_come_as_one_short_summary_with_counts_and_the_link(db, sql, a
     assert len(told) == 1 and len(notes(sql)) == 1
     text = told[0]["text"]
     assert "novas: 1 vaga, 2 comentários e 1 conexão" in text and "Agora: 1 vaga, 2 comentários e 1 conexão para aprovar." in text
-    assert "/automacao?tab=aprovar" in text and "Outro ponto" not in text and len(text.splitlines()) <= 4
+    assert "/automacao?tab=aprovar" in text and "Outro ponto" not in text and len(text.splitlines()) <= 5
+    assert "👉 Vagas: https://" in text and "/aprovar?t=" in text   # jobs: the approval link (2026-11-22)
 
 
 def test_a_new_summary_waits_for_the_interval_and_says_what_is_new(db, sql, awake):

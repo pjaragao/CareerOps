@@ -1,0 +1,54 @@
+# A starting list of company boards for the daily job search (discovery_service.py). Checked live on 2026-11-22: each one
+# answered with open jobs. The rest of the list fills itself every day: the boards of companies you applied through, the
+# companies with a job scored ≥ 70 here (their name tried on Greenhouse, Lever and Ashby), and the companies the remote job
+# boards point to. Add one here (kind + slug, or the url of any of its jobs) or paste a link in Pesquisar vagas → Fontes.
+# A board that stops answering is marked "gone" and its company tried on the other ATS again.
+companies:
+  # Applied AI and developer tools (many hire remote in LATAM or sponsor visas)
+  - {kind: greenhouse, slug: anthropic, company: Anthropic}
+  - {kind: greenhouse, slug: scaleai, company: Scale AI}
+  - {kind: greenhouse, slug: databricks, company: Databricks}
+  - {kind: greenhouse, slug: vercel, company: Vercel}
+  - {kind: greenhouse, slug: gitlab, company: GitLab}
+  - {kind: greenhouse, slug: grafanalabs, company: Grafana Labs}
+  - {kind: greenhouse, slug: fivetran, company: Fivetran}
+  - {kind: greenhouse, slug: datadog, company: Datadog}
+  - {kind: greenhouse, slug: airtable, company: Airtable}
+  - {kind: greenhouse, slug: sourcegraph91, company: Sourcegraph}
+  - {kind: greenhouse, slug: turing, company: Turing}
+  - {kind: greenhouse, slug: mozilla, company: Mozilla}
+  - {kind: greenhouse, slug: wikimedia, company: Wikimedia Foundation}
+  - {kind: ashby, slug: openai, company: OpenAI}
+  - {kind: ashby, slug: cohere, company: Cohere}
+  - {kind: ashby, slug: langchain, company: LangChain}
+  - {kind: ashby, slug: n8n, company: n8n}
+  - {kind: ashby, slug: modal, company: Modal}
+  - {kind: ashby, slug: perplexity, company: Perplexity}
+  - {kind: ashby, slug: supabase, company: Supabase}
+  - {kind: ashby, slug: posthog, company: PostHog}
+  - {kind: ashby, slug: replit, company: Replit}
+  - {kind: ashby, slug: notion, company: Notion}
+  - {kind: ashby, slug: linear, company: Linear}
+  - {kind: ashby, slug: zapier, company: Zapier}
+  - {kind: ashby, slug: airbyte, company: Airbyte}
+  - {kind: ashby, slug: pinecone, company: Pinecone}
+  - {kind: ashby, slug: weaviate, company: Weaviate}
+  - {kind: ashby, slug: writer, company: Writer}
+  - {kind: ashby, slug: sierra, company: Sierra}
+  - {kind: ashby, slug: decagon, company: Decagon}
+  - {kind: ashby, slug: harvey, company: Harvey}
+  - {kind: ashby, slug: runway, company: Runway}
+  - {kind: ashby, slug: vanta, company: Vanta}
+  - {kind: ashby, slug: oyster, company: Oyster}
+  - {kind: workable, slug: huggingface, company: Hugging Face}
+  # Finance, fintech and finance AI (FP&A, modeling, strategic finance)
+  - {kind: ashby, slug: rogo, company: Rogo}
+  - {kind: ashby, slug: ramp, company: Ramp}
+  - {kind: greenhouse, slug: brex, company: Brex}
+  - {kind: greenhouse, slug: stripe, company: Stripe}
+  - {kind: greenhouse, slug: coinbase, company: Coinbase}
+  - {kind: smartrecruiters, slug: Wise, company: Wise}
+  - {kind: lever, slug: binance, company: Binance}
+  # Europe with relocation
+  - {kind: greenhouse, slug: wolt, company: Wolt}
+  - {kind: smartrecruiters, slug: Sportradar, company: Sportradar}

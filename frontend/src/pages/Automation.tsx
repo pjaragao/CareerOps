@@ -11,6 +11,11 @@ const muted: React.CSSProperties = { color: 'var(--text-muted)', fontSize: '0.88
 const stack: React.CSSProperties = { display: 'flex', flexDirection: 'column', gap: '0.8rem' };
 const row: React.CSSProperties = { display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' };
 const input: React.CSSProperties = { width: '100%', padding: '0.6rem', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, color: '#fff', font: 'inherit' };
+// where a job was found, when not LinkedIn (backend: discovery/sources.py LABELS)
+const SOURCE_LABEL: Record<string, string> = { greenhouse: 'Greenhouse', lever: 'Lever', ashby: 'Ashby', smartrecruiters: 'SmartRecruiters',
+  recruitee: 'Recruitee', workable: 'Workable', personio: 'Personio', workday: 'Workday', remotive: 'Remotive', remoteok: 'Remote OK',
+  weworkremotely: 'We Work Remotely', himalayas: 'Himalayas', jobicy: 'Jobicy', workingnomads: 'Working Nomads', arbeitnow: 'Arbeitnow',
+  adzuna: 'Adzuna', jooble: 'Jooble' };
 const badge = (color: string): React.CSSProperties => ({ fontSize: '0.75rem', fontWeight: 600, padding: '2px 8px', borderRadius: 999, background: `${color}22`, color, whiteSpace: 'nowrap' });
 const checkLabel: React.CSSProperties = { ...muted, display: 'flex', gap: 8, alignItems: 'flex-start' };
 const checkbox: React.CSSProperties = { width: 'auto', flex: '0 0 auto', marginTop: 3 };
@@ -264,6 +269,7 @@ const ProposalRow = ({ action, picked, onPick, onDone, setError }: { action: Act
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
             <span style={{ fontWeight: 700, color: '#fff', fontSize: '0.88rem', ...ellipsis }}>{w.title}</span>
             {action.kind === 'apply' && <EligibilityBadge job={action} />}
+            {action.kind === 'apply' && action.job_source && action.job_source !== 'linkedin' && <span title="Onde a vaga foi achada" style={{ ...badge('#8b949e'), fontSize: '0.66rem', padding: '1px 6px' }}>{SOURCE_LABEL[action.job_source] || action.job_source}</span>}
             {action.salary_flag && <span title={action.salary_flag} style={{ ...badge(YELLOW), fontSize: '0.66rem', padding: '1px 6px' }}>Salário</span>}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
@@ -278,7 +284,7 @@ const ProposalRow = ({ action, picked, onPick, onDone, setError }: { action: Act
             <button className="jb-icon primary" title={`Aprovar: vai no próximo horário (${WINDOW})`} disabled={busy} onClick={() => decide(auto.approve(action.id, EDITABLE.includes(action.kind) ? text : undefined))}><Check size={15} /></button>
             <button className="jb-icon" title="Aprovar e executar agora, mesmo fora do horário" style={{ color: YELLOW }} disabled={busy} onClick={() => decide(auto.approve(action.id, EDITABLE.includes(action.kind) ? text : undefined, true))}><Zap size={15} /></button>
             <button className="jb-icon danger" title="Rejeitar" disabled={busy} onClick={() => decide(auto.reject(action.id))}><X size={15} /></button>
-            {action.target_url && <a className="jb-icon jb-hide-sm" title="Abrir no LinkedIn" href={action.target_url} target="_blank" rel="noreferrer"><ExternalLink size={15} /></a>}
+            {action.target_url && <a className="jb-icon jb-hide-sm" title={/linkedin\.com/.test(action.target_url) ? 'Abrir no LinkedIn' : 'Abrir a vaga no site'} href={action.target_url} target="_blank" rel="noreferrer"><ExternalLink size={15} /></a>}
           </div>
         </td>
       </tr>
@@ -286,7 +292,7 @@ const ProposalRow = ({ action, picked, onPick, onDone, setError }: { action: Act
         <tr style={{ borderBottom: '1px solid var(--border)', background: 'rgba(255,255,255,.015)' }}>
           <td colSpan={6} className="jb-td">
             <ProposalDetail action={action} text={text} setText={setText} onRevised={onDone} />
-            {action.target_url && <a style={{ ...muted, display: 'inline-block', marginTop: 6 }} href={action.target_url} target="_blank" rel="noreferrer">Abrir no LinkedIn <ExternalLink size={12} /></a>}
+            {action.target_url && <a style={{ ...muted, display: 'inline-block', marginTop: 6 }} href={action.target_url} target="_blank" rel="noreferrer">{/linkedin\.com/.test(action.target_url) ? 'Abrir no LinkedIn' : 'Abrir a vaga no site'} <ExternalLink size={12} /></a>}
           </td>
         </tr>
       )}
@@ -539,7 +545,7 @@ const NeedsYouRow = ({ action, picked, onPick, onDone, novnc, setError }: { acti
           <div style={{ display: 'inline-flex', flexWrap: 'nowrap', gap: 6 }}>
             {quick && <button className="jb-icon primary" title={quick.title} aria-label={quick.title} disabled={busy} onClick={() => decide(quick.run())}>{'icon' in quick ? quick.icon : <Check size={15} />}</button>}
             <button className="jb-icon danger" title="Desistir desta" disabled={busy} onClick={() => decide(auto.cancel(action.id))}><X size={15} /></button>
-            {action.target_url && <a className="jb-icon jb-hide-sm" title="Abrir no LinkedIn" href={action.target_url} target="_blank" rel="noreferrer"><ExternalLink size={15} /></a>}
+            {action.target_url && <a className="jb-icon jb-hide-sm" title={/linkedin\.com/.test(action.target_url) ? 'Abrir no LinkedIn' : 'Abrir a vaga no site'} href={action.target_url} target="_blank" rel="noreferrer"><ExternalLink size={15} /></a>}
           </div>
         </td>
       </tr>

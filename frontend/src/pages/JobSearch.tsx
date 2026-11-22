@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import api from '../services/api';
+import SourcesPanel from '../components/SourcesPanel';
 import { Search, ExternalLink, Copy, Check, Lightbulb, Clock, Smartphone, Bookmark } from 'lucide-react';
 
 // The groups of titles and the places to look come from the backend: the automatic search uses the same ones
@@ -130,6 +131,8 @@ const JobSearchView = () => {
           Os cargos combinam com o seu perfil (modelagem financeira, dados e IA, infraestrutura).
         </p>
       </div>
+
+      <SourcesPanel />
 
       <div className="panel" style={{ marginBottom: '1rem' }}>
         <h3 style={{ marginBottom: '0.8rem' }}>1. O que buscar</h3>

@@ -54,6 +54,24 @@ jobs:
   docs_on_demand: true                       # CV and cover letter only for jobs you approved, not for every import
   cv_archetypes: true                        # one approved CV per job family (AI, data, finance, infrastructure) and language, reused
   cover_cache: true                          # one cover letter per company and language, reused
+  # the approval list (2026-11-22): a job the search proposed waits proposal_days; with a score below proposal_keep_score
+  # and no answer it leaves the list for Descartadas (recoverable). How many enter per day: the job_propose limit in the app
+  proposal_days: 10
+  proposal_keep_score: 80
+  link_days: 7                               # the approval link Lolo sends (jobs only, from any browser)
+
+# Jobs from more places than LinkedIn (discovery_service.py): company boards (Greenhouse, Lever, Ashby, SmartRecruiters,
+# Recruitee, Workable, Personio, Workday) and remote job boards, read by their public APIs. How many new ones the AI reads per
+# day: the source_read limit in the app. Each kind can be switched off in Pesquisar vagas → Fontes.
+discovery:
+  enabled: true
+  ats_hours: [6]                             # company boards, once a day (their jobs stay open for weeks)
+  board_hours: [6, 14]                       # job boards, twice a day
+  max_age_days: 14                           # job boards: older ads are left out (when the source says the date)
+  max_age_days_ats: 30                       # company boards: their jobs stay open for weeks
+  probe_per_day: 60                          # companies with a good job here whose name is tried on Greenhouse/Lever/Ashby
+  details_per_round: 150                     # ads read one by one (SmartRecruiters, Workday) per round
+  dedupe_days: 60                            # the same company + title within this many days is the same job
 
 claude:
   per_day: 1000
