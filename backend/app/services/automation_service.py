@@ -68,6 +68,11 @@ ATS_AUTH_RETRY_RE = re.compile(
     r"email verification|verification code|c[oó]digo de verifica[cç][aã]o|verify.*email",
     re.I,
 )
+IDENTITY_CHECK_RE = re.compile(
+    r"biometr|selfie|identity verification|verify (your )?identity|verifica[cç][aã]o de identidade|verificar (sua )?identidade|"
+    r"documento (oficial )?com foto|photo id|government[- ]issued id|id document|liveness|\b(onfido|jumio|veriff)\b|persona (widget|identity)|via persona",
+    re.I,
+)
 URL_EXTRACT_RE = re.compile(r"https?://[^\s<>\"')\]}]+", re.I)
 
 
@@ -172,14 +177,14 @@ def question_key(text: str) -> str:
 
 
 def ensure_schema() -> None:
-    """Applies migrations_v15.sql through migrations_v24.sql (idempotent)."""
+    """Applies migrations_v15.sql through migrations_v25.sql (idempotent)."""
     folder = Path(__file__).resolve().parent.parent / "db" / "migrations"
     conn = get_db_connection()
     try:
         with conn.cursor() as cur:
             for name in ("migrations_v15.sql", "migrations_v17.sql", "migrations_v18.sql", "migrations_v19.sql",
                          "migrations_v20.sql", "migrations_v21.sql", "migrations_v22.sql", "migrations_v23.sql",
-                         "migrations_v24.sql"):
+                         "migrations_v24.sql", "migrations_v25.sql"):
                 cur.execute((folder / name).read_text(encoding="utf-8"))
         conn.commit()
     finally:
@@ -336,8 +341,15 @@ class AutomationService:
         out = []
         for row in _rows("SELECT * FROM public.automation_limits ORDER BY kind"):
             start = _period_start(row["period"])
-            if row["kind"] == "job_read":
-                used = _one("SELECT COUNT(*) AS n FROM public.job_listings WHERE search_slug IS NOT NULL AND created_at >= %s", (start,))["n"]
+            if row["kind"] == "job_read":   # LinkedIn ads only: the other sources have their own limit (source_read)
+                used = _one("""SELECT COUNT(*) AS n FROM public.job_listings WHERE search_slug IS NOT NULL AND source = 'linkedin'
+                                 AND created_at >= %s""", (start,))["n"]
+            elif row["kind"] == "source_read":   # new jobs from the other sources, each one read by the AI
+                used = _one("SELECT COUNT(*) AS n FROM public.job_listings WHERE source <> 'linkedin' AND created_at >= %s", (start,))["n"]
+            elif row["kind"] == "job_propose":   # jobs the search put on your approval list today (not the ones you added)
+                used = _one("""SELECT COUNT(*) AS n FROM public.automation_actions a JOIN public.job_listings j ON j.id = a.target_id
+                                WHERE a.kind = 'apply' AND a.target_type = 'job' AND j.search_slug IS NOT NULL AND a.created_at >= %s""",
+                            (start,))["n"]
             elif row["kind"] in WRITE_KINDS:
                 # what went out or may have (done, clicked, running now): a try that stopped before the final click sent
                 # nothing to LinkedIn and is not counted (2026-11-04: invites that never left had filled the week's 20)
@@ -403,7 +415,7 @@ class AutomationService:
     def inbox() -> dict:
         items = _rows("""
             SELECT a.*, j.triage_score, j.triage_reason, j.posted_at, j.employer_market, j.salary_flag, j.easy_apply,
-                   j.eligibility_status, j.eligibility_issues, j.company, j.job_title, j.location
+                   j.eligibility_status, j.eligibility_issues, j.company, j.job_title, j.location, j.source AS job_source
               FROM public.automation_actions a LEFT JOIN public.job_listings j ON a.target_type = 'job' AND j.id = a.target_id
              WHERE a.status = 'proposed' ORDER BY a.rank, a.sort_at DESC LIMIT 200""")
         grouped: Dict[str, list] = {k: [] for k in WRITE_KINDS}
@@ -415,8 +427,8 @@ class AutomationService:
             SELECT id, job_title, company, location, url, triage_score, triage_reason, posted_at, salary_flag FROM public.job_listings
              WHERE status = 'discovered' AND triage_outcome = 'external_manual' ORDER BY posted_at DESC NULLS LAST LIMIT 100""")
         grouped["discarded"] = _rows("""
-            SELECT id, job_title, company, location, url, triage_score, triage_reason, posted_at, employer_market FROM public.job_listings
-             WHERE status = 'discovered' AND triage_outcome = 'discarded' ORDER BY created_at DESC LIMIT 100""")
+            SELECT id, job_title, company, location, url, triage_score, triage_reason, posted_at, employer_market, source FROM public.job_listings
+             WHERE status = 'discovered' AND triage_outcome = 'discarded' ORDER BY updated_at DESC LIMIT 100""")
         return grouped
 
     @staticmethod
@@ -534,9 +546,14 @@ class AutomationService:
 
     @staticmethod
     def recover_job(job_id: int) -> Optional[dict]:
-        """A job the triage discarded comes back for you to approve."""
+        """A job the triage discarded, or whose proposal expired, comes back for you to approve."""
         job = _one("""UPDATE public.job_listings SET triage_outcome = 'propose' WHERE id = %s AND status = 'discovered' RETURNING *""", (job_id,))
-        return AutomationService.propose_job(job) if job else None
+        if not job:
+            return None
+        revived = _one("""UPDATE public.automation_actions SET status = 'proposed', error_code = NULL, error_text = NULL, finished_at = NULL,
+                                 notified_status = NULL, created_at = NOW(), updated_at = NOW()
+                           WHERE idempotency_key = %s AND status = 'expired' RETURNING *""", (f"apply:{job_id}",))
+        return revived or AutomationService.propose_job(job)
 
     @staticmethod
     def propose_job(job: dict) -> Optional[dict]:
@@ -549,10 +566,15 @@ class AutomationService:
         if twin:
             log.info("job %s not proposed: same job as apply #%s (%s)", job["id"], twin["id"], twin.get("location"))
             return None
+        # a job read straight from a company site (Greenhouse, Lever...) goes to that form: no LinkedIn page in between
+        direct = (job.get("source") or "linkedin") != "linkedin" and job.get("apply_url")
         return AutomationService.create_action(
-            "apply", f"apply:{job['id']}", f"{job.get('job_title') or 'Vaga'} · {job.get('company') or ''}", job.get("url"),
-            {"job_id": job["id"], "linkedin_job_id": job.get("linkedin_job_id"), "title": job.get("job_title"), "company": job.get("company")},
-            target_type="job", target_id=job["id"], rank=0, sort_at=job.get("posted_at") or job.get("created_at"))
+            "apply", f"apply:{job['id']}", f"{job.get('job_title') or 'Vaga'} · {job.get('company') or ''}",
+            job["apply_url"] if direct else job.get("url"),
+            {"job_id": job["id"], "linkedin_job_id": job.get("linkedin_job_id"), "title": job.get("job_title"), "company": job.get("company"),
+             "source": job.get("source") or "linkedin"},
+            target_type="job", target_id=job["id"], rank=0, sort_at=job.get("posted_at") or job.get("created_at"),
+            lane="ats" if direct else None)
 
     # ── Needs you ────────────────────────────────────────────────────────
     @staticmethod
@@ -1263,6 +1285,10 @@ class AutomationService:
 
     @staticmethod
     def _ai_answer_questions(action: dict, questions: List[str], error_text: str) -> tuple[bool, Dict[str, str]]:
+        # an identity check (ID document, selfie, biometric consent) is yours alone: 2026-11-22, Aligned Labs' Persona step got
+        # "Yes" from the consent rule and went back to the agent twice
+        if IDENTITY_CHECK_RE.search(" ".join([error_text or ""] + [json.dumps(q, ensure_ascii=False, default=str) for q in (questions or [])])):
+            return False, {}
         qs = AutomationService._extract_questions(questions, error_text)
         # no real question list: the fallback is the agent's whole summary, not a form question. Answering it by keyword and saving
         # the pair filled the answer bank with junk ("Yes" to a paragraph) on 2026-11-15
@@ -1766,6 +1792,7 @@ class AutomationService:
                   WHERE id = 1 AND ramp_auto AND ramp_step < 2 AND mode = 'live' AND halted_at IS NULL AND ramp_step_at < NOW() - make_interval(days => %s)""", (days,))
         # what the screens and the queue no longer need: screenshots are removed by the worker, their rows here
         _rows("DELETE FROM public.automation_events WHERE at < NOW() - INTERVAL '90 days'")
+        _rows("DELETE FROM public.approval_links WHERE expires_at < NOW() - INTERVAL '30 days'")   # each Lolo summary makes one
 
     @staticmethod
     def prepare_documents() -> int:
@@ -2001,6 +2028,20 @@ class AutomationService:
                    FROM public.job_listings j
                   WHERE a.status = 'proposed' AND a.kind = 'apply' AND a.target_type = 'job' AND j.id = a.target_id
                     AND j.status NOT IN ('new', 'scraped', 'discovered')""")
+        # a job on the list for proposal_days with a score below proposal_keep_score and no answer: it leaves the list, and
+        # the job goes to Descartadas with the reason (recoverable) — decided 2026-11-22, 10 days and 80
+        jobs_cfg = config().get("jobs") or {}
+        days, keep = int(jobs_cfg.get("proposal_days", 10)), int(jobs_cfg.get("proposal_keep_score", 80))
+        expired = _rows("""UPDATE public.automation_actions a SET status = 'expired', error_code = 'stale_proposal', finished_at = NOW(), updated_at = NOW(),
+                                  error_text = 'Saiu da lista: ' || %s || ' dias sem resposta, nota ' || j.triage_score
+                             FROM public.job_listings j
+                            WHERE a.status = 'proposed' AND a.kind = 'apply' AND a.target_type = 'job' AND j.id = a.target_id
+                              AND a.created_at < NOW() - make_interval(days => %s) AND j.triage_score IS NOT NULL AND j.triage_score < %s
+                        RETURNING j.id, j.triage_score""", (str(days), days, keep))
+        for r in expired:
+            _rows("""UPDATE public.job_listings SET triage_outcome = 'discarded', updated_at = NOW(),
+                            triage_reason = %s || COALESCE(' ' || triage_reason, '') WHERE id = %s AND status = 'discovered'""",
+                  (f"Expirou: {days} dias na lista sem resposta (nota {r['triage_score']}).", r["id"]))
 
     @staticmethod
     def tick() -> None:
@@ -2014,6 +2055,7 @@ class AutomationService:
             # documents for approved jobs run in their own loop (main._documents, 2026-11-17): minutes of Sonnet per job
             # never hold the books, the job reading or the notifications
             JobSearchService.triage_pending()
+            JobSearchService.propose_ready()
             AutomationService.sync_proposals()
             JobSearchService.score_proposed()
         try:   # what to tell you on WhatsApp; a failure here never holds the queue

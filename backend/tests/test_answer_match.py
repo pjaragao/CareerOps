@@ -137,3 +137,11 @@ def test_the_newest_answer_about_the_same_fact_is_reused(monkeypatch):
     assert AutomationService.topic_answer("Date of Birth") == "01/02/1990"
     assert AutomationService.topic_answer("Please identify your race") == "Option B"
     assert AutomationService.topic_answer("Years of Python") is None
+
+
+def test_an_identity_check_is_never_answered_for_you():
+    # 2026-11-22: Aligned Labs' Persona step (ID, selfie, biometric consent) got "Yes" from the consent rule
+    text = ("Parei na etapa obrigatória 'Verify your identity': o widget da Persona exige consentimento para coleta de dados "
+            "biométricos, documento oficial com foto e selfie.")
+    assert AutomationService._ai_answer_questions({"id": 1}, [{"label": "I consent to the processing of my biometric data"}], text) == (False, {})
+    assert AutomationService._ai_answer_questions({"id": 1}, [{"label": "Upload a selfie"}], "") == (False, {})
