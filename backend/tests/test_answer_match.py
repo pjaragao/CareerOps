@@ -110,3 +110,30 @@ def test_saving_an_instruction_is_skipped():
     AutomationService._upsert_answer(Cur(), "Please provide references", "Arquivar vaga — não enviar candidatura")
     AutomationService._upsert_answer(Cur(), "Clean driving record", "Yes")
     assert Cur.calls == 1
+
+
+def test_a_personal_fact_is_found_in_any_language():
+    # 2026-11-22: the date of birth was saved in German and asked again in English, Italian and as DDMM; race likewise
+    for q in ["Date of Birth", "Data di nascita (obrigatório no formulário; formato dd/mm/aaaa)", "Day and month of birth (DDMM)",
+              "Geburtsdatum (TT.MM.JJJJ)", "Qual é a sua data de nascimento (Geburtstag)? O formulário exige esse campo"]:
+        assert m.topic(q) == "birth_date", q
+    for q in ["Country of birth", "Place of birth", "Geburtsort", "País de nascimento", "Nationality"]:
+        assert m.topic(q) != "birth_date", q
+    assert m.topic("Como você descreveria a si mesmo/a?") == "race"
+    assert m.topic('Campo obrigatório "Race" do formulário EEO da NextEra: qual opção selecionar?') == "race"
+    assert m.topic("Are you Hispanic or Latino?") is None
+    assert m.topic("What is your level of proficiency in German?") == "german_level"
+    assert m.topic("Deutschkenntnisse") == "german_level"
+    assert m.topic("Do you live in Germany?") is None
+    assert m.topic("Are you based in Germany or willing to relocate to German offices?") is None
+    assert m.topic("What is your English level?") is None
+
+
+def test_the_newest_answer_about_the_same_fact_is_reused(monkeypatch):
+    bank = [{"id": 3, "question": "Como você descreveria a si mesmo/a? (EY)", "answer": "Option B", "field_type": "select"},
+            {"id": 2, "question": "Geburtsdatum (TT.MM.JJJJ)", "answer": "01/02/1990", "field_type": "text"},
+            {"id": 1, "question": "Race self-identification (optional)", "answer": "Option A", "field_type": "text"}]
+    monkeypatch.setattr(AutomationService, "answers_list", staticmethod(lambda: bank))
+    assert AutomationService.topic_answer("Date of Birth") == "01/02/1990"
+    assert AutomationService.topic_answer("Please identify your race") == "Option B"
+    assert AutomationService.topic_answer("Years of Python") is None

@@ -89,6 +89,33 @@ def similarity(a: str, b: str) -> float:
     return len(wa & wb) / len(wa | wb)
 
 
+# ── personal facts asked in any language (2026-11-22) ──
+# The date of birth was saved as "Geburtsdatum (TT.MM.JJJJ)" and "Qual é a sua data de nascimento (Geburtstag)?…"; "Date of
+# Birth", "Data di nascita" and "Day and month of birth (DDMM)" share no word with them, the AI match only sees the dozen
+# closest or most recent answers, so you were asked again and again. Race likewise ("Como você descreveria a si mesmo/a?").
+# A question about one of these facts reuses the newest answer about the same fact, whatever its words or language.
+TOPICS = {
+    "birth_date": (re.compile(r"birth|nascimento|nascita|geburt|nacimiento|naissance|geboorte|urodzeni|f[oö]delse|\bddmm\b|\bdob\b", re.I),
+                   re.compile(r"(country|place|city|town|state|pa[ií]s|local|cidade|estado|land|ort|luogo|citt[aà]|lieu|pays|lugar|ciudad)"
+                              r"\s+(of\s+|de\s+|di\s+|du\s+)?(birth|nascimento|nascita|naissance|nacimiento)|geburts(ort|land|stadt)|"
+                              r"nationalit|cidadania|citizenship|naturalidade", re.I)),
+    "race": (re.compile(r"\brace\b|\bra[çc]a\b|\bracial\b|descreveria a si|cor da pele|\bcor\s*/\s*ra[çc]a", re.I),
+             re.compile(r"hispanic or latino\?|are you hispanic|[ée] hispan|ethnicity\s*[:?]?\s*$", re.I)),
+    "german_level": (re.compile(r"\b(german|deutsch\w*|alem[aã]o|tedesco|allemand|alem[aá]n)\b", re.I),
+                     re.compile(r"\b(live|living|based|located|reside|work permit|citizen|right to work|visa|moram?|resid)\b", re.I)),
+}
+
+
+def topic(text: str) -> Optional[str]:
+    """The personal fact this question asks for (date of birth, race, German level), or None. Read on the question without
+    the agent's explanation around it; a place or country of birth is another fact."""
+    t = core(text) or (text or "")
+    for name, (asks, not_this) in TOPICS.items():
+        if asks.search(t) and not not_this.search(t):
+            return name
+    return None
+
+
 def not_an_answer(answer: str) -> bool:
     return bool(NOT_AN_ANSWER.search(answer or ""))
 

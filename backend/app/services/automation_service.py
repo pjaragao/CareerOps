@@ -787,7 +787,24 @@ class AutomationService:
                    (key,))
         if row:
             return row["answer"]
-        return AutomationService._loose_answer(label, field_type)
+        return AutomationService.topic_answer(label) or AutomationService._loose_answer(label, field_type)
+
+    @staticmethod
+    def topic_answer(label: str) -> Optional[str]:
+        """The newest saved answer about the same personal fact (date of birth, race, German level), in any wording or
+        language: answer_match.topic."""
+        hit = AutomationService._topic_hit(label)
+        return hit["answer"] if hit else None
+
+    @staticmethod
+    def _topic_hit(label: str) -> Optional[dict]:
+        name = answer_match.topic(label)
+        if not name:
+            return None
+        for a in AutomationService.answers_list():   # newest first
+            if not answer_match.not_an_answer(a.get("answer") or "") and answer_match.topic(a["question"]) == name:
+                return a
+        return None
 
     @staticmethod
     def _loose_answer(label: str, field_type: str) -> Optional[str]:
@@ -824,6 +841,9 @@ class AutomationService:
             if score >= 0.34:
                 scored.append((score, a))
         scored.sort(key=lambda x: -x[0])
+        hit = AutomationService._topic_hit(question)   # same personal fact in other words or another language
+        if hit:
+            scored = [(1.0, hit)] + [(sc, a) for sc, a in scored if a.get("id") != hit.get("id")]
         mapped = None
         try:
             from app.services.form_mapper import FormMapper
