@@ -4,7 +4,8 @@ The link carries its own token, which only lists the jobs waiting for approval a
 the mode, the account or the limits, nor approve a comment, an invitation or a message. Only its hash is kept; it lasts
 link_days (7, the time a job waits for approval) and every link can be revoked at once in Configurações → Acesso.
 
-The page is served by the backend under /aprovar, the only path published on the internet (Tailscale Funnel); every other path
+The page is served by the backend under /aprovar, the only path published on the internet (Tailscale Funnel, port 10000:
+`tailscale funnel --bg --https=10000 --set-path=/aprovar http://127.0.0.1:8005/aprovar`); every other path
 answers 404 to a request that came through the Funnel (see public_guard).
 """
 import hashlib
@@ -24,7 +25,7 @@ def _hash(token: str) -> str:
 
 
 def public_base() -> str:
-    """CAREEROPS_PUBLIC_URL, or the app's address without its port (the Funnel answers on 443 of the same name)."""
+    """CAREEROPS_PUBLIC_URL (the Funnel's address), or the app's address without its port."""
     if settings.CAREEROPS_PUBLIC_URL:
         return settings.CAREEROPS_PUBLIC_URL.rstrip("/")
     p = urlparse(settings.CAREEROPS_APP_URL)

@@ -19,7 +19,7 @@ def proposed_job(add_job, sql, job_id="100", score=80, company="Acme"):
 
 def test_the_link_is_public_without_the_port_and_keeps_only_a_hash(db, sql):
     url = Links.create_link()
-    assert url.startswith("https://") and ":5174" not in url and "/aprovar?t=" in url
+    assert url.startswith("https://") and ":5174" not in url and "/aprovar?t=" in url   # the Funnel's port, never the app's
     row = sql("SELECT token_hash, expires_at - created_at AS life FROM public.approval_links")[0]
     assert token_of(url) not in row["token_hash"] and round(row["life"].total_seconds() / 86400) == 7
 

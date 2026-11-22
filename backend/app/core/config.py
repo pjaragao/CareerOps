@@ -63,8 +63,9 @@ class Settings(BaseSettings):
     CAREEROPS_NOVNC_URL: str = os.getenv("CAREEROPS_NOVNC_URL", "https://mpbflndsk201-wsl.tabby-broadnose.ts.net:6083/vnc.html")
     # The app as you open it (phone, through Tailscale): links in Lolo's messages
     CAREEROPS_APP_URL: str = os.getenv("CAREEROPS_APP_URL", "https://mpbflndsk201-wsl.tabby-broadnose.ts.net:5174")
-    # The approval link on the internet (Tailscale Funnel on 443, only /aprovar): empty = the app's address without its port
-    CAREEROPS_PUBLIC_URL: str = os.getenv("CAREEROPS_PUBLIC_URL", "")
+    # The approval link on the internet: Tailscale Funnel publishes only /aprovar, on port 10000 (443 and 8443 of this machine
+    # are taken by nginx_secure and Supabase). Empty = the app's address without its port.
+    CAREEROPS_PUBLIC_URL: str = os.getenv("CAREEROPS_PUBLIC_URL", "https://mpbflndsk201-wsl.tabby-broadnose.ts.net:10000")
 
     # --- Daily email monitor (Gmail app password, read-only use): empty = it does not run ---
     GMAIL_ADDRESS: str = os.getenv("GMAIL_ADDRESS", "")
