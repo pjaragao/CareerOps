@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- JSON bags, as the backend sends them */
 import React, { useCallback, useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Activity, Check, CircleStop, Zap, ExternalLink, FileText, Inbox as InboxIcon, ListChecks, Mail, Monitor, Play, RefreshCw, Settings2, UserRound, X } from 'lucide-react';
+import { Activity, Check, CheckCheck, CircleStop, Zap, ExternalLink, FileText, Inbox as InboxIcon, ListChecks, Mail, Monitor, Play, RefreshCw, Settings2, UserRound, X } from 'lucide-react';
 import TabbedPage from '../components/TabbedPage';
 import { EligibilityBadge, css as listCss } from './JobBoard';
 import { jobService } from '../services/jobService';
@@ -45,6 +45,7 @@ const STATUS_LABEL: Record<string, string> = {
   unknown_outcome: 'Vai conferir antes de repetir', escalated: 'Aguarda rotina Claude', running_claude: 'Rotina Claude', needs_user: 'Precisa de você', done: 'Feito', discarded: 'Descartada', failed: 'Falhou', expired: 'Expirou', cancelled: 'Cancelada',
 };
 const CODE_LABEL: Record<string, string> = {
+  by_hand: 'Você se candidatou',
   unknown_required_question: 'Pergunta sem resposta', captcha: 'Captcha no site', account_required: 'O site exige conta ou login', email_verification: 'O site pede verificação de e-mail',
   invite_needs_email: 'O LinkedIn pediu o e-mail da pessoa', content_blocked: 'Barrado pela trava de NDA', documents_failed: 'Documentos não gerados', external_manual: 'Candidatura no site da empresa',
   verify_failed: 'Não deu para confirmar na página', claude_stopped: 'A rotina Claude parou', claude_audit: 'A rotina Claude saiu do alvo', payload_changed: 'O conteúdo mudou após a aprovação', confirm_timeout: 'Sem confirmação a tempo',
@@ -506,6 +507,7 @@ const NeedsYouDetail = ({ action, onDone, novnc, setError }: { action: Action; o
               {url && <a className="btn btn-secondary" href={url} target="_blank" rel="noreferrer"><ExternalLink size={15} /> Abrir</a>}
               {novnc && <a className="btn btn-secondary" href={novnc} target="_blank" rel="noreferrer"><Monitor size={15} /> Ver navegador</a>}
               <button className="btn btn-primary" onClick={() => act(auto.retry(action.id))}><RefreshCw size={15} /> Já resolvi: tentar de novo</button>
+              {action.kind === 'apply' && <button className="btn btn-secondary" title="Você mesmo se candidatou: conta como enviada e a vaga vai para Candidatada" onClick={() => act(auto.appliedByHand(action.id))}><CheckCheck size={15} /> Já me candidatei</button>}
               <button className="btn btn-secondary" onClick={() => act(auto.cancel(action.id))}>Desistir desta</button>
             </div>}
       </>}
@@ -544,6 +546,7 @@ const NeedsYouRow = ({ action, picked, onPick, onDone, novnc, setError }: { acti
         <td className="jb-td" style={{ textAlign: 'right', paddingLeft: 0, whiteSpace: 'nowrap' }} onClick={(e) => e.stopPropagation()}>
           <div style={{ display: 'inline-flex', flexWrap: 'nowrap', gap: 6 }}>
             {quick && <button className="jb-icon primary" title={quick.title} aria-label={quick.title} disabled={busy} onClick={() => decide(quick.run())}>{'icon' in quick ? quick.icon : <Check size={15} />}</button>}
+            {action.kind === 'apply' && <button className="jb-icon" title="Já me candidatei: conta como enviada e a vaga vai para Candidatada" aria-label="Já me candidatei" style={{ color: GREEN }} disabled={busy} onClick={() => decide(auto.appliedByHand(action.id))}><CheckCheck size={15} /></button>}
             <button className="jb-icon danger" title="Desistir desta" disabled={busy} onClick={() => decide(auto.cancel(action.id))}><X size={15} /></button>
             {action.target_url && <a className="jb-icon jb-hide-sm" title={/linkedin\.com/.test(action.target_url) ? 'Abrir no LinkedIn' : 'Abrir a vaga no site'} href={action.target_url} target="_blank" rel="noreferrer"><ExternalLink size={15} /></a>}
           </div>
@@ -585,6 +588,11 @@ const NeedsYouTab = () => {
     if (!selected.length && docs.length > 1 && !confirm(`Liberar o envio das ${docs.length} da lista?`)) return;
     Promise.all(docs.map((a) => auto.approveDocs(a.id))).then(done).catch((e) => setActionError(errorText(e)));
   };
+  const appliedMany = (list: Action[]) => {
+    const jobs = list.filter((a) => a.kind === 'apply');
+    if (!jobs.length || !confirm(`Marcar ${jobs.length} ${jobs.length === 1 ? 'vaga' : 'vagas'} como candidatura feita por você?`)) return;
+    Promise.all(jobs.map((a) => auto.appliedByHand(a.id))).then(done).catch((e) => setActionError(errorText(e)));
+  };
   const cancelMany = (list: Action[]) => {
     if (!confirm(`Desistir de ${list.length} ${list.length === 1 ? 'ação' : 'ações'}?`)) return;
     Promise.all(list.map((a) => auto.cancel(a.id))).then(done).catch((e) => setActionError(errorText(e)));
@@ -612,6 +620,7 @@ const NeedsYouTab = () => {
             <option value="recent">Mais recentes</option>
             <option value="fit">Maior fit</option>
           </select>
+          {selected.some((a) => a.kind === 'apply') && <button className="btn btn-secondary" onClick={() => appliedMany(selected)}><CheckCheck size={15} /> Já me candidatei</button>}
           {selected.length > 0 && <button className="btn btn-secondary" onClick={() => cancelMany(selected)}><X size={15} /> Desistir</button>}
           {docs.length > 0 && <button className="btn btn-secondary" onClick={sendDocs}><Check size={15} /> {selected.length ? 'Pode enviar selecionadas' : 'Pode enviar todas'}</button>}
         </div>

@@ -926,6 +926,21 @@ class AutomationService:
                         WHERE id = %s AND status = ANY(%s) RETURNING *""",
                     (action_id, ["approved", "review_docs", "queued", "needs_user", "escalated", "unknown_outcome"]))
 
+    @staticmethod
+    def applied_by_hand(action_id: int) -> Optional[dict]:
+        """You applied yourself (the company site, a CAPTCHA, a form the agent did not finish): the application counts as
+        sent, the job moves to 'applied', and no twin of it is ever sent. Not while the browser is working on it."""
+        action = _one("""UPDATE public.automation_actions
+                            SET status = 'done', error_code = 'by_hand', result = result || '{"by_hand": true}'::jsonb, questions = '[]',
+                                finished_at = NOW(), lease_owner = NULL, lease_until = NULL, updated_at = NOW()
+                          WHERE id = %s AND kind = 'apply' AND status = ANY(%s) RETURNING *""",
+                      (action_id, ["proposed", "approved", "review_docs", "queued", "needs_user", "escalated", "unknown_outcome", "awaiting_confirm"]))
+        if action:
+            _rows("""UPDATE public.job_listings SET status = 'applied', applied_via_bot = FALSE, applied_at = COALESCE(applied_at, NOW()), updated_at = NOW()
+                      WHERE id = %s AND status NOT IN ('interviewing', 'offer', 'rejected')""", (action["target_id"],))
+            AutomationService.add_event(action_id, "user", "applied_by_hand", {})
+        return action
+
     # ── Claim: the only way anything starts ──────────────────────────────
     @staticmethod
     def _refusal(state: dict, lane: str, cur) -> Optional[str]:

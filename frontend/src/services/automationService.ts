@@ -158,6 +158,7 @@ export const automationService = {
   confirmSubmit: (id: number) => data(api.post(`${base}/actions/${id}/confirm-submit`)),
   retry: (id: number) => data(api.post(`${base}/actions/${id}/retry`)),
   cancel: (id: number) => data(api.post(`${base}/actions/${id}/cancel`)),
+  appliedByHand: (id: number) => data(api.post(`${base}/actions/${id}/applied-by-hand`)),
   running: () => data(api.get<{ items: Action[] }>(`${base}/running`)).then((r) => r.items),
   history: () => data(api.get<{ items: Action[] }>(`${base}/history`)).then((r) => r.items),
   events: (id: number) => data(api.get<{ items: { id: number; at: string; source: string; level: string; event: string; data: any; screenshot_path: string | null }[] }>(`${base}/actions/${id}/events`)).then((r) => r.items),

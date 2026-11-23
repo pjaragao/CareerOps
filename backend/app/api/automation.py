@@ -211,6 +211,12 @@ async def cancel(action_id: int):
     return _found(Auto.cancel(action_id))
 
 
+@router.post("/actions/{action_id}/applied-by-hand", dependencies=[Depends(require_decider)])
+async def applied_by_hand(action_id: int):
+    """You applied yourself: the application counts as sent and the job as applied."""
+    return _found(Auto.applied_by_hand(action_id))
+
+
 @router.post("/actions/{action_id}/retry", dependencies=[Depends(require_decider)])
 async def retry(action_id: int):
     return _found(Auto.retry(action_id))
